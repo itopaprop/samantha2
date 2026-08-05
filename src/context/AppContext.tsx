@@ -36,6 +36,7 @@ interface AppContextType {
   currentPage: PageView;
   setCurrentPage: (page: PageView) => void;
   currentUser: User | null;
+  users: User[];
   loginUser: (email: string, role: UserRole) => boolean;
   switchDemoRole: (role: UserRole) => void;
   logout: () => void;
@@ -52,6 +53,7 @@ interface AppContextType {
   
   shifts: Shift[];
   addShift: (shift: Omit<Shift, 'id'>) => void;
+  updateShift: (id: string, updated: Partial<Shift>) => void;
   deleteShift: (id: string) => void;
   
   messages: Message[];
@@ -86,7 +88,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('shh_current_user');
-    return saved ? JSON.parse(saved) : INITIAL_USERS[0]; // Default logged in as Admin for full experience preview
+    return saved ? JSON.parse(saved) : null;
   });
 
   const [residents, setResidents] = useState<Resident[]>(() => {
@@ -312,18 +314,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(`Shift scheduled for ${shiftData.staffName}.`);
   };
 
+  const updateShift = (id: string, updated: Partial<Shift>) => {
+    setShifts(prev => prev.map(s => s.id === id ? { ...s, ...updated } : s));
+    showToast('Shift details updated.');
+  };
+
   const deleteShift = (id: string) => {
     setShifts(prev => prev.filter(s => s.id !== id));
     showToast('Shift removed.');
   };
 
   const sendMessage = (msgData: Omit<Message, 'id' | 'timestamp' | 'isRead'>) => {
+    const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 16);
     const newMsg: Message = {
       ...msgData,
       id: `msg-${Date.now()}`,
       isRead: false,
-      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      timestamp,
     };
+
+    // Check if message is between Resident Relative and Caregiver Staff
+    const isRelativeAndStaff = 
+      (msgData.senderRole === 'Resident Relative' && msgData.receiverRole === 'Staff') ||
+      (msgData.senderRole === 'Staff' && msgData.receiverRole === 'Resident Relative');
+
+    if (isRelativeAndStaff) {
+      const adminUsers = users.filter(u => u.role === 'Admin');
+      const targetAdmin = adminUsers[0] || { id: 'usr-admin-1', name: 'Folashade Sonyaolu', role: 'Admin' };
+
+      // Ensure Admin receives a CC copy if Admin isn't already the direct receiver
+      if (msgData.receiverId !== targetAdmin.id) {
+        const ccMsg: Message = {
+          ...msgData,
+          id: `msg-cc-${Date.now()}`,
+          receiverId: targetAdmin.id,
+          receiverName: `${targetAdmin.name} (Admin CC)`,
+          receiverRole: 'Admin',
+          subject: `[CC to Admin] ${msgData.subject}`,
+          content: `[Copied to Admin]\nSender: ${msgData.senderName} (${msgData.senderRole})\nRecipient: ${msgData.receiverName} (${msgData.receiverRole})\n---\n${msgData.content}`,
+          isRead: false,
+          timestamp,
+        };
+        setMessages(prev => [newMsg, ccMsg, ...prev]);
+        showToast(`Message sent to ${msgData.receiverName} (Copied to Admin).`);
+        return;
+      }
+    }
+
     setMessages(prev => [newMsg, ...prev]);
     showToast(`Message sent to ${msgData.receiverName}.`);
   };
@@ -348,6 +385,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       currentPage,
       setCurrentPage,
       currentUser,
+      users,
       loginUser,
       switchDemoRole,
       logout,
@@ -361,6 +399,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deleteStaff,
       shifts,
       addShift,
+      updateShift,
       deleteShift,
       messages,
       sendMessage,

@@ -3,8 +3,11 @@ import { useApp } from '../../context/AppContext';
 import { AddResidentModal } from '../../components/modals/AddResidentModal';
 import { AddStaffModal } from '../../components/modals/AddStaffModal';
 import { AddShiftModal } from '../../components/modals/AddShiftModal';
+import { EditResidentModal } from '../../components/modals/EditResidentModal';
+import { EditStaffModal } from '../../components/modals/EditStaffModal';
+import { EditShiftModal } from '../../components/modals/EditShiftModal';
 import { ComposeMessageModal } from '../../components/modals/ComposeMessageModal';
-import { CareCategory, UserRole, StaffMember } from '../../types';
+import { CareCategory, UserRole, StaffMember, Resident, Shift } from '../../types';
 import { 
   Users, 
   UserCheck, 
@@ -29,6 +32,8 @@ import {
   Sparkles,
   Send,
   Inbox,
+  Paperclip,
+  Download,
   X
 } from 'lucide-react';
 
@@ -59,11 +64,19 @@ export const AdminDashboard: React.FC = () => {
   const [selectedResidentModal, setSelectedResidentModal] = useState<any>(null);
   const [selectedStaffModal, setSelectedStaffModal] = useState<StaffMember | null>(null);
 
+  // Edit modal states
+  const [editingResident, setEditingResident] = useState<Resident | null>(null);
+  const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
+  const [editingShift, setEditingShift] = useState<Shift | null>(null);
+
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
 
   if (!currentUser) return null;
+
+  // Admin profile avatar
+  const adminAvatar = currentUser.avatar || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80';
 
   // Stat Calculations
   const totalResidents = residents.length;
@@ -106,7 +119,7 @@ export const AdminDashboard: React.FC = () => {
           {/* Admin User Header Badge */}
           <div className="p-4 bg-slate-800/90 rounded-2xl border border-slate-700/80 flex items-center gap-3">
             <img
-              src={currentUser.avatar || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80'}
+              src={adminAvatar}
               alt={currentUser.name}
               referrerPolicy="no-referrer"
               className="w-11 h-11 rounded-full object-cover border-2 border-sky-500 shadow-md shrink-0"
@@ -237,23 +250,48 @@ export const AdminDashboard: React.FC = () => {
         
         {/* Top Greeting Header */}
         <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div className="space-y-1">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              Welcome, {currentUser.name}
-            </h1>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-900 border border-purple-200">
-                <ShieldCheck className="w-3.5 h-3.5 text-purple-700" />
-                Role: {currentUser.role}
-              </span>
-              <span className="text-xs text-slate-500 font-medium hidden sm:inline">
-                • Samanthasappy Home Executive Dashboard
-              </span>
+          <div className="flex items-center gap-4 sm:gap-5">
+            <img
+              src={adminAvatar}
+              alt={currentUser.name}
+              referrerPolicy="no-referrer"
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-purple-500/40 shadow-md shrink-0 ring-4 ring-purple-50"
+            />
+            <div className="space-y-1">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                Welcome, {currentUser.name}
+              </h1>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-900 border border-purple-200">
+                  <ShieldCheck className="w-3.5 h-3.5 text-purple-700" />
+                  Role: {currentUser.role}
+                </span>
+                <span className="text-xs text-slate-500 font-medium hidden sm:inline">
+                  • Samanthasappy Home Executive Dashboard
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* Quick Action Trigger Bar */}
-          <div className="flex flex-wrap gap-2">
+          {/* Quick Action Trigger Bar & Clickable Inbox Notification */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setActiveTab('messages')}
+              className="relative flex items-center gap-2 px-3.5 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200/90 rounded-xl font-bold text-xs shadow-2xs transition-all cursor-pointer group"
+              title="Click to open Inbox Messages"
+            >
+              <Mail className="w-4 h-4 text-sky-700 group-hover:scale-110 transition-transform" />
+              <span>Inbox</span>
+              {unreadMessagesCount > 0 ? (
+                <span className="bg-rose-600 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full animate-pulse shadow-xs">
+                  {unreadMessagesCount} unread
+                </span>
+              ) : (
+                <span className="bg-slate-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  0 unread
+                </span>
+              )}
+            </button>
             <button
               onClick={() => setIsAddResidentOpen(true)}
               className="bg-sky-700 hover:bg-sky-800 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
@@ -545,21 +583,30 @@ export const AdminDashboard: React.FC = () => {
                           {r.healthStatus}
                         </span>
                       </td>
-                      <td className="p-3 text-right space-x-1">
-                        <button
-                          onClick={() => setSelectedResidentModal(r)}
-                          className="p-1.5 text-sky-700 hover:bg-sky-50 rounded-lg transition-colors"
-                          title="View Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => deleteResident(r.id)}
-                          className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                          title="Remove Resident"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                      <td className="p-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => setSelectedResidentModal(r)}
+                            className="p-1.5 text-sky-700 hover:bg-sky-50 rounded-lg transition-colors cursor-pointer"
+                            title="View Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setEditingResident(r)}
+                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                            title="Edit Resident"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => deleteResident(r.id)}
+                            className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            title="Remove Resident"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -619,6 +666,13 @@ export const AdminDashboard: React.FC = () => {
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
+                            onClick={() => setEditingStaff(s)}
+                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                            title="Edit Staff Member"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => deleteStaff(s.id)}
                             className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                             title="Remove Staff Member"
@@ -655,12 +709,22 @@ export const AdminDashboard: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {shifts.map((sh) => (
                 <div key={sh.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 relative">
-                  <button
-                    onClick={() => deleteShift(sh.id)}
-                    className="absolute top-4 right-4 text-slate-400 hover:text-rose-600"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="absolute top-4 right-4 flex items-center gap-1">
+                    <button
+                      onClick={() => setEditingShift(sh)}
+                      className="text-slate-400 hover:text-amber-600 transition-colors p-1 cursor-pointer"
+                      title="Edit Shift"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => deleteShift(sh.id)}
+                      className="text-slate-400 hover:text-rose-600 transition-colors p-1 cursor-pointer"
+                      title="Delete Shift"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                   <div className="space-y-1">
                     <span className="text-[10px] font-bold text-sky-800 bg-sky-100 px-2 py-0.5 rounded-md">
                       {sh.shiftType} Shift
@@ -744,6 +808,28 @@ export const AdminDashboard: React.FC = () => {
                   <p className="text-xs text-slate-700 mt-2 leading-relaxed">
                     {msg.content}
                   </p>
+
+                  {(msg.attachmentName || msg.attachmentUrl) && (
+                    <div 
+                      className="mt-3 pt-3 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200/90 shadow-2xs"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center gap-2 text-xs font-bold text-slate-800 min-w-0">
+                        <Paperclip className="w-4 h-4 text-sky-700 shrink-0" />
+                        <span className="truncate">{msg.attachmentName || 'Attached Document'}</span>
+                      </div>
+                      <a
+                        href={msg.attachmentUrl || `data:text/plain;charset=utf-8,${encodeURIComponent(msg.content)}`}
+                        download={msg.attachmentName || 'attachment.txt'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-700 hover:bg-sky-800 text-white rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer shadow-xs"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Download Attachment</span>
+                      </a>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -769,6 +855,23 @@ export const AdminDashboard: React.FC = () => {
       <ComposeMessageModal
         isOpen={isComposeMessageOpen}
         onClose={() => setIsComposeMessageOpen(false)}
+      />
+
+      {/* Edit Modals */}
+      <EditResidentModal
+        isOpen={!!editingResident}
+        onClose={() => setEditingResident(null)}
+        resident={editingResident}
+      />
+      <EditStaffModal
+        isOpen={!!editingStaff}
+        onClose={() => setEditingStaff(null)}
+        staffMember={editingStaff}
+      />
+      <EditShiftModal
+        isOpen={!!editingShift}
+        onClose={() => setEditingShift(null)}
+        shift={editingShift}
       />
 
       {/* View Resident Modal */}

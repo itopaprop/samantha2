@@ -1,26 +1,26 @@
 import React, { useState } from 'react';
 import { INITIAL_GALLERY } from '../data/initialData';
-import { GalleryItem } from '../types';
 import { LightboxModal } from '../components/modals/LightboxModal';
-import { Maximize2, Tag, Calendar } from 'lucide-react';
+import { Maximize2 } from 'lucide-react';
 
 export const GalleryPage: React.FC = () => {
-  const [activeCategory, setActiveCategory] = useState<string>('All');
-  const [selectedImage, setSelectedImage] = useState<GalleryItem | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
-  const categories = [
-    'All',
-    'Elderly Care Activities',
-    "Children's Activities",
-    'Training Sessions',
-    'Events',
-    'Facility Photos',
-    'Family Visitations'
-  ];
+  const selectedImage = selectedIndex !== null && INITIAL_GALLERY[selectedIndex]
+    ? INITIAL_GALLERY[selectedIndex]
+    : null;
 
-  const filteredItems = activeCategory === 'All'
-    ? INITIAL_GALLERY
-    : INITIAL_GALLERY.filter(item => item.category === activeCategory);
+  const handlePrev = () => {
+    if (selectedIndex !== null && INITIAL_GALLERY.length > 0) {
+      setSelectedIndex((selectedIndex - 1 + INITIAL_GALLERY.length) % INITIAL_GALLERY.length);
+    }
+  };
+
+  const handleNext = () => {
+    if (selectedIndex !== null && INITIAL_GALLERY.length > 0) {
+      setSelectedIndex((selectedIndex + 1) % INITIAL_GALLERY.length);
+    }
+  };
 
   return (
     <div className="space-y-16 pb-16">
@@ -40,62 +40,32 @@ export const GalleryPage: React.FC = () => {
         </div>
       </section>
 
-      {/* Category Filter Tabs */}
+      {/* Image Grid */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-wrap justify-center gap-2 mb-10">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeCategory === cat
-                  ? 'bg-sky-700 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-
-        {/* Image Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredItems.map((item) => (
+          {INITIAL_GALLERY.map((item, index) => (
             <div
               key={item.id}
-              onClick={() => setSelectedImage(item)}
-              className="group bg-white rounded-2xl overflow-hidden border border-slate-200/90 shadow-xs hover:shadow-xl transition-all cursor-pointer flex flex-col"
+              onClick={() => setSelectedIndex(index)}
+              className="group bg-slate-100 rounded-2xl overflow-hidden border border-slate-200/90 shadow-xs hover:shadow-xl transition-all cursor-pointer relative aspect-[4/3]"
             >
-              <div className="h-64 overflow-hidden relative">
-                <img
-                  src={item.imageUrl}
-                  alt={item.title}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-                <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <span className="p-3 rounded-full bg-white/20 backdrop-blur-md text-white">
-                    <Maximize2 className="w-6 h-6" />
-                  </span>
-                </div>
-                <span className="absolute top-3 left-3 text-[10px] font-bold bg-slate-900/80 text-white px-2.5 py-1 rounded-full backdrop-blur-xs">
-                  {item.category}
+              <img
+                src={item.imageUrl}
+                alt={item.title}
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (!target.dataset.fallback) {
+                    target.dataset.fallback = 'true';
+                    target.src = 'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=800&q=80';
+                  }
+                }}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+              />
+              <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <span className="p-3 rounded-full bg-white/20 backdrop-blur-md text-white">
+                  <Maximize2 className="w-6 h-6" />
                 </span>
-              </div>
-
-              <div className="p-5 flex-1 flex flex-col justify-between space-y-2">
-                <div>
-                  <h3 className="font-bold text-slate-900 text-base group-hover:text-sky-700 transition-colors">
-                    {item.title}
-                  </h3>
-                  <p className="text-xs text-slate-600 line-clamp-2 mt-1 leading-relaxed">
-                    {item.description}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium pt-2 border-t border-slate-100">
-                  <Calendar className="w-3.5 h-3.5 text-sky-600" />
-                  <span>{item.date}</span>
-                </div>
               </div>
             </div>
           ))}
@@ -104,9 +74,11 @@ export const GalleryPage: React.FC = () => {
 
       {/* Lightbox Modal Component */}
       <LightboxModal
-        isOpen={!!selectedImage}
-        onClose={() => setSelectedImage(null)}
+        isOpen={selectedIndex !== null}
+        onClose={() => setSelectedIndex(null)}
         image={selectedImage}
+        onPrev={handlePrev}
+        onNext={handleNext}
       />
 
     </div>

@@ -133,7 +133,7 @@ export interface TrainingProgram {
 export interface Facility {
   id: string;
   name: string;
-  category: 'Resident Rooms' | "Children's Activity Areas" | 'Dining Areas' | 'Medical Rooms' | 'Recreation Areas' | 'Garden Spaces' | 'Therapy Rooms' | 'Visitor Areas';
+  category: 'Resident Rooms' | "Children's Activity Areas" | 'Dining Areas' | 'Medical Rooms' | 'Recreation Areas' | 'Garden Spaces' | 'Therapy Rooms' | 'Visitor Areas' | 'Security & Safety';
   description: string;
   image: string;
   features: string[];

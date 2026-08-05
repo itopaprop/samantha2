@@ -120,6 +120,7 @@ export const INITIAL_RESIDENTS: Resident[] = [
   {
     id: 'res-101',
     fullName: 'Eleanor Miller',
+    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80',
     dateOfBirth: '1942-05-14',
     gender: 'Female',
     roomNumber: 'Suite 104 - Willow Wing',
@@ -145,6 +146,7 @@ export const INITIAL_RESIDENTS: Resident[] = [
   {
     id: 'res-102',
     fullName: 'Thomas Wright',
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=300&q=80',
     dateOfBirth: '1938-11-22',
     gender: 'Male',
     roomNumber: 'Suite 208 - Rosewood Wing',
@@ -170,6 +172,7 @@ export const INITIAL_RESIDENTS: Resident[] = [
   {
     id: 'res-103',
     fullName: 'Arthur Pendelton',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80',
     dateOfBirth: '1945-03-08',
     gender: 'Male',
     roomNumber: 'Domiciliary Care Client - Home Visit',
@@ -195,6 +198,7 @@ export const INITIAL_RESIDENTS: Resident[] = [
   {
     id: 'res-104',
     fullName: 'Clara & Leo Bennett (Siblings)',
+    avatar: 'https://images.unsplash.com/photo-1502086223501-7ea6ecd79368?auto=format&fit=crop&w=300&q=80',
     dateOfBirth: '2020-08-19',
     gender: 'Female',
     roomNumber: 'Day Care Sunshine Room',
@@ -220,6 +224,7 @@ export const INITIAL_RESIDENTS: Resident[] = [
   {
     id: 'res-105',
     fullName: 'Sophia Lee',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
     dateOfBirth: '2001-09-04',
     gender: 'Female',
     roomNumber: 'Caregiver Training Center - Room B',
@@ -239,6 +244,7 @@ export const INITIAL_RESIDENTS: Resident[] = [
   {
     id: 'res-106',
     fullName: 'George Harris',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
     dateOfBirth: '1950-01-30',
     gender: 'Male',
     roomNumber: 'Suite 112 - Meadow Wing',
@@ -321,6 +327,8 @@ export const INITIAL_MESSAGES: Message[] = [
     receiverRole: 'Resident Relative',
     subject: 'Eleanor’s Weekly Health & Activity Progress',
     content: 'Hello David, Eleanor had a splendid week! Her blood pressure is steady at 122/78 mmHg. She thoroughly enjoyed our garden music session today and asked after you. Please feel free to join us for tea on Thursday afternoon!',
+    attachmentName: 'Weekly_Care_Summary_Eleanor_Miller.pdf',
+    attachmentUrl: 'data:text/plain;charset=utf-8,Weekly%20Care%20Summary%20Log%20-%20Eleanor%20Miller%0ABlood%20Pressure%3A%20122%2F78%20mmHg%0AHeart%20Rate%3A%2072%20bpm%0ANotes%3A%20Patient%20is%20cheerful%2C%20active%20in%20garden%20sessions.',
     isRead: false,
     timestamp: '2026-08-02 08:30',
   },
@@ -347,6 +355,8 @@ export const INITIAL_MESSAGES: Message[] = [
     receiverRole: 'Staff',
     subject: 'Staff Shift Roster Update & New Trainee Induction',
     content: 'Hi Sarah, please review the upcoming shift schedule for next week. Trainee Sophia Lee will be shadowing your morning rounds on Wednesday.',
+    attachmentName: 'Shift_Roster_August_2026.pdf',
+    attachmentUrl: 'data:text/plain;charset=utf-8,August%202026%20Shift%20Roster%20Schedule%0ANurse%20Sarah%20Jenkins%3A%20Morning%20Duty%0ATrainee%20Sophia%20Lee%3A%20Shadowing%20Rounds',
     isRead: true,
     timestamp: '2026-07-31 09:15',
   }
@@ -449,51 +459,499 @@ export const INITIAL_FACILITIES: Facility[] = [
 export const INITIAL_GALLERY: GalleryItem[] = [
   {
     id: 'gal-1',
-    title: 'Morning Garden Music & Singalong',
-    category: 'Elderly Care Activities',
-    imageUrl: 'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=800&q=80',
-    description: 'Residents enjoying live acoustic guitar and singing classic favorite songs in our sunny courtyard.',
-    date: 'July 28, 2026'
+    title: 'Samanthasappy Home Facility Overview & Courtyard',
+    category: 'Facility Photos',
+    imageUrl: 'https://lh3.googleusercontent.com/d/188SUz7vn8g4onfYwfXcvCiRPm72eIkIe',
+    description: 'A welcoming view of our modern home environment, landscaped grounds, and serene outdoor courtyards.',
+    date: 'August 2026'
   },
   {
     id: 'gal-2',
-    title: 'Montessori Storytime & Clay Sculpting',
-    category: "Children's Activities",
-    imageUrl: 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?auto=format&fit=crop&w=800&q=80',
-    description: 'Our early learners exploring hands-on clay art and interactive storytelling with Miss Emily.',
-    date: 'July 25, 2026'
+    title: 'Senior Wellness & Morning Mobility Practice',
+    category: 'Elderly Care Activities',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1UQzN-VvtPPsTRRB1EXztN--XDDWFOI41',
+    description: 'Residents participating in gentle morning physical therapy and mobility exercises with trained staff.',
+    date: 'August 2026'
   },
   {
     id: 'gal-3',
-    title: 'Staff Dementia Safeguarding Workshop',
-    category: 'Training Sessions',
-    imageUrl: 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?auto=format&fit=crop&w=800&q=80',
-    description: 'Caregivers participating in specialized communication and memory-support practical training.',
-    date: 'July 18, 2026'
+    title: 'Early Childhood Montessori Learning Corner',
+    category: "Children's Activities",
+    imageUrl: 'https://lh3.googleusercontent.com/d/1IUyDVnE3DYD_t_9MwqHwZ3sCduy2QR5O',
+    description: 'Interactive early learning session featuring tactile educational games and creative exploration.',
+    date: 'August 2026'
   },
   {
     id: 'gal-4',
-    title: 'Annual Family Summer Tea & Barbecue',
-    category: 'Events',
-    imageUrl: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=800&q=80',
-    description: 'Bringing residents, children, staff, and family relatives together for our joyous annual garden party.',
-    date: 'July 10, 2026'
+    title: 'Caregiver Mentorship & Clinical Skills Workshop',
+    category: 'Training Sessions',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1VsO4bsLJYDmqrcq4fF-bSCrQ8WC9bO8k',
+    description: 'Hands-on training session for nurse trainees and caregivers in medical protocols and resident care.',
+    date: 'August 2026'
   },
   {
     id: 'gal-5',
-    title: 'Sunlit Willow Wing Suite Interior',
-    category: 'Facility Photos',
-    imageUrl: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80',
-    description: 'A glimpse inside one of our newly refurbished private residential suites.',
-    date: 'June 30, 2026'
+    title: 'Intergenerational Music & Storytelling Afternoon',
+    category: 'Events',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1gkDmKJX_xRuLrHFkgDgn3OKa-rrzOpP6',
+    description: 'A lively cultural celebration bringing together residents, young learners, and care staff.',
+    date: 'August 2026'
   },
   {
     id: 'gal-6',
-    title: 'Grandparents & Grandchildren Reunion Afternoon',
+    title: 'Family Visitation Lounge & Reception',
     category: 'Family Visitations',
-    imageUrl: 'https://images.unsplash.com/photo-1543269865-cbf427effbad?auto=format&fit=crop&w=800&q=80',
-    description: 'Heartwarming family visitation moment in the hospitality parlor with afternoon tea.',
-    date: 'June 22, 2026'
+    imageUrl: 'https://lh3.googleusercontent.com/d/1oMKybb-tiOmw2ZD9e02sigUIglF8VXE-',
+    description: 'Warm, private hospitality parlor for families visiting their loved ones at Samanthasappy Home.',
+    date: 'August 2026'
+  },
+  {
+    id: 'gal-7',
+    title: 'Senior Recreational Games & Cognitive Engagement',
+    category: 'Elderly Care Activities',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1i3GJTwkmGi7WdLfTx_XjJ42hliC3NFFi',
+    description: 'Fun memory exercises, board games, and group social interaction tailored for senior cognitive health.',
+    date: 'July 2026'
+  },
+  {
+    id: 'gal-8',
+    title: 'Children Outdoor Play Park & Sunshine Activities',
+    category: "Children's Activities",
+    imageUrl: 'https://lh3.googleusercontent.com/d/1cwXoj6JmP6lKVqZxsUgtqBpMo8mm5pud',
+    description: 'Outdoor physical development and group games in our safe, soft-impact playground.',
+    date: 'July 2026'
+  },
+  {
+    id: 'gal-9',
+    title: 'Emergency Nursing & First Aid Response Demo',
+    category: 'Training Sessions',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1dI1sSsI692kFuoAhyDg4WgPfvOjyYUK7',
+    description: 'Regular staff drills covering emergency triage, vital sign assessment, and safeguarding protocols.',
+    date: 'July 2026'
+  },
+  {
+    id: 'gal-10',
+    title: 'Resident Dining Hall & Chef-Prepared Nutrition',
+    category: 'Facility Photos',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1w6G7q5mbHmjWOhDMbYhVJEg6zda_Jw7X',
+    description: 'Nutritious, dietary-balanced meal service served in our spacious, sunlit dining hall.',
+    date: 'July 2026'
+  },
+  {
+    id: 'gal-11',
+    title: 'Grandparents Day Celebration & Cultural Dance',
+    category: 'Events',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1rPyM8MqDWmtjnTksAUpa_AgnAr3NDuvo',
+    description: 'Joyful family celebration showcasing resident talents, traditional music, and refreshments.',
+    date: 'July 2026'
+  },
+  {
+    id: 'gal-12',
+    title: 'Specialist Memory Care & Dementia Support Group',
+    category: 'Elderly Care Activities',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1QdWxgriykS5mFoAyeMO5t5v8fuDjLO6w',
+    description: 'Compassionate multi-sensory therapy and gentle guided memory exercises with certified nurses.',
+    date: 'July 2026'
+  },
+  {
+    id: 'gal-13',
+    title: 'Child Art Exploration & Finger Painting Workshop',
+    category: "Children's Activities",
+    imageUrl: 'https://lh3.googleusercontent.com/d/1gyNHSz3Ytxnhz4nbusrvUruduKaZuB5H',
+    description: 'Nurturing creativity and fine motor skills through guided arts, crafts, and color mixing.',
+    date: 'July 2026'
+  },
+  {
+    id: 'gal-14',
+    title: 'Private Resident Suite Interior & Living Area',
+    category: 'Facility Photos',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1Zm9tHwe0Pnlg6HYrvchnPJieYgwJ_Shw',
+    description: 'Comfortable, fully furnished private room with climate control and 24/7 emergency call response.',
+    date: 'July 2026'
+  },
+  {
+    id: 'gal-15',
+    title: 'Afternoon Tea & Family Conversation Session',
+    category: 'Family Visitations',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1WeBZuvPv4hvDTC8-lrcwbVapDx8-C3WU',
+    description: 'Loved ones gathering over tea and snacks in our dedicated indoor visitor parlors.',
+    date: 'July 2026'
+  },
+  {
+    id: 'gal-16',
+    title: 'Staff Ethics, Compassion & Hygiene Orientation',
+    category: 'Training Sessions',
+    imageUrl: 'https://lh3.googleusercontent.com/d/10jp2vAsPiE7WzK9GVSAz6vrVcaRyyykq',
+    description: 'Comprehensive staff development focused on dignity in care, safety hygiene, and patient rights.',
+    date: 'July 2026'
+  },
+  {
+    id: 'gal-17',
+    title: 'Outdoor Garden Stroll & Horticulture Therapy',
+    category: 'Elderly Care Activities',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1GktuTKVoc6LbLqdR-YD2zeq3H7hgGOgM',
+    description: 'Relaxing walks through lush green pathways, promoting physical activity and fresh air.',
+    date: 'June 2026'
+  },
+  {
+    id: 'gal-18',
+    title: 'Children Early Literacy & Phonetics Reading Hour',
+    category: "Children's Activities",
+    imageUrl: 'https://lh3.googleusercontent.com/d/1JsntuyG5e-ZhDPfgN9cNe8dCuR8Yd1jZ',
+    description: 'Interactive group reading sessions designed to expand vocabulary and build confidence.',
+    date: 'June 2026'
+  },
+  {
+    id: 'gal-19',
+    title: 'Annual Staff Appreciation & Excellence Awards',
+    category: 'Events',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1athE0jBl59aoj8cKYScUd-9zppMOP0_P',
+    description: 'Recognizing outstanding dedication, compassion, and healthcare excellence among our team.',
+    date: 'June 2026'
+  },
+  {
+    id: 'gal-20',
+    title: 'Hydrotherapy & Physiotherapy Exercise Room',
+    category: 'Facility Photos',
+    imageUrl: 'https://lh3.googleusercontent.com/d/12mV_7thuxWPoXXJrzpfrCxOWQaHRpUIZ',
+    description: 'State-of-the-art rehabilitation equipment assisting seniors in regaining strength and balance.',
+    date: 'June 2026'
+  },
+  {
+    id: 'gal-21',
+    title: 'Weekend Family Picnic & Outdoor Games',
+    category: 'Family Visitations',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1hK2RhjOfvhsficKOpIoXOfu0ZOCiwXea',
+    description: 'Families enjoying quality bonding time in our spacious, gated garden pavilion.',
+    date: 'June 2026'
+  },
+  {
+    id: 'gal-22',
+    title: 'Senior Group Crafts & Knitting Circle',
+    category: 'Elderly Care Activities',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1vwQtDeic9odcUHtuPwE18WsmAjIKnl31',
+    description: 'Creative handcrafts, loom weaving, and social conversation among senior residents.',
+    date: 'June 2026'
+  },
+  {
+    id: 'gal-23',
+    title: 'Music Movement & Rhythmic Exercise for Kids',
+    category: "Children's Activities",
+    imageUrl: 'https://lh3.googleusercontent.com/d/1TpRvbgHsXooDjCCGMlQ4AL33nXHpVD1k',
+    description: 'Active musical games encouraging motor skills coordination and teamwork.',
+    date: 'June 2026'
+  },
+  {
+    id: 'gal-24',
+    title: 'Caregiver Medication Safety & Administration Class',
+    category: 'Training Sessions',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1geuoNYnUzfXcWxt0Qzus1UhdgoZFNgRG',
+    description: 'Instruction on precise dosage management, chart documentation, and safety checks.',
+    date: 'June 2026'
+  },
+  {
+    id: 'gal-25',
+    title: 'Holiday Festival & Community Social Gathering',
+    category: 'Events',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1OcpwXbVFEZVI__nREFJhRSMpQlJ-Y7xq',
+    description: 'Seasonal holiday feast with live musical performances and festive decor across campus.',
+    date: 'May 2026'
+  },
+  {
+    id: 'gal-26',
+    title: 'Quiet Reflection Lounge & Reading Nook',
+    category: 'Facility Photos',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1WOPu-fz5Oh3MhDk1Pv9S7NlGbs-BIvjZ',
+    description: 'Peaceful library corner stocked with books, magazines, and comfortable armchairs.',
+    date: 'May 2026'
+  },
+  {
+    id: 'gal-27',
+    title: 'Multi-Generational Story Hour with Seniors & Kids',
+    category: 'Elderly Care Activities',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1Fp--30DGbbs1KuUOPKxvUbBR8ciB_8BE',
+    description: 'Heartwarming moments as resident elders read favorite children stories to early learners.',
+    date: 'May 2026'
+  },
+  {
+    id: 'gal-28',
+    title: 'Sensory Soft Play Zone for Toddlers',
+    category: "Children's Activities",
+    imageUrl: 'https://lh3.googleusercontent.com/d/1r-C3w-IK2n6Db6ucUj0hnkNLRCPGTkcO',
+    description: 'Safe, padded environment equipped with tactile toys and developmental play structures.',
+    date: 'May 2026'
+  },
+  {
+    id: 'gal-29',
+    title: 'Infection Prevention & Clinical Sanitation Seminar',
+    category: 'Training Sessions',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1zvsGjb9c6ynucciVfnTJ_Oyf9i4t8kI4',
+    description: 'Professional development seminar on maintaining hospital-grade hygiene standards.',
+    date: 'May 2026'
+  },
+  {
+    id: 'gal-30',
+    title: 'Birthday Celebration & Cake Cutting Party',
+    category: 'Family Visitations',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1egGa6HcNQRFS2gCqd_vEtODSVGVsqX0n',
+    description: 'Celebrating resident milestones surrounded by family members, friends, and care staff.',
+    date: 'May 2026'
+  },
+  {
+    id: 'gal-31',
+    title: 'Landscape Architecture & Courtyard Security Entry',
+    category: 'Facility Photos',
+    imageUrl: 'https://lh3.googleusercontent.com/d/14nqoXxWdV5yGzxdAMJJGawM6DlEhis5B',
+    description: 'Gated entrance with 24/7 monitored access control ensuring resident safety.',
+    date: 'May 2026'
+  },
+  {
+    id: 'gal-32',
+    title: 'Senior Yoga & Guided Breathing Meditation',
+    category: 'Elderly Care Activities',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1Kb46PG0O3WG4MAM_FbmEZN_Rq7CeHx_E',
+    description: 'Gentle chair yoga and breathing exercises tailored for joint health and stress relief.',
+    date: 'April 2026'
+  },
+  {
+    id: 'gal-33',
+    title: 'Montessori Building Blocks & STEM Discovery',
+    category: "Children's Activities",
+    imageUrl: 'https://lh3.googleusercontent.com/d/1F0vjwxV8fl_aVlbsxbyh7_etL3skAMHz',
+    description: 'Children problem-solving with geometric blocks and interactive learning kits.',
+    date: 'April 2026'
+  },
+  {
+    id: 'gal-34',
+    title: 'First Aid Triage & Rapid Medical Response Training',
+    category: 'Training Sessions',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1oq1khP8Wp8Pic84V0niMX73oejF5Hd54',
+    description: 'Interactive simulations training staff on quick action during medical emergencies.',
+    date: 'April 2026'
+  },
+  {
+    id: 'gal-35',
+    title: 'Spring Garden Concert & Acoustic Guitar Live Performance',
+    category: 'Events',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1BFs2pnTE1aMsQiqwkfONuYixuSTbP42I',
+    description: 'Outdoor musical entertainment bringing joy and classic melodies to our residents.',
+    date: 'April 2026'
+  },
+  {
+    id: 'gal-36',
+    title: 'Nurse Station & Central Health Monitoring Desk',
+    category: 'Facility Photos',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1ekdtjQQrUNSOgum5yzn139oWzyr7iZI2',
+    description: 'Modern nursing workstation equipped with digital health log systems for patient care.',
+    date: 'April 2026'
+  },
+  {
+    id: 'gal-37',
+    title: 'Family Reunion Luncheon in Private Dining Room',
+    category: 'Family Visitations',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1wWFBI9C6lWQtgB271q8os33-c9xnP_lE',
+    description: 'Reservable private dining space for special family gatherings and anniversaries.',
+    date: 'April 2026'
+  },
+  {
+    id: 'gal-38',
+    title: 'Elderly Gardening & Flower Potting Activity',
+    category: 'Elderly Care Activities',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1-94tBlqIJ1w6S4bKsNbb08bAJlD1_oaH',
+    description: 'Therapeutic gardening sessions where residents plant flowers and care for herbs.',
+    date: 'March 2026'
+  },
+  {
+    id: 'gal-39',
+    title: 'Child Clay Modeling & Sculpture Corner',
+    category: "Children's Activities",
+    imageUrl: 'https://lh3.googleusercontent.com/d/1BV8TrtbP1XrM8FXSVrkIv4cu0Yno9l-E',
+    description: 'Expressive sculpture play developing hand dexterity and imaginative thinking.',
+    date: 'March 2026'
+  },
+  {
+    id: 'gal-40',
+    title: 'Caregiver Communication & Empathy Leadership',
+    category: 'Training Sessions',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1owyN23346eZv4FXog92pL1OXgqT0mMub',
+    description: 'Interactive group discussions on empathetic patient interaction and family care liaison.',
+    date: 'March 2026'
+  },
+  {
+    id: 'gal-41',
+    title: 'Community Wellness Fair & Free Health Checks',
+    category: 'Events',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1hgoHqwGoYMq1ovpDZkEbUGMD-aeZmje7',
+    description: 'Health awareness outreach providing blood pressure checks, consultations, and advice.',
+    date: 'March 2026'
+  },
+  {
+    id: 'gal-42',
+    title: 'Outdoor Relaxation Veranda & Sun Lounge',
+    category: 'Facility Photos',
+    imageUrl: 'https://lh3.googleusercontent.com/d/10Zi8YtHhQ8P7_T4vZ4fhKLgXW0PvSh1c',
+    description: 'Shaded outdoor sitting area providing fresh air and scenic views of the gardens.',
+    date: 'March 2026'
+  },
+  {
+    id: 'gal-43',
+    title: 'Generational Legacy Story Recording & Interviews',
+    category: 'Family Visitations',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1V4dvHGyT03J5-j8H06d9jB0oibYFqBTE',
+    description: 'Families recording life stories and audio memories with resident elders for posterity.',
+    date: 'March 2026'
+  },
+  {
+    id: 'gal-44',
+    title: 'Senior Board Game Tournament & Social Afternoon',
+    category: 'Elderly Care Activities',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1bZ56OnQxRkfofJbn8cdqMLci-kAkRuFq',
+    description: 'Friendly chess, scrabble, and card matches in our active social lounge.',
+    date: 'February 2026'
+  },
+  {
+    id: 'gal-45',
+    title: 'Children Outdoor Sandbox & Nature Exploration',
+    category: "Children's Activities",
+    imageUrl: 'https://lh3.googleusercontent.com/d/1dIeHVBPJ_Z4qUvErtJW6EDAV-ZyV8y-X',
+    description: 'Tactile nature play and outdoor sandbox building under attentive teacher supervision.',
+    date: 'February 2026'
+  },
+  {
+    id: 'gal-46',
+    title: 'Senior Care Triage & Geriatric Specialization',
+    category: 'Training Sessions',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1rHS5-a3oQQbL_WkTp6F2HYVbTI5glKmU',
+    description: 'Advanced training modules on specialized geriatric nursing and palliative care best practices.',
+    date: 'February 2026'
+  },
+  {
+    id: 'gal-47',
+    title: 'Cultural Heritage Day & Traditional Dress Celebration',
+    category: 'Events',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1KPJRjN0DnFhariN-GuoklTm1wfdKrWxt',
+    description: 'Honoring diverse cultural traditions through attire, traditional dishes, and story sharing.',
+    date: 'February 2026'
+  },
+  {
+    id: 'gal-48',
+    title: 'Hydro-Massage Bath & Assisted Personal Care Suite',
+    category: 'Facility Photos',
+    imageUrl: 'https://lh3.googleusercontent.com/d/11p53xpUyve6WOSqE0dh7ZdP83DA3eqDT',
+    description: 'Private, accessible personal hygiene suite equipped with therapeutic hydro-massage tubs.',
+    date: 'February 2026'
+  },
+  {
+    id: 'gal-49',
+    title: 'Weekend Family Coffee & Pastry Hour',
+    category: 'Family Visitations',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1SF6vIa-X76O9Ql4cWurHYB4hkXSSNGBs',
+    description: 'Complimentary barista drinks and fresh baked treats enjoyed during weekend visitations.',
+    date: 'February 2026'
+  },
+  {
+    id: 'gal-50',
+    title: 'Aromatherapy & Sensory Relaxation Session',
+    category: 'Elderly Care Activities',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1Sa-FJmIK-vSS-AavY9veDG1j2nHDfZuP',
+    description: 'Calming sensory rooms featuring soft lighting, essential oils, and soothing background soundscapes.',
+    date: 'January 2026'
+  },
+  {
+    id: 'gal-51',
+    title: 'Early Childhood Puppet Theater & Story Presentation',
+    category: "Children's Activities",
+    imageUrl: 'https://lh3.googleusercontent.com/d/1GHBN-_0xBEU-4ogNON9BoiYYAMN0JDaY',
+    description: 'Engaging puppet shows fostering imagination, emotional expression, and social skills.',
+    date: 'January 2026'
+  },
+  {
+    id: 'gal-52',
+    title: 'Caregiver Mental Health & Well-being Peer Workshop',
+    category: 'Training Sessions',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1rz70fT6ODlrFuZg1o_uEHGRToMe0-x9X',
+    description: 'Supportive group sessions empowering our care staff with stress management and wellness tools.',
+    date: 'January 2026'
+  },
+  {
+    id: 'gal-53',
+    title: 'New Year Gratitude Gathering & Staff Choir',
+    category: 'Events',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1A2xXi-V0vd7I8OF3i8kNB0bNPxOFrz9Z',
+    description: 'Welcoming the new year with inspirational choir singing and community meal sharing.',
+    date: 'January 2026'
+  },
+  {
+    id: 'gal-54',
+    title: 'Main Facility Courtyard Architecture & Garden Paths',
+    category: 'Facility Photos',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1URoOPnpXUQJP-AL5F0sMO_JKD8bJIzjB',
+    description: 'Wheelchair-accessible paved walking loops surrounding beautiful flower beds and shade trees.',
+    date: 'January 2026'
+  },
+  {
+    id: 'gal-55',
+    title: 'Grandparent & Grandchild Portrait Photography Day',
+    category: 'Family Visitations',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1THYgelC50fsdBryHTaOYX5XTo5yvIsbM',
+    description: 'Professional memory portraits gifted to families during special visitation days.',
+    date: 'January 2026'
+  },
+  {
+    id: 'gal-56',
+    title: 'Senior Choir Practice & Sing-Along Group',
+    category: 'Elderly Care Activities',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1zmf99tplaxw1HSMSjAwGKpC8osO6DoE1',
+    description: 'Residents lifting their voices together in weekly vocal rehearsals and classic songs.',
+    date: 'December 2025'
+  },
+  {
+    id: 'gal-57',
+    title: 'Children Holiday Crafting & Ornament Decorating',
+    category: "Children's Activities",
+    imageUrl: 'https://lh3.googleusercontent.com/d/1ev-LsTh8ugNqZ4EeX9USoRWvD0_-YLFj',
+    description: 'Festive craft making where kids create handmade cards and decorations for resident suites.',
+    date: 'December 2025'
+  },
+  {
+    id: 'gal-58',
+    title: 'Certified Caregiver Graduation Ceremony',
+    category: 'Training Sessions',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1v1Fme3l1bn97Jsb3S5Y07EC3d3mYwNsM',
+    description: 'Celebrating trainees completing their formal health & social care certification program.',
+    date: 'December 2025'
+  },
+  {
+    id: 'gal-59',
+    title: 'End of Year Carol Night & Candlelight Vigil',
+    category: 'Events',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1hUAhj5rvR8qbU-7eOT-0QQnmBdHBWlyR',
+    description: 'A magical evening of candlelight carols, warmth, and fellowship across our community.',
+    date: 'December 2025'
+  },
+  {
+    id: 'gal-60',
+    title: 'Comfort Suite Living Room & Family Seating',
+    category: 'Facility Photos',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1NlEsd_NNlIwyjV99iy_evmIWxGiC_jVM',
+    description: 'Elegantly appointed residential suites designed for safety, warmth, and independence.',
+    date: 'December 2025'
+  },
+  {
+    id: 'gal-61',
+    title: 'Multi-Generational Holiday Feast & Gift Exchange',
+    category: 'Family Visitations',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1kky0d5Xb-CMTZkBf040SjKVng-Q34W6S',
+    description: 'Joyous holiday dinner bringing families together with delicious festive meals.',
+    date: 'December 2025'
+  },
+  {
+    id: 'gal-62',
+    title: 'Sunlit Solarium & Afternoon Conversation Lounge',
+    category: 'Facility Photos',
+    imageUrl: 'https://lh3.googleusercontent.com/d/1LsO6iwSRQt128hY8x9mrW_n4hMVALWGm',
+    description: 'Bright glass-enclosed solarium ideal for social visits, afternoon tea, and peaceful rest.',
+    date: 'December 2025'
   }
 ];
 
