@@ -27,11 +27,20 @@ import {
 } from 'lucide-react';
 import { INITIAL_FACILITIES } from '../data/initialData';
 
+interface HeroSlide {
+  driveId: string;
+  image: string;
+  title: string;
+  subtitle: string;
+  tag: string;
+  objectPosition?: string;
+}
+
 export const HomePage: React.FC = () => {
   const { setCurrentPage, setIsApplyModalOpen, setSelectedFacilityId } = useApp();
 
   // Hero carousel images
-  const heroSlides = [
+  const heroSlides: HeroSlide[] = [
     {
       driveId: '1RD_YHQAFkpt9Z7RhI-wIRuTXbR4VrQeL',
       image: 'https://lh3.googleusercontent.com/d/1RD_YHQAFkpt9Z7RhI-wIRuTXbR4VrQeL=s1600',
@@ -188,7 +197,7 @@ export const HomePage: React.FC = () => {
                   target.src = `https://drive.google.com/uc?export=view&id=${slide.driveId}`;
                 }
               }}
-              className="w-full h-full object-cover object-center filter brightness-[0.45]"
+              className={`w-full h-full object-cover ${slide.objectPosition || 'object-top'} filter brightness-[0.45]`}
             />
           </div>
         ))}

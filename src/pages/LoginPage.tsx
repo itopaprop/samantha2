@@ -6,7 +6,9 @@ import {
   Mail, 
   KeyRound, 
   Heart, 
-  CheckCircle2
+  CheckCircle2,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
@@ -15,6 +17,7 @@ export const LoginPage: React.FC = () => {
   const [selectedRole, setSelectedRole] = useState<UserRole>('Admin');
   const [email, setEmail] = useState('admin@samanthasappy.com');
   const [password, setPassword] = useState('@samantha');
+  const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [forgotModal, setForgotModal] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
@@ -142,15 +145,24 @@ export const LoginPage: React.FC = () => {
                   Forgot Password?
                 </button>
               </div>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <div className="relative flex items-center">
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3 z-10 pointer-events-none" />
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
+                  className="w-full pl-9 pr-20 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer select-none"
+                  title={showPassword ? 'Hide password' : 'View password'}
+                >
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5 text-slate-500" /> : <Eye className="w-3.5 h-3.5 text-slate-500" />}
+                  <span>{showPassword ? 'Hide' : 'View'}</span>
+                </button>
               </div>
             </div>
 
