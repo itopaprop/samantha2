@@ -7,7 +7,10 @@ import {
   Shift, 
   Message, 
   ActivityLog, 
-  ConsultationBooking 
+  ConsultationBooking,
+  CommunityEvent,
+  JobVacancy,
+  GalleryItem
 } from '../types';
 import { 
   INITIAL_USERS, 
@@ -15,7 +18,10 @@ import {
   INITIAL_RESIDENTS, 
   INITIAL_SHIFTS, 
   INITIAL_MESSAGES, 
-  INITIAL_ACTIVITY_LOGS 
+  INITIAL_ACTIVITY_LOGS,
+  INITIAL_GALLERY,
+  INITIAL_JOB_VACANCIES,
+  INITIAL_COMMUNITY_EVENTS
 } from '../data/initialData';
 
 export type PageView = 
@@ -23,6 +29,7 @@ export type PageView =
   | 'about' 
   | 'services' 
   | 'facilities' 
+  | 'events'
   | 'gallery' 
   | 'careers' 
   | 'contact' 
@@ -37,17 +44,17 @@ interface AppContextType {
   setCurrentPage: (page: PageView) => void;
   currentUser: User | null;
   users: User[];
-  loginUser: (email: string, role: UserRole) => boolean;
+  loginUser: (email: string, role: UserRole, password?: string) => boolean;
   switchDemoRole: (role: UserRole) => void;
   logout: () => void;
   
   residents: Resident[];
-  addResident: (resident: Omit<Resident, 'id' | 'admissionDate'>) => void;
+  addResident: (resident: Omit<Resident, 'id' | 'admissionDate'>) => { resident: Resident; relativeUser: User; tempPassword: string };
   updateResident: (id: string, updated: Partial<Resident>) => void;
   deleteResident: (id: string) => void;
   
   staff: StaffMember[];
-  addStaff: (staffMember: Omit<StaffMember, 'id' | 'joinDate' | 'assignedResidentsCount'>) => void;
+  addStaff: (staffMember: Omit<StaffMember, 'id' | 'joinDate' | 'assignedResidentsCount'>) => { user: User; tempPassword: string };
   updateStaff: (id: string, updated: Partial<StaffMember>) => void;
   deleteStaff: (id: string) => void;
   
@@ -63,6 +70,19 @@ interface AppContextType {
   activityLogs: ActivityLog[];
   consultationBookings: ConsultationBooking[];
   bookConsultation: (booking: Omit<ConsultationBooking, 'id' | 'status' | 'createdAt'>) => void;
+  
+  events: CommunityEvent[];
+  addEvent: (event: Omit<CommunityEvent, 'id'>) => void;
+  deleteEvent: (id: string) => void;
+
+  jobs: JobVacancy[];
+  addJob: (job: Omit<JobVacancy, 'id'>) => void;
+  deleteJob: (id: string) => void;
+
+  galleryItems: GalleryItem[];
+  addGalleryItem: (item: Omit<GalleryItem, 'id'>) => void;
+  addMultipleGalleryItems: (items: Omit<GalleryItem, 'id'>[]) => void;
+  deleteGalleryItem: (id: string) => void;
   
   toastMessage: string | null;
   showToast: (message: string) => void;
@@ -83,7 +103,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Load initial or stored states
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem('shh_users');
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
+    if (saved) {
+      const parsed: User[] = JSON.parse(saved);
+      return parsed.map(u => u.role === 'Admin' ? { ...u, email: 'admin@samanthasappy.com' } : u);
+    }
+    return INITIAL_USERS;
   });
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -121,47 +145,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : [];
   });
 
+  const [events, setEvents] = useState<CommunityEvent[]>(() => {
+    const saved = localStorage.getItem('shh_events');
+    return saved ? JSON.parse(saved) : INITIAL_COMMUNITY_EVENTS;
+  });
+
+  const [jobs, setJobs] = useState<JobVacancy[]>(() => {
+    const saved = localStorage.getItem('shh_jobs');
+    return saved ? JSON.parse(saved) : INITIAL_JOB_VACANCIES;
+  });
+
+  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(() => {
+    const saved = localStorage.getItem('shh_gallery');
+    return saved ? JSON.parse(saved) : INITIAL_GALLERY;
+  });
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isConsultationModalOpen, setIsConsultationModalOpen] = useState(false);
   const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
   const [selectedFacilityId, setSelectedFacilityId] = useState<string | null>(null);
 
+  // Helper for safe localStorage write
+  const safeSave = (key: string, data: any) => {
+    try {
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (err) {
+      console.warn(`Failed to save ${key} to localStorage:`, err);
+    }
+  };
+
   // Sync to localStorage
   useEffect(() => {
-    localStorage.setItem('shh_users', JSON.stringify(users));
+    safeSave('shh_users', users);
   }, [users]);
 
   useEffect(() => {
     if (currentUser) {
-      localStorage.setItem('shh_current_user', JSON.stringify(currentUser));
+      safeSave('shh_current_user', currentUser);
     } else {
       localStorage.removeItem('shh_current_user');
     }
   }, [currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('shh_residents', JSON.stringify(residents));
+    safeSave('shh_residents', residents);
   }, [residents]);
 
   useEffect(() => {
-    localStorage.setItem('shh_staff', JSON.stringify(staff));
+    safeSave('shh_staff', staff);
   }, [staff]);
 
   useEffect(() => {
-    localStorage.setItem('shh_shifts', JSON.stringify(shifts));
+    safeSave('shh_shifts', shifts);
   }, [shifts]);
 
   useEffect(() => {
-    localStorage.setItem('shh_messages', JSON.stringify(messages));
+    safeSave('shh_messages', messages);
   }, [messages]);
 
   useEffect(() => {
-    localStorage.setItem('shh_activity_logs', JSON.stringify(activityLogs));
+    safeSave('shh_activity_logs', activityLogs);
   }, [activityLogs]);
 
   useEffect(() => {
-    localStorage.setItem('shh_consultations', JSON.stringify(consultationBookings));
+    safeSave('shh_consultations', consultationBookings);
   }, [consultationBookings]);
+
+  useEffect(() => {
+    safeSave('shh_events', events);
+  }, [events]);
+
+  useEffect(() => {
+    safeSave('shh_jobs', jobs);
+  }, [jobs]);
+
+  useEffect(() => {
+    safeSave('shh_gallery', galleryItems);
+  }, [galleryItems]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -170,23 +230,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, 4000);
   };
 
-  const loginUser = (email: string, role: UserRole): boolean => {
-    const found = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.role === role);
-    if (found) {
-      setCurrentUser(found);
-      setCurrentPage('dashboard');
-      showToast(`Welcome back, ${found.name}! Logged in as ${found.role}.`);
-      return true;
+  const loginUser = (email: string, role: UserRole, password?: string): boolean => {
+    const cleanEmail = email.trim().toLowerCase();
+    
+    // 1. Find registered user by email
+    const registeredUser = users.find(u => u.email.trim().toLowerCase() === cleanEmail);
+
+    if (!registeredUser) {
+      showToast(`Login Failed: No registered account found for email '${email}'.`);
+      return false;
     }
-    // If not found in exact email, find any user with that role or create on-the-fly
-    const roleUser = users.find(u => u.role === role);
-    if (roleUser) {
-      setCurrentUser(roleUser);
-      setCurrentPage('dashboard');
-      showToast(`Logged in as ${roleUser.name} (${roleUser.role}).`);
-      return true;
+
+    // 2. Strict Role Enforcement:
+    // Anyone registered as Admin can ONLY login as Admin.
+    // Anyone registered as Staff can ONLY login as Staff.
+    // Anyone registered as Resident Relative can ONLY login as Resident Relative.
+    if (registeredUser.role !== role) {
+      showToast(`Access Denied: '${registeredUser.email}' is a registered ${registeredUser.role} account. You cannot sign in through the ${role} portal.`);
+      return false;
     }
-    return false;
+
+    // 3. Strict Password Verification
+    let expectedPassword = registeredUser.password;
+    if (!expectedPassword) {
+      if (registeredUser.role === 'Admin') expectedPassword = '@samantha';
+      else if (registeredUser.role === 'Staff') expectedPassword = '@staff123';
+      else if (registeredUser.role === 'Resident Relative') expectedPassword = '@relative123';
+    }
+
+    if (password && expectedPassword && password.trim() !== expectedPassword.trim()) {
+      showToast(`Login Failed: Incorrect password entered for ${cleanEmail}.`);
+      return false;
+    }
+
+    // 4. Authenticate & Grant Access
+    setCurrentUser(registeredUser);
+    setCurrentPage('dashboard');
+    showToast(`Welcome back, ${registeredUser.name}! Signed in to ${registeredUser.role} Portal.`);
+    return true;
   };
 
   const switchDemoRole = (role: UserRole) => {
@@ -204,8 +285,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('You have been logged out safely.');
   };
 
+  const generateTempPassword = (): string => {
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    let randStr = '';
+    for (let i = 0; i < 4; i++) {
+      randStr += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return `SSH@${randStr}`;
+  };
+
   const addResident = (resData: Omit<Resident, 'id' | 'admissionDate'>) => {
     const newId = `res-${Date.now().toString().slice(-4)}`;
+    const tempPassword = generateTempPassword();
+
     const newResident: Resident = {
       ...resData,
       id: newId,
@@ -224,17 +316,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }));
     }
 
+    // Determine primary relative name & registered email username
+    const ref1 = resData.references?.[0];
+    const relativeName = ref1?.name || resData.emergencyContact.name || 'Primary Relative';
+    const cleanResidentName = resData.fullName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const relativeEmail = (ref1?.email || resData.emergencyContact.name ? `${cleanResidentName}.relative@samanthasappy.com` : `relative.${cleanResidentName}@samanthasappy.com`).trim().toLowerCase();
+    const relativePhone = ref1?.phone || resData.emergencyContact.phone || '+234 706 933 2193';
+    const relativeRelationship = ref1?.relationship || resData.emergencyContact.relationship || 'Primary Family Contact';
+
+    const newRelativeUser: User = {
+      id: `usr-rel-${Date.now().toString().slice(-4)}`,
+      name: relativeName,
+      email: relativeEmail,
+      phone: relativePhone,
+      role: 'Resident Relative',
+      relationship: relativeRelationship,
+      residentLinkedId: newId,
+      password: tempPassword,
+      avatar: ref1?.photoUrl || undefined,
+    };
+    setUsers(prev => [...prev, newRelativeUser]);
+
+    // Dispatch welcome email / message to relative registered email
+    const welcomeMsg: Message = {
+      id: `msg-welcome-rel-${Date.now()}`,
+      senderId: currentUser?.id || 'usr-admin-1',
+      senderName: currentUser?.name || 'Managing Director',
+      senderRole: 'Admin',
+      receiverId: newRelativeUser.id,
+      receiverName: newRelativeUser.name,
+      receiverRole: 'Resident Relative',
+      subject: `🎉 Family Care Portal Access for ${newResident.fullName}`,
+      content: `Dear ${newRelativeUser.name},\n\nYour relative ${newResident.fullName} has been registered into Samanthasappy Home Care. An account has been created for you to track care updates, view health vitals, and communicate with caregivers.\n\nYour Portal Login Credentials:\n- Username (Registered Email): ${newRelativeUser.email}\n- Temporary Password: ${tempPassword}\n- Linked Resident: ${newResident.fullName}\n\nPlease log in to access your family care dashboard.\n\nWarm regards,\nSamanthasappy Home Administration`,
+      isRead: false,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
+    };
+    setMessages(prev => [welcomeMsg, ...prev]);
+
     // Add activity log
     const newLog: ActivityLog = {
       id: `log-${Date.now()}`,
-      title: 'New Resident Added',
-      description: `Added ${newResident.fullName} under category ${newResident.careCategory}.`,
+      title: 'New Resident & Relative Account Registered',
+      description: `Added ${newResident.fullName}. Relative credentials created for ${newRelativeUser.email}.`,
       category: 'Admission',
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
       performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
     };
     setActivityLogs(prev => [newLog, ...prev]);
-    showToast(`Resident ${newResident.fullName} added successfully.`);
+    showToast(`Resident ${newResident.fullName} & Relative account registered.`);
+
+    return { resident: newResident, relativeUser: newRelativeUser, tempPassword };
   };
 
   const updateResident = (id: string, updated: Partial<Resident>) => {
@@ -252,6 +383,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addStaff = (staffData: Omit<StaffMember, 'id' | 'joinDate' | 'assignedResidentsCount'>) => {
     const newId = `usr-staff-${Date.now().toString().slice(-4)}`;
+    const tempPassword = generateTempPassword();
+
     const newStaff: StaffMember = {
       ...staffData,
       id: newId,
@@ -265,24 +398,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newUser: User = {
       id: newId,
       name: newStaff.name,
-      email: newStaff.email,
+      email: newStaff.email.trim().toLowerCase(),
       phone: newStaff.phone,
       role: 'Staff',
       position: newStaff.position,
       avatar: newStaff.avatar,
+      password: tempPassword,
     };
     setUsers(prev => [...prev, newUser]);
 
+    // Dispatch welcome email / message to staff registered email
+    const welcomeMsg: Message = {
+      id: `msg-welcome-staff-${Date.now()}`,
+      senderId: currentUser?.id || 'usr-admin-1',
+      senderName: currentUser?.name || 'Managing Director',
+      senderRole: 'Admin',
+      receiverId: newUser.id,
+      receiverName: newUser.name,
+      receiverRole: 'Staff',
+      subject: '🎉 Welcome to Samanthasappy Home - Staff Account Login Credentials',
+      content: `Hello ${newUser.name},\n\nWelcome to the Samanthasappy Home Care Team! Your official staff portal account has been registered.\n\nYour Login Credentials:\n- Username (Login Email): ${newUser.email}\n- Temporary Password: ${tempPassword}\n- Access Role: Staff (${newStaff.position})\n\nPlease keep these credentials secure and change your password upon your first login.\n\nWarm regards,\nSamanthasappy Home Administration`,
+      isRead: false,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
+    };
+    setMessages(prev => [welcomeMsg, ...prev]);
+
     const newLog: ActivityLog = {
       id: `log-${Date.now()}`,
-      title: 'New Staff Member Registered',
-      description: `Registered ${newStaff.name} as ${newStaff.position}.`,
+      title: 'New Staff Member Registered & Credentials Dispatched',
+      description: `Registered ${newStaff.name} as ${newStaff.position} (${newUser.email}).`,
       category: 'Staff',
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
       performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
     };
     setActivityLogs(prev => [newLog, ...prev]);
     showToast(`Staff member ${newStaff.name} registered.`);
+
+    return { user: newUser, tempPassword };
   };
 
   const updateStaff = (id: string, updated: Partial<StaffMember>) => {
@@ -380,6 +532,109 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Consultation request submitted successfully! Our care team will contact you shortly.');
   };
 
+  const addEvent = (eventData: Omit<CommunityEvent, 'id'>) => {
+    const newEvent: CommunityEvent = {
+      ...eventData,
+      id: `evt-${Date.now()}`,
+    };
+    setEvents(prev => [newEvent, ...prev]);
+
+    const newLog: ActivityLog = {
+      id: `log-${Date.now()}`,
+      title: 'Community Event Posted',
+      description: `Posted new event "${eventData.title}" scheduled for ${eventData.date}.`,
+      category: 'General',
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
+    };
+    setActivityLogs(prev => [newLog, ...prev]);
+    showToast(`Event "${eventData.title}" posted successfully.`);
+  };
+
+  const deleteEvent = (id: string) => {
+    const target = events.find(e => e.id === id);
+    setEvents(prev => prev.filter(e => e.id !== id));
+    if (target) {
+      showToast(`Removed event "${target.title}".`);
+    }
+  };
+
+  const addJob = (jobData: Omit<JobVacancy, 'id'>) => {
+    const newJob: JobVacancy = {
+      ...jobData,
+      id: `job-${Date.now()}`,
+    };
+    setJobs(prev => [newJob, ...prev]);
+
+    const newLog: ActivityLog = {
+      id: `log-${Date.now()}`,
+      title: 'Job Vacancy Posted',
+      description: `Posted new job opening for "${jobData.title}" in ${jobData.department}.`,
+      category: 'Staff',
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
+    };
+    setActivityLogs(prev => [newLog, ...prev]);
+    showToast(`Job opening for "${jobData.title}" posted successfully.`);
+  };
+
+  const deleteJob = (id: string) => {
+    const target = jobs.find(j => j.id === id);
+    setJobs(prev => prev.filter(j => j.id !== id));
+    if (target) {
+      showToast(`Removed job opening "${target.title}".`);
+    }
+  };
+
+  const addGalleryItem = (itemData: Omit<GalleryItem, 'id'>) => {
+    const newItem: GalleryItem = {
+      ...itemData,
+      id: `gal-${Date.now()}`,
+    };
+    setGalleryItems(prev => [newItem, ...prev]);
+
+    const newLog: ActivityLog = {
+      id: `log-${Date.now()}`,
+      title: 'Gallery Media Uploaded',
+      description: `Added new ${itemData.mediaType || 'image'} "${itemData.title}" to gallery.`,
+      category: 'General',
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
+    };
+    setActivityLogs(prev => [newLog, ...prev]);
+    showToast(`New ${itemData.mediaType || 'media'} added to gallery.`);
+  };
+
+  const addMultipleGalleryItems = (itemsData: Omit<GalleryItem, 'id'>[]) => {
+    if (!itemsData.length) return;
+    const now = Date.now();
+    const newItems: GalleryItem[] = itemsData.map((item, idx) => ({
+      ...item,
+      id: `gal-${now}-${idx}-${Math.random().toString(36).substr(2, 5)}`,
+    }));
+
+    setGalleryItems(prev => [...newItems, ...prev]);
+
+    const newLog: ActivityLog = {
+      id: `log-${now}`,
+      title: 'Batch Gallery Media Uploaded',
+      description: `Added ${itemsData.length} new photos/videos to gallery.`,
+      category: 'General',
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
+    };
+    setActivityLogs(prev => [newLog, ...prev]);
+    showToast(`Successfully added ${itemsData.length} items to gallery.`);
+  };
+
+  const deleteGalleryItem = (id: string) => {
+    const target = galleryItems.find(g => g.id === id);
+    setGalleryItems(prev => prev.filter(g => g.id !== id));
+    if (target) {
+      showToast(`Deleted "${target.title}" from gallery.`);
+    }
+  };
+
   return (
     <AppContext.Provider value={{
       currentPage,
@@ -407,6 +662,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       activityLogs,
       consultationBookings,
       bookConsultation,
+      events,
+      addEvent,
+      deleteEvent,
+      jobs,
+      addJob,
+      deleteJob,
+      galleryItems,
+      addGalleryItem,
+      addMultipleGalleryItems,
+      deleteGalleryItem,
       toastMessage,
       showToast,
       isConsultationModalOpen,

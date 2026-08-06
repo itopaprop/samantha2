@@ -7,6 +7,8 @@ interface Props {
   image: {
     title?: string;
     imageUrl: string;
+    videoUrl?: string;
+    mediaType?: 'image' | 'video';
     description?: string;
     category?: string;
     date?: string;
@@ -76,20 +78,39 @@ export const LightboxModal: React.FC<Props> = ({
           </button>
         )}
 
-        {/* Image */}
-        <img
-          src={image.imageUrl}
-          alt={image.title || 'Gallery Image'}
-          referrerPolicy="no-referrer"
-          onError={(e) => {
-            const target = e.currentTarget;
-            if (!target.dataset.fallback) {
-              target.dataset.fallback = 'true';
-              target.src = 'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=800&q=80';
-            }
-          }}
-          className="max-h-[85vh] max-w-full w-auto h-auto object-contain rounded-xl shadow-2xl border border-slate-800"
-        />
+        {/* Image / Video */}
+        {image.mediaType === 'video' || image.videoUrl ? (
+          image.videoUrl?.includes('youtube.com') || image.videoUrl?.includes('youtu.be') ? (
+            <iframe
+              src={image.videoUrl.replace('watch?v=', 'embed/')}
+              title={image.title || 'Video Player'}
+              className="w-full max-w-4xl aspect-video rounded-xl shadow-2xl border border-slate-800"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          ) : (
+            <video
+              src={image.videoUrl || image.imageUrl}
+              controls
+              autoPlay
+              className="max-h-[80vh] max-w-full w-auto h-auto rounded-xl shadow-2xl border border-slate-800"
+            />
+          )
+        ) : (
+          <img
+            src={image.imageUrl}
+            alt={image.title || 'Gallery Image'}
+            referrerPolicy="no-referrer"
+            onError={(e) => {
+              const target = e.currentTarget;
+              if (!target.dataset.fallback) {
+                target.dataset.fallback = 'true';
+                target.src = 'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=800&q=80';
+              }
+            }}
+            className="max-h-[85vh] max-w-full w-auto h-auto object-contain rounded-xl shadow-2xl border border-slate-800"
+          />
+        )}
 
         {/* Right Arrow */}
         {onNext && (

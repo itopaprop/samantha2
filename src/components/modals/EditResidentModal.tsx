@@ -72,13 +72,17 @@ export const EditResidentModal: React.FC<Props> = ({ isOpen, onClose, resident }
         
         {/* Header */}
         <div className="flex justify-between items-center border-b border-slate-100 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-amber-50 text-amber-700 rounded-2xl border border-amber-200/80">
-              <Edit3 className="w-6 h-6" />
-            </div>
+          <div className="flex items-center gap-3.5">
+            <img
+              src={resident.avatar || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80'}
+              alt={resident.fullName}
+              className="w-14 h-14 rounded-full object-cover border-2 border-amber-500 shadow-md shrink-0 ring-2 ring-amber-100"
+            />
             <div>
-              <h3 className="text-xl font-bold text-slate-900">Edit Resident Information</h3>
-              <p className="text-xs text-slate-500">Update personal, care, and health record details</p>
+              <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">Edit Resident Information</h3>
+              <p className="text-xs font-medium text-slate-500">
+                Updating profile & care records for <span className="font-bold text-slate-800">{fullName || resident.fullName}</span>
+              </p>
             </div>
           </div>
           <button

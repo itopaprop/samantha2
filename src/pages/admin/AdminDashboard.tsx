@@ -3,6 +3,10 @@ import { useApp } from '../../context/AppContext';
 import { AddResidentModal } from '../../components/modals/AddResidentModal';
 import { AddStaffModal } from '../../components/modals/AddStaffModal';
 import { AddShiftModal } from '../../components/modals/AddShiftModal';
+import { AddEventModal } from '../../components/modals/AddEventModal';
+import { AddJobModal } from '../../components/modals/AddJobModal';
+import { AddGalleryMediaModal } from '../../components/modals/AddGalleryMediaModal';
+import { CredentialsCreatedModal, CredentialsData } from '../../components/modals/CredentialsCreatedModal';
 import { EditResidentModal } from '../../components/modals/EditResidentModal';
 import { EditStaffModal } from '../../components/modals/EditStaffModal';
 import { EditShiftModal } from '../../components/modals/EditShiftModal';
@@ -34,6 +38,14 @@ import {
   Inbox,
   Paperclip,
   Download,
+  Briefcase,
+  Image as ImageIcon,
+  Video as VideoIcon,
+  Film,
+  CalendarDays,
+  MapPin,
+  Play,
+  Printer,
   X
 } from 'lucide-react';
 
@@ -45,6 +57,12 @@ export const AdminDashboard: React.FC = () => {
     shifts, 
     messages, 
     activityLogs, 
+    events,
+    deleteEvent,
+    jobs,
+    deleteJob,
+    galleryItems,
+    deleteGalleryItem,
     deleteResident, 
     deleteStaff, 
     deleteShift, 
@@ -52,7 +70,7 @@ export const AdminDashboard: React.FC = () => {
     logout 
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'residents' | 'staff' | 'shifts' | 'messages' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'residents' | 'staff' | 'shifts' | 'messages' | 'events' | 'jobs' | 'gallery' | 'settings'>('overview');
   const [messagingTab, setMessagingTab] = useState<'inbox' | 'sent'>('inbox');
   
   // Modals state
@@ -61,6 +79,10 @@ export const AdminDashboard: React.FC = () => {
   const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
   const [isAddShiftOpen, setIsAddShiftOpen] = useState(false);
   const [isComposeMessageOpen, setIsComposeMessageOpen] = useState(false);
+  const [isAddEventOpen, setIsAddEventOpen] = useState(false);
+  const [isAddJobOpen, setIsAddJobOpen] = useState(false);
+  const [isAddGalleryMediaOpen, setIsAddGalleryMediaOpen] = useState(false);
+  const [createdCredentials, setCreatedCredentials] = useState<CredentialsData | null>(null);
   const [selectedResidentModal, setSelectedResidentModal] = useState<any>(null);
   const [selectedStaffModal, setSelectedStaffModal] = useState<StaffMember | null>(null);
 
@@ -72,6 +94,90 @@ export const AdminDashboard: React.FC = () => {
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
+
+  const handlePrintResident = (res: Resident) => {
+    const printWindow = window.open('', '_blank', 'width=800,height=900');
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Resident Profile - ${res.fullName}</title>
+          <style>
+            body { font-family: system-ui, -apple-system, sans-serif; padding: 32px; color: #0f172a; line-height: 1.5; }
+            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 24px; }
+            .brand { font-size: 20px; font-weight: 800; color: #0f172a; }
+            .subtitle { font-size: 11px; font-weight: 700; color: #b45309; text-transform: uppercase; letter-spacing: 1px; }
+            .profile-card { display: flex; gap: 20px; align-items: center; background: #f8fafc; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 20px; }
+            .avatar { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid #d97706; }
+            .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+            .info-box { background: #f8fafc; padding: 12px 16px; border-radius: 12px; border: 1px solid #e2e8f0; }
+            .label { font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+            .value { font-size: 13px; font-weight: 700; color: #0f172a; }
+            .notes-box { background: #fffbeb; border: 1px solid #fde68a; padding: 16px; border-radius: 12px; margin-bottom: 28px; }
+            .signatures { margin-top: 60px; display: flex; justify-content: space-between; }
+            .sig-line { width: 220px; border-top: 1px solid #94a3b8; padding-top: 8px; text-align: center; font-size: 11px; color: #64748b; font-weight: 600; }
+            @media print {
+              body { padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <div class="brand">Samanthasappy Healthcare & Residential Care</div>
+              <div class="subtitle">Official Resident Medical Profile</div>
+            </div>
+            <div style="font-size: 12px; color: #64748b; font-weight: 600;">
+              Date: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+            </div>
+          </div>
+
+          <div class="profile-card">
+            <img src="${res.avatar || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80'}" class="avatar" />
+            <div>
+              <h2 style="margin: 0; font-size: 22px; font-weight: 800;">${res.fullName}</h2>
+              <div style="font-size: 13px; font-weight: 700; color: #b45309; margin-top: 4px;">Care Category: ${res.careCategory}</div>
+              <div style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 4px;">Suite / Room: ${res.roomNumber} &bull; Admission Date: ${res.admissionDate || 'N/A'}</div>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="info-box"><div class="label">Assigned Care Specialist</div><div class="value">${res.assignedStaffName || 'Unassigned'}</div></div>
+            <div class="info-box"><div class="label">Health Status</div><div class="value">${res.healthStatus}</div></div>
+            <div class="info-box"><div class="label">Date of Birth</div><div class="value">${res.dateOfBirth || 'N/A'}</div></div>
+            <div class="info-box"><div class="label">Gender</div><div class="value">${res.gender || 'N/A'}</div></div>
+          </div>
+
+          <div class="info-box" style="margin-bottom: 20px;">
+            <div class="label">Emergency Contact</div>
+            <div class="value">${res.emergencyContact?.name || 'N/A'} (${res.emergencyContact?.relationship || 'N/A'})</div>
+            <div style="font-size: 12px; color: #475569; font-weight: 500; margin-top: 2px;">Phone: ${res.emergencyContact?.phone || 'N/A'}</div>
+          </div>
+
+          <div class="notes-box">
+            <div class="label" style="color: #92400e;">Medical Notes & Care Protocols</div>
+            <div style="font-size: 13px; color: #1e293b; margin-top: 6px; font-weight: 500;">${res.medicalNotes || 'No specific medical notes recorded.'}</div>
+          </div>
+
+          <div class="signatures">
+            <div class="sig-line">Care Specialist Signature</div>
+            <div class="sig-line">Medical Supervisor Approval</div>
+          </div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
 
   if (!currentUser) return null;
 
@@ -226,6 +332,64 @@ export const AdminDashboard: React.FC = () => {
                       {unreadMessagesCount}
                     </span>
                   )}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-3">
+                Content & Public Media
+              </div>
+              <div className="space-y-1">
+                <button
+                  onClick={() => setActiveTab('events')}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                    activeTab === 'events'
+                      ? 'bg-sky-700 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <CalendarDays className="w-4 h-4 text-amber-400" />
+                    <span>Events Manager</span>
+                  </div>
+                  <span className="text-[10px] bg-slate-800 text-amber-400 px-2 py-0.5 rounded-full border border-slate-700 font-extrabold">
+                    {events.length}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('jobs')}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                    activeTab === 'jobs'
+                      ? 'bg-sky-700 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Briefcase className="w-4 h-4 text-sky-400" />
+                    <span>Job Vacancies</span>
+                  </div>
+                  <span className="text-[10px] bg-slate-800 text-sky-400 px-2 py-0.5 rounded-full border border-slate-700 font-extrabold">
+                    {jobs.length}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('gallery')}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                    activeTab === 'gallery'
+                      ? 'bg-sky-700 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Film className="w-4 h-4 text-teal-400" />
+                    <span>Gallery (Image/Video)</span>
+                  </div>
+                  <span className="text-[10px] bg-slate-800 text-teal-400 px-2 py-0.5 rounded-full border border-slate-700 font-extrabold">
+                    {galleryItems.length}
+                  </span>
                 </button>
               </div>
             </div>
@@ -836,6 +1000,155 @@ export const AdminDashboard: React.FC = () => {
           </div>
         )}
 
+
+        {/* TAB 6: EVENTS MANAGER */}
+        {activeTab === 'events' && (
+          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">Community & Institutional Events</h2>
+                <p className="text-xs text-slate-500">Manage public celebrations, medical workshops, and gatherings</p>
+              </div>
+              <button
+                onClick={() => setIsAddEventOpen(true)}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" /> Post New Event
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {events.map((evt) => (
+                <div key={evt.id} className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden flex flex-col justify-between shadow-xs hover:shadow-md transition-all">
+                  <div className="relative h-40 bg-slate-200">
+                    <img src={evt.imageUrl || 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80'} alt={evt.title} className="w-full h-full object-cover" />
+                    <button
+                      onClick={() => deleteEvent(evt.id)}
+                      className="absolute top-2 right-2 p-1.5 bg-rose-600/90 hover:bg-rose-700 text-white rounded-lg transition-colors cursor-pointer"
+                      title="Delete Event"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="absolute bottom-2 left-2 text-[10px] font-bold bg-amber-500 text-slate-950 px-2 py-0.5 rounded shadow-xs">
+                      {evt.category}
+                    </span>
+                  </div>
+                  <div className="p-4 space-y-2 flex-1">
+                    <h3 className="font-bold text-slate-900 text-sm leading-tight">{evt.title}</h3>
+                    <p className="text-xs text-slate-600 line-clamp-2">{evt.description}</p>
+                    <div className="text-[11px] text-slate-500 space-y-1 pt-2 border-t border-slate-200/80">
+                      <div>📅 <strong>{evt.date}</strong> ({evt.time || 'All day'})</div>
+                      <div>📍 {evt.location}</div>
+                      <div>👤 Host: {evt.organizer || 'Care Team'}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+
+        {/* TAB 7: JOB VACANCIES */}
+        {activeTab === 'jobs' && (
+          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">Career & Vacancy Management</h2>
+                <p className="text-xs text-slate-500">Post open positions for nurses, caregivers, educators, and staff</p>
+              </div>
+              <button
+                onClick={() => setIsAddJobOpen(true)}
+                className="bg-sky-700 hover:bg-sky-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" /> Post New Vacancy
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {jobs.map((job) => (
+                <div key={job.id} className="bg-slate-50 rounded-2xl p-5 border border-slate-200 space-y-3 flex flex-col justify-between shadow-xs">
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-start">
+                      <span className="text-[10px] font-bold bg-sky-100 text-sky-800 px-2.5 py-1 rounded-md uppercase tracking-wider">
+                        {job.department}
+                      </span>
+                      <button
+                        onClick={() => deleteJob(job.id)}
+                        className="text-slate-400 hover:text-rose-600 p-1 rounded-lg transition-colors cursor-pointer"
+                        title="Delete Vacancy"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <h3 className="text-base font-bold text-slate-900">{job.title}</h3>
+                    <div className="flex items-center gap-3 text-xs text-slate-600 font-medium">
+                      <span>💼 {job.type}</span>
+                      <span>📍 {job.location}</span>
+                    </div>
+                    <p className="text-xs text-slate-600 leading-relaxed">{job.description}</p>
+                  </div>
+
+                  {job.requirements && job.requirements.length > 0 && (
+                    <div className="pt-3 border-t border-slate-200/80">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Key Requirements</div>
+                      <ul className="text-xs text-slate-600 space-y-0.5 list-disc list-inside">
+                        {job.requirements.map((req, i) => (
+                          <li key={i} className="truncate">{req}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+
+        {/* TAB 8: GALLERY MEDIA */}
+        {activeTab === 'gallery' && (
+          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">Photo & Video Gallery Management</h2>
+                <p className="text-xs text-slate-500">Upload photos and video clips showing daily life, care, and facilities</p>
+              </div>
+              <button
+                onClick={() => setIsAddGalleryMediaOpen(true)}
+                className="bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" /> Upload Gallery Media
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {galleryItems.map((item) => (
+                <div key={item.id} className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-200/90 shadow-xs relative aspect-[4/3] group">
+                  {item.mediaType === 'video' && item.videoUrl ? (
+                    <div className="relative w-full h-full bg-slate-950 flex items-center justify-center">
+                      <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover opacity-90" />
+                      <div className="absolute top-3 left-3 bg-rose-600 text-white text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md flex items-center gap-1 shadow-md">
+                        <Play className="w-3 h-3 fill-current" /> Video
+                      </div>
+                    </div>
+                  ) : (
+                    <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover" />
+                  )}
+
+                  <button
+                    onClick={() => deleteGalleryItem(item.id)}
+                    className="absolute top-3 right-3 p-1.5 bg-rose-600/90 hover:bg-rose-700 text-white rounded-lg transition-colors z-10 cursor-pointer shadow-md"
+                    title="Delete Media"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
       </main>
 
       {/* Modals */}
@@ -843,10 +1156,17 @@ export const AdminDashboard: React.FC = () => {
         isOpen={isAddResidentOpen}
         onClose={() => setIsAddResidentOpen(false)}
         defaultCategory={residentCategoryPreset}
+        onSuccessCredentials={(creds) => setCreatedCredentials(creds)}
       />
       <AddStaffModal
         isOpen={isAddStaffOpen}
         onClose={() => setIsAddStaffOpen(false)}
+        onSuccessCredentials={(creds) => setCreatedCredentials(creds)}
+      />
+      <CredentialsCreatedModal
+        isOpen={!!createdCredentials}
+        onClose={() => setCreatedCredentials(null)}
+        credentials={createdCredentials}
       />
       <AddShiftModal
         isOpen={isAddShiftOpen}
@@ -855,6 +1175,18 @@ export const AdminDashboard: React.FC = () => {
       <ComposeMessageModal
         isOpen={isComposeMessageOpen}
         onClose={() => setIsComposeMessageOpen(false)}
+      />
+      <AddEventModal
+        isOpen={isAddEventOpen}
+        onClose={() => setIsAddEventOpen(false)}
+      />
+      <AddJobModal
+        isOpen={isAddJobOpen}
+        onClose={() => setIsAddJobOpen(false)}
+      />
+      <AddGalleryMediaModal
+        isOpen={isAddGalleryMediaOpen}
+        onClose={() => setIsAddGalleryMediaOpen(false)}
       />
 
       {/* Edit Modals */}
@@ -876,23 +1208,101 @@ export const AdminDashboard: React.FC = () => {
 
       {/* View Resident Modal */}
       {selectedResidentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="w-full max-w-lg bg-white rounded-3xl p-6 space-y-4 shadow-xl border border-slate-100">
-            <h3 className="text-xl font-bold text-slate-900">{selectedResidentModal.fullName} Details</h3>
-            <div className="text-xs space-y-2 text-slate-700">
-              <div><strong>Category:</strong> {selectedResidentModal.careCategory}</div>
-              <div><strong>Room:</strong> {selectedResidentModal.roomNumber}</div>
-              <div><strong>Assigned Staff:</strong> {selectedResidentModal.assignedStaffName}</div>
-              <div><strong>Health Status:</strong> {selectedResidentModal.healthStatus}</div>
-              <div><strong>Medical Notes:</strong> {selectedResidentModal.medicalNotes}</div>
-              <div><strong>Emergency Contact:</strong> {selectedResidentModal.emergencyContact.name} ({selectedResidentModal.emergencyContact.relationship}) - {selectedResidentModal.emergencyContact.phone}</div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-xl bg-white rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+            
+            {/* Modal Header with Resident Image */}
+            <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-4">
+                <img
+                  src={selectedResidentModal.avatar || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80'}
+                  alt={selectedResidentModal.fullName}
+                  className="w-16 h-16 rounded-full object-cover border-2 border-amber-500 shadow-md shrink-0 ring-2 ring-amber-100"
+                />
+                <div>
+                  <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">{selectedResidentModal.fullName}</h3>
+                  <div className="text-xs font-bold text-amber-700">{selectedResidentModal.careCategory}</div>
+                  <div className="text-[11px] text-slate-500 font-medium">Room / Suite: {selectedResidentModal.roomNumber} • Admitted: {selectedResidentModal.admissionDate || 'N/A'}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handlePrintResident(selectedResidentModal)}
+                  className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border border-slate-200"
+                  title="Print Resident Profile"
+                >
+                  <Printer className="w-4 h-4 text-slate-700" />
+                  <span className="hidden sm:inline">Print Record</span>
+                </button>
+                <button
+                  onClick={() => setSelectedResidentModal(null)}
+                  className="text-slate-400 hover:text-slate-700 p-1.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
-            <button
-              onClick={() => setSelectedResidentModal(null)}
-              className="w-full bg-slate-900 text-white text-xs font-bold py-2 rounded-xl"
-            >
-              Close Record View
-            </button>
+
+            {/* Resident Details Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70">
+                <div className="font-bold text-slate-500 text-[10px] uppercase">Assigned Care Specialist</div>
+                <div className="font-semibold text-slate-800">{selectedResidentModal.assignedStaffName || 'Unassigned'}</div>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70">
+                <div className="font-bold text-slate-500 text-[10px] uppercase">Health Status</div>
+                <div className="font-semibold text-slate-800">{selectedResidentModal.healthStatus}</div>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70">
+                <div className="font-bold text-slate-500 text-[10px] uppercase">Date of Birth</div>
+                <div className="font-semibold text-slate-800">{selectedResidentModal.dateOfBirth || 'N/A'}</div>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70">
+                <div className="font-bold text-slate-500 text-[10px] uppercase">Gender</div>
+                <div className="font-semibold text-slate-800">{selectedResidentModal.gender || 'N/A'}</div>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70 text-xs">
+              <div className="font-bold text-slate-500 text-[10px] uppercase mb-1">Emergency Contact</div>
+              <div className="font-semibold text-slate-800">
+                {selectedResidentModal.emergencyContact?.name} ({selectedResidentModal.emergencyContact?.relationship})
+              </div>
+              <div className="text-slate-600 font-medium">{selectedResidentModal.emergencyContact?.phone}</div>
+            </div>
+
+            <div className="p-3.5 bg-amber-50/70 rounded-xl border border-amber-200/70 text-xs">
+              <div className="font-bold text-amber-900 text-[10px] uppercase mb-1">Medical Notes & Care Guidelines</div>
+              <div className="text-slate-700 leading-relaxed font-medium">{selectedResidentModal.medicalNotes || 'No specific medical notes recorded.'}</div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <button
+                onClick={() => handlePrintResident(selectedResidentModal)}
+                className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print Profile</span>
+              </button>
+              <button
+                onClick={() => {
+                  const resToEdit = selectedResidentModal;
+                  setSelectedResidentModal(null);
+                  setEditingResident(resToEdit);
+                }}
+                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-sm"
+              >
+                <Edit3 className="w-4 h-4" />
+                <span>Edit Resident Information</span>
+              </button>
+              <button
+                onClick={() => setSelectedResidentModal(null)}
+                className="px-5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl transition-colors cursor-pointer"
+              >
+                Close Record
+              </button>
+            </div>
+
           </div>
         </div>
       )}

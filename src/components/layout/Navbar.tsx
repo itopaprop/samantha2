@@ -39,6 +39,7 @@ export const Navbar: React.FC = () => {
     { label: 'About Us', page: 'about' },
     { label: 'Services', page: 'services' },
     { label: 'Facilities', page: 'facilities' },
+    { label: 'Events', page: 'events' },
     { label: 'Gallery', page: 'gallery' },
     { label: 'Careers & Training', page: 'careers' },
     { label: 'Contact', page: 'contact' },

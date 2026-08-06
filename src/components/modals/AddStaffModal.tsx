@@ -1,19 +1,22 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { X, UserCheck, Upload, Image as ImageIcon, Trash2, Users } from 'lucide-react';
+import { compressImageFile } from '../../utils/imageCompressor';
+import { CredentialsData } from './CredentialsCreatedModal';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  onSuccessCredentials?: (creds: CredentialsData) => void;
 }
 
-export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose }) => {
+export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose, onSuccessCredentials }) => {
   const { addStaff } = useApp();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [position, setPosition] = useState('Senior Care Assistant');
+  const [position, setPosition] = useState('Site Administrator');
   const [shift, setShift] = useState('Morning (07:00 - 15:30)');
   const [qualification, setQualification] = useState('NVQ Level 3 Health & Social Care');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -24,23 +27,24 @@ export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      const compressed = await compressImageFile(file);
+      setImagePreview(compressed);
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    addStaff({
-      name,
-      email: email || `${name.toLowerCase().replace(/\s+/g, '.')}@samanthasappyhome.com`,
-      phone: phone || '+44 20 7946 0999',
+    if (!name.trim()) return;
+
+    const formattedEmail = email.trim() || `${name.toLowerCase().trim().replace(/\s+/g, '.')}@samanthasappy.com`;
+
+    const result = addStaff({
+      name: name.trim(),
+      email: formattedEmail,
+      phone: phone.trim() || '+234 706 933 2193',
       position,
       shift,
       qualification,
@@ -50,12 +54,25 @@ export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose }) => {
         .filter(r => r.name.trim() !== '')
         .map(r => ({ ...r, photoUrl: r.photoUrl || undefined })),
     });
-    onClose();
+
+    // Reset and close modal
     setName('');
     setEmail('');
+    setPhone('');
     setImagePreview(null);
     setRef1({ name: '', relationship: '', phone: '', email: '', photoUrl: null });
     setRef2({ name: '', relationship: '', phone: '', email: '', photoUrl: null });
+    onClose();
+
+    if (onSuccessCredentials && result) {
+      onSuccessCredentials({
+        type: 'Staff',
+        accountName: result.user.name,
+        email: result.user.email,
+        tempPassword: result.tempPassword,
+        extraInfo: `Position: ${position} | Qualification: ${qualification}`,
+      });
+    }
   };
 
   return (
@@ -177,6 +194,7 @@ export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 onChange={e => setPosition(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
               >
+                <option value="Site Administrator">Site Administrator</option>
                 <option value="Senior Nurse & Care Lead">Senior Nurse & Care Lead</option>
                 <option value="Dementia Care Specialist">Dementia Care Specialist</option>
                 <option value="Senior Care Assistant">Senior Care Assistant</option>
@@ -248,12 +266,11 @@ export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose }) => {
                       <input
                         type="file"
                         accept="image/*"
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => setRef1(r => ({ ...r, photoUrl: reader.result as string }));
-                            reader.readAsDataURL(file);
+                            const compressed = await compressImageFile(file);
+                            setRef1(r => ({ ...r, photoUrl: compressed }));
                           }
                         }}
                         className="hidden"
@@ -276,16 +293,14 @@ export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <input
                   type="text"
-                  required
-                  placeholder="Referee Full Name *"
+                  placeholder="Referee Full Name (Optional)"
                   value={ref1.name}
                   onChange={e => setRef1({ ...ref1, name: e.target.value })}
                   className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-teal-500"
                 />
                 <input
                   type="text"
-                  required
-                  placeholder="Relationship / Role (e.g. Line Manager) *"
+                  placeholder="Relationship / Role (e.g. Line Manager)"
                   value={ref1.relationship}
                   onChange={e => setRef1({ ...ref1, relationship: e.target.value })}
                   className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-teal-500"
@@ -294,8 +309,7 @@ export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <input
                   type="text"
-                  required
-                  placeholder="Phone Number *"
+                  placeholder="Phone Number"
                   value={ref1.phone}
                   onChange={e => setRef1({ ...ref1, phone: e.target.value })}
                   className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-teal-500"
@@ -312,7 +326,7 @@ export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
             {/* Reference 2 */}
             <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-2.5">
-              <span className="text-[11px] font-bold text-teal-700 block">Reference 2 (Secondary Referee)</span>
+              <span className="text-[11px] font-bold text-teal-700 block">Reference 2 (Secondary Referee - Optional)</span>
               
               {/* Reference 2 Image Holder */}
               <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200/80">
@@ -341,12 +355,11 @@ export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose }) => {
                       <input
                         type="file"
                         accept="image/*"
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => setRef2(r => ({ ...r, photoUrl: reader.result as string }));
-                            reader.readAsDataURL(file);
+                            const compressed = await compressImageFile(file);
+                            setRef2(r => ({ ...r, photoUrl: compressed }));
                           }
                         }}
                         className="hidden"
@@ -369,16 +382,14 @@ export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <input
                   type="text"
-                  required
-                  placeholder="Referee Full Name *"
+                  placeholder="Referee Full Name (Optional)"
                   value={ref2.name}
                   onChange={e => setRef2({ ...ref2, name: e.target.value })}
                   className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-teal-500"
                 />
                 <input
                   type="text"
-                  required
-                  placeholder="Relationship / Role (e.g. Academic Supervisor) *"
+                  placeholder="Relationship / Role (e.g. Academic Supervisor)"
                   value={ref2.relationship}
                   onChange={e => setRef2({ ...ref2, relationship: e.target.value })}
                   className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-teal-500"
@@ -387,8 +398,7 @@ export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <input
                   type="text"
-                  required
-                  placeholder="Phone Number *"
+                  placeholder="Phone Number"
                   value={ref2.phone}
                   onChange={e => setRef2({ ...ref2, phone: e.target.value })}
                   className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-teal-500"

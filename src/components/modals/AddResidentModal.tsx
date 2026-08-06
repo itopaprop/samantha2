@@ -2,14 +2,17 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CareCategory } from '../../types';
 import { X, UserPlus, Upload, Image as ImageIcon, Trash2, Users, ShieldAlert } from 'lucide-react';
+import { compressImageFile } from '../../utils/imageCompressor';
+import { CredentialsData } from './CredentialsCreatedModal';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   defaultCategory?: CareCategory;
+  onSuccessCredentials?: (creds: CredentialsData) => void;
 }
 
-export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCategory }) => {
+export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCategory, onSuccessCredentials }) => {
   const { addResident, staff } = useApp();
 
   const [fullName, setFullName] = useState('');
@@ -28,14 +31,11 @@ export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCate
 
   if (!isOpen) return null;
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      const compressed = await compressImageFile(file);
+      setImagePreview(compressed);
     }
   };
 
@@ -43,7 +43,7 @@ export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCate
     e.preventDefault();
     const assignedStaffMember = staff.find(s => s.id === assignedStaffId);
     
-    addResident({
+    const result = addResident({
       fullName,
       dateOfBirth,
       gender,
@@ -57,7 +57,7 @@ export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCate
       emergencyContact: {
         name: ref1.name || 'Family Contact',
         relationship: ref1.relationship || 'Next of Kin',
-        phone: ref1.phone || '+44 7700 900000',
+        phone: ref1.phone || '+234 706 933 2193',
       },
       references: [ref1, ref2]
         .filter(r => r.name.trim() !== '')
@@ -77,6 +77,16 @@ export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCate
     setImagePreview(null);
     setRef1({ name: '', relationship: 'Primary Family Contact / Next of Kin', phone: '', email: '', photoUrl: null });
     setRef2({ name: '', relationship: 'Secondary Contact / Medical Referee', phone: '', email: '', photoUrl: null });
+
+    if (onSuccessCredentials && result) {
+      onSuccessCredentials({
+        type: 'Resident Relative',
+        accountName: result.relativeUser.name,
+        email: result.relativeUser.email,
+        tempPassword: result.tempPassword,
+        extraInfo: `Linked Resident: ${result.resident.fullName} (${careCategory})`,
+      });
+    }
   };
 
   return (

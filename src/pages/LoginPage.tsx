@@ -13,22 +13,39 @@ export const LoginPage: React.FC = () => {
   const { loginUser } = useApp();
 
   const [selectedRole, setSelectedRole] = useState<UserRole>('Admin');
-  const [email, setEmail] = useState('admin@samanthasappyhome.com');
-  const [password, setPassword] = useState('••••••••••••');
+  const [email, setEmail] = useState('admin@samanthasappy.com');
+  const [password, setPassword] = useState('@samantha');
   const [rememberMe, setRememberMe] = useState(true);
   const [forgotModal, setForgotModal] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
+  const [logoSrc, setLogoSrc] = useState('https://lh3.googleusercontent.com/d/1sUJpAFMzsPRgNuvKDSyRU01sgnLK41Fg');
+
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const handleRoleChange = (role: UserRole) => {
     setSelectedRole(role);
-    if (role === 'Admin') setEmail('admin@samanthasappyhome.com');
-    if (role === 'Staff') setEmail('s.jenkins@samanthasappyhome.com');
-    if (role === 'Resident Relative') setEmail('david.miller@example.com');
+    setAuthError(null);
+    if (role === 'Admin') {
+      setEmail('admin@samanthasappy.com');
+      setPassword('@samantha');
+    }
+    if (role === 'Staff') {
+      setEmail('s.jenkins@samanthasappyhome.com');
+      setPassword('@staff123');
+    }
+    if (role === 'Resident Relative') {
+      setEmail('david.miller@example.com');
+      setPassword('@relative123');
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    loginUser(email, selectedRole);
+    setAuthError(null);
+    const success = loginUser(email, selectedRole, password);
+    if (!success) {
+      setAuthError(`Access Denied: Invalid credentials or account type mismatch for '${selectedRole}' portal.`);
+    }
   };
 
   return (
@@ -37,8 +54,20 @@ export const LoginPage: React.FC = () => {
         
         {/* Brand Header */}
         <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-600 to-teal-600 flex items-center justify-center text-white mx-auto shadow-md">
-            <Heart className="w-6 h-6 fill-white/20 stroke-white stroke-[2.2]" />
+          <div className="w-16 h-16 rounded-2xl bg-slate-900 flex items-center justify-center text-white mx-auto shadow-lg border-2 border-sky-500/20 overflow-hidden shrink-0">
+            <img
+              src={logoSrc}
+              alt="Samanthasappy Home Logo"
+              referrerPolicy="no-referrer"
+              onError={() => {
+                if (logoSrc.includes('lh3.googleusercontent.com')) {
+                  setLogoSrc('https://drive.google.com/uc?export=view&id=1sUJpAFMzsPRgNuvKDSyRU01sgnLK41Fg');
+                } else if (logoSrc.includes('uc?export=view')) {
+                  setLogoSrc('https://drive.google.com/thumbnail?id=1sUJpAFMzsPRgNuvKDSyRU01sgnLK41Fg&sz=w1000');
+                }
+              }}
+              className="w-full h-full object-cover"
+            />
           </div>
           <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
             Samanthasappy Home
@@ -73,6 +102,16 @@ export const LoginPage: React.FC = () => {
               ))}
             </div>
           </div>
+
+          {/* Auth Error Banner */}
+          {authError && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-900 font-semibold space-y-1 animate-in fade-in">
+              <span className="font-extrabold text-rose-950 block">🔒 Authentication Denied</span>
+              <p className="text-[11px] text-rose-800 leading-relaxed">{authError}</p>
+            </div>
+          )}
+
+
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">

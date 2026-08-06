@@ -6,6 +6,7 @@ import { HomePage } from './pages/HomePage';
 import { AboutPage } from './pages/AboutPage';
 import { ServicesPage } from './pages/ServicesPage';
 import { FacilitiesPage } from './pages/FacilitiesPage';
+import { EventsPage } from './pages/EventsPage';
 import { GalleryPage } from './pages/GalleryPage';
 import { CareersPage } from './pages/CareersPage';
 import { ContactPage } from './pages/ContactPage';
@@ -32,6 +33,8 @@ const AppContent: React.FC = () => {
         return <ServicesPage />;
       case 'facilities':
         return <FacilitiesPage />;
+      case 'events':
+        return <EventsPage />;
       case 'gallery':
         return <GalleryPage />;
       case 'careers':

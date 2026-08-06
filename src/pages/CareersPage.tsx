@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 export const CareersPage: React.FC = () => {
-  const { showToast } = useApp();
+  const { showToast, jobs } = useApp();
   const [selectedPosition, setSelectedPosition] = useState<string>('Senior Care Assistant');
   const [submitted, setSubmitted] = useState(false);
 
@@ -95,7 +95,7 @@ export const CareersPage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {INITIAL_JOB_VACANCIES.map((job) => (
+          {jobs.map((job) => (
             <div
               key={job.id}
               className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4 flex flex-col justify-between"

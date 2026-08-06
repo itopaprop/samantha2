@@ -25,6 +25,7 @@ export interface User {
   email: string;
   phone: string;
   role: UserRole;
+  password?: string;
   avatar?: string;
   position?: string; // For staff
   relationship?: string; // For relative (e.g., "Son", "Daughter")
@@ -144,8 +145,23 @@ export interface GalleryItem {
   title: string;
   category: 'Elderly Care Activities' | "Children's Activities" | 'Training Sessions' | 'Events' | 'Facility Photos' | 'Family Visitations';
   imageUrl: string;
+  videoUrl?: string;
+  mediaType?: 'image' | 'video';
   description: string;
   date: string;
+}
+
+export interface CommunityEvent {
+  id: string;
+  title: string;
+  date: string;
+  time?: string;
+  location: string;
+  description: string;
+  category: 'Community Celebration' | 'Health & Wellness' | 'Family & Resident Gathering' | 'Educational & Workshop' | 'Cultural & Arts';
+  imageUrl?: string;
+  status: 'Upcoming' | 'Ongoing' | 'Completed';
+  organizer?: string;
 }
 
 export interface ConsultationBooking {

@@ -4,6 +4,7 @@ import { Heart, MapPin, Phone, Mail, ShieldCheck, Award, Clock } from 'lucide-re
 
 export const Footer: React.FC = () => {
   const { setCurrentPage, setIsApplyModalOpen } = useApp();
+  const [logoSrc, setLogoSrc] = React.useState('https://lh3.googleusercontent.com/d/1sUJpAFMzsPRgNuvKDSyRU01sgnLK41Fg');
 
   const handleNav = (page: PageView) => {
     setCurrentPage(page);
@@ -18,8 +19,20 @@ export const Footer: React.FC = () => {
           {/* Brand Col */}
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-sky-600 flex items-center justify-center text-white shadow-md">
-                <Heart className="w-5 h-5 fill-white/20 stroke-white stroke-[2.2]" />
+              <div className="w-11 h-11 rounded-xl bg-slate-800 flex items-center justify-center text-white shadow-md overflow-hidden border border-slate-700 shrink-0">
+                <img
+                  src={logoSrc}
+                  alt="Samanthasappy Home Logo"
+                  referrerPolicy="no-referrer"
+                  onError={() => {
+                    if (logoSrc.includes('lh3.googleusercontent.com')) {
+                      setLogoSrc('https://drive.google.com/uc?export=view&id=1sUJpAFMzsPRgNuvKDSyRU01sgnLK41Fg');
+                    } else if (logoSrc.includes('uc?export=view')) {
+                      setLogoSrc('https://drive.google.com/thumbnail?id=1sUJpAFMzsPRgNuvKDSyRU01sgnLK41Fg&sz=w1000');
+                    }
+                  }}
+                  className="w-full h-full object-cover"
+                />
               </div>
               <span className="font-bold text-white text-xl tracking-tight">Samanthasappy Home</span>
             </div>
@@ -55,6 +68,7 @@ export const Footer: React.FC = () => {
             <ul className="space-y-2 text-sm">
               <li><button onClick={() => handleNav('about')} className="hover:text-sky-400 transition-colors">Our Story & Vision</button></li>
               <li><button onClick={() => handleNav('facilities')} className="hover:text-sky-400 transition-colors">Facility Tour & Suites</button></li>
+              <li><button onClick={() => handleNav('events')} className="hover:text-sky-400 transition-colors">Events & Activities</button></li>
               <li><button onClick={() => handleNav('gallery')} className="hover:text-sky-400 transition-colors">Photo Gallery</button></li>
               <li><button onClick={() => handleNav('careers')} className="hover:text-sky-400 transition-colors">Careers & Training</button></li>
               <li><button onClick={() => handleNav('login')} className="hover:text-sky-400 transition-colors font-medium text-amber-400">Portal Login</button></li>
