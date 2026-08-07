@@ -285,6 +285,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('You have been logged out safely.');
   };
 
+  // 3-Minute Inactivity Auto-Logout Security Monitor
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const INACTIVITY_LIMIT_MS = 3 * 60 * 1000; // 3 minutes = 180,000ms
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const handleAutoLogout = () => {
+      setCurrentUser(null);
+      setCurrentPage('login');
+      showToast('🔒 Auto logged out of dashboard due to 3 minutes of inactivity.');
+    };
+
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(handleAutoLogout, INACTIVITY_LIMIT_MS);
+    };
+
+    // Initial timer start on session active
+    resetTimer();
+
+    // Track user action events across window
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    
+    let lastReset = Date.now();
+    const onUserActivity = () => {
+      const now = Date.now();
+      // Throttle resets to avoid high CPU frequency on rapid mouse move
+      if (now - lastReset > 1000) {
+        lastReset = now;
+        resetTimer();
+      }
+    };
+
+    events.forEach(event => {
+      window.addEventListener(event, onUserActivity, { passive: true });
+    });
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      events.forEach(event => {
+        window.removeEventListener(event, onUserActivity);
+      });
+    };
+  }, [currentUser]);
+
   const generateTempPassword = (): string => {
     const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
     let randStr = '';

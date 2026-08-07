@@ -87,11 +87,11 @@ export const Navbar: React.FC = () => {
                 <Twitter className="w-3.5 h-3.5" />
               </a>
               <a 
-                href="https://instagram.com" 
+                href="https://www.instagram.com/samanthasappy_wcl" 
                 target="_blank" 
                 rel="noreferrer" 
-                className="hover:text-amber-400 transition-colors p-0.5" 
-                title="Instagram"
+                className="hover:text-pink-400 transition-colors p-0.5" 
+                title="Instagram (@samanthasappy_wcl)"
               >
                 <Instagram className="w-3.5 h-3.5" />
               </a>

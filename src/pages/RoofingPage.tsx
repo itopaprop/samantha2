@@ -109,23 +109,23 @@ export const RoofingPage: React.FC = () => {
 
   const galleryImages = [
     {
-      url: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?auto=format&fit=crop&w=800&q=80',
-      title: 'Luxury Residential Villa in Lekki',
+      driveId: '1VSn9hpU38T2ork4Fw6lCHLqW7ENQC-7L',
+      title: 'Luxury Villa Milano Roofing',
       type: 'Stone-Coated Bond Tiles'
     },
     {
-      url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
-      title: 'Modern Duplex Roofing',
+      driveId: '1FI1zsbBW6h6VFKuTk43nqg7Ftz_FqJjS',
+      title: 'Modern Executive Duplex',
       type: 'Aluminium Step Tiles'
     },
     {
-      url: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=800&q=80',
-      title: 'Commercial Facility Coverage',
+      driveId: '1m6GVt6xTUhLqThoFSd75ETMsyorwF35a',
+      title: 'Commercial Plaza Roofing',
       type: 'Industrial Long Span'
     },
     {
-      url: 'https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?auto=format&fit=crop&w=800&q=80',
-      title: 'Complete Estate Renovation',
+      driveId: '1LZLjvA0w8qxoPCaafeRurpuHAxUK8SVv',
+      title: 'Mansion Roof Renovation',
       type: 'Milano Stone-Coated'
     }
   ];
@@ -212,16 +212,16 @@ export const RoofingPage: React.FC = () => {
                 <div className="absolute -inset-1 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600 rounded-3xl blur-md opacity-50 group-hover:opacity-80 transition duration-500"></div>
                 <div className="relative bg-slate-950 rounded-2xl overflow-hidden border-2 border-amber-500/50 shadow-2xl">
                   <img
-                    src="https://lh3.googleusercontent.com/d/1dzrdjvIpe3evuFYA7f7OQ2y4a5TZENZm=s1600"
+                    src="https://lh3.googleusercontent.com/d/1vQgWPSed5zT4OPOOWJ1WpIwvrcS7wY_-=s1600"
                     alt="Samanthasappy Roofing Official Banner"
                     referrerPolicy="no-referrer"
                     onError={(e) => {
                       const target = e.currentTarget;
                       if (!target.src.includes('uc?export=view')) {
-                        target.src = 'https://drive.google.com/uc?export=view&id=1dzrdjvIpe3evuFYA7f7OQ2y4a5TZENZm';
+                        target.src = 'https://drive.google.com/uc?export=view&id=1vQgWPSed5zT4OPOOWJ1WpIwvrcS7wY_-';
                       }
                     }}
-                    className="w-full h-auto object-cover"
+                    className="w-full h-auto object-contain rounded-xl"
                   />
                   <div className="p-4 bg-slate-900 border-t border-slate-800 text-center">
                     <p className="text-xs text-amber-400 font-semibold tracking-wider uppercase">
@@ -397,8 +397,15 @@ export const RoofingPage: React.FC = () => {
                 {galleryImages.map((img, idx) => (
                   <div key={idx} className="relative rounded-2xl overflow-hidden group shadow-md border border-slate-800 cursor-pointer" onClick={() => { setCurrentPage('roofing-gallery'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
                     <img
-                      src={img.url}
+                      src={`https://lh3.googleusercontent.com/d/${img.driveId}=s1600`}
                       alt={img.title}
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        if (!target.src.includes('uc?export=view')) {
+                          target.src = `https://drive.google.com/uc?export=view&id=${img.driveId}`;
+                        }
+                      }}
                       className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-500"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent opacity-90 p-3 flex flex-col justify-end">

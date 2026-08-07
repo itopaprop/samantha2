@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp, PageView } from '../../context/AppContext';
-import { Heart, MapPin, Phone, Mail, ShieldCheck, Award, Clock } from 'lucide-react';
+import { Heart, MapPin, Phone, Mail, ShieldCheck, Award, Clock, Instagram, Facebook, Twitter, Linkedin, Youtube } from 'lucide-react';
 
 export const Footer: React.FC = () => {
   const { setCurrentPage, setIsApplyModalOpen } = useApp();
@@ -47,6 +47,57 @@ export const Footer: React.FC = () => {
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-slate-800 text-teal-400 border border-slate-700">
                 <Award className="w-3.5 h-3.5" /> Certified Excellence
               </span>
+            </div>
+
+            <div className="pt-2 flex items-center gap-3">
+              <span className="text-xs text-slate-400 font-medium">Follow Us:</span>
+              <div className="flex items-center gap-2">
+                <a
+                  href="https://www.instagram.com/samanthasappy_wcl"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2 rounded-lg bg-slate-800 hover:bg-pink-600/20 text-slate-300 hover:text-pink-400 border border-slate-700 transition-colors"
+                  title="Instagram (@samanthasappy_wcl)"
+                >
+                  <Instagram className="w-4 h-4" />
+                </a>
+                <a
+                  href="https://facebook.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2 rounded-lg bg-slate-800 hover:bg-sky-600/20 text-slate-300 hover:text-sky-400 border border-slate-700 transition-colors"
+                  title="Facebook"
+                >
+                  <Facebook className="w-4 h-4" />
+                </a>
+                <a
+                  href="https://twitter.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2 rounded-lg bg-slate-800 hover:bg-sky-600/20 text-slate-300 hover:text-sky-400 border border-slate-700 transition-colors"
+                  title="Twitter / X"
+                >
+                  <Twitter className="w-4 h-4" />
+                </a>
+                <a
+                  href="https://linkedin.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2 rounded-lg bg-slate-800 hover:bg-sky-600/20 text-slate-300 hover:text-sky-400 border border-slate-700 transition-colors"
+                  title="LinkedIn"
+                >
+                  <Linkedin className="w-4 h-4" />
+                </a>
+                <a
+                  href="https://youtube.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2 rounded-lg bg-slate-800 hover:bg-rose-600/20 text-slate-300 hover:text-rose-400 border border-slate-700 transition-colors"
+                  title="YouTube"
+                >
+                  <Youtube className="w-4 h-4" />
+                </a>
+              </div>
             </div>
           </div>
 

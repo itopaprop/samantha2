@@ -10,6 +10,7 @@ import { CredentialsCreatedModal, CredentialsData } from '../../components/modal
 import { EditResidentModal } from '../../components/modals/EditResidentModal';
 import { EditStaffModal } from '../../components/modals/EditStaffModal';
 import { EditShiftModal } from '../../components/modals/EditShiftModal';
+import { ViewShiftsModal } from '../../components/modals/ViewShiftsModal';
 import { ComposeMessageModal } from '../../components/modals/ComposeMessageModal';
 import { CareCategory, UserRole, StaffMember, Resident, Shift } from '../../types';
 import { 
@@ -78,6 +79,7 @@ export const AdminDashboard: React.FC = () => {
   const [residentCategoryPreset, setResidentCategoryPreset] = useState<CareCategory | undefined>();
   const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
   const [isAddShiftOpen, setIsAddShiftOpen] = useState(false);
+  const [isViewShiftsOpen, setIsViewShiftsOpen] = useState(false);
   const [isComposeMessageOpen, setIsComposeMessageOpen] = useState(false);
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
@@ -469,6 +471,12 @@ export const AdminDashboard: React.FC = () => {
               <UserCheck className="w-3.5 h-3.5" /> Add Staff
             </button>
             <button
+              onClick={() => setIsViewShiftsOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Clock className="w-3.5 h-3.5" /> View Shifts
+            </button>
+            <button
               onClick={() => setIsAddShiftOpen(true)}
               className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
             >
@@ -565,8 +573,14 @@ export const AdminDashboard: React.FC = () => {
                 <div className="text-[11px] text-slate-400 font-medium">Special Sensory Support</div>
               </div>
 
-              <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-2">
-                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Active Shifts</div>
+              <div 
+                onClick={() => setIsViewShiftsOpen(true)}
+                className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-2 hover:border-blue-300 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Active Shifts</div>
+                  <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md group-hover:bg-blue-600 group-hover:text-white transition-colors">View All →</span>
+                </div>
                 <div className="text-3xl font-extrabold text-slate-800">{activeShiftsCount}</div>
                 <div className="text-[11px] text-slate-400 font-medium">Scheduled Shift Roster</div>
               </div>
@@ -862,12 +876,20 @@ export const AdminDashboard: React.FC = () => {
                 <h2 className="text-2xl font-bold text-slate-900">Shift Roster Management</h2>
                 <p className="text-xs text-slate-500">Scheduled shifts for nurses, care leads, and support staff</p>
               </div>
-              <button
-                onClick={() => setIsAddShiftOpen(true)}
-                className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                <Calendar className="w-4 h-4" /> Add New Shift
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsViewShiftsOpen(true)}
+                  className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold text-xs py-2.5 px-4 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Clock className="w-4 h-4" /> View Duty Shifts
+                </button>
+                <button
+                  onClick={() => setIsAddShiftOpen(true)}
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Calendar className="w-4 h-4" /> Add New Shift
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1171,6 +1193,14 @@ export const AdminDashboard: React.FC = () => {
       <AddShiftModal
         isOpen={isAddShiftOpen}
         onClose={() => setIsAddShiftOpen(false)}
+      />
+      <ViewShiftsModal
+        isOpen={isViewShiftsOpen}
+        onClose={() => setIsViewShiftsOpen(false)}
+        onEditShift={(s) => {
+          setIsViewShiftsOpen(false);
+          setEditingShift(s);
+        }}
       />
       <ComposeMessageModal
         isOpen={isComposeMessageOpen}
