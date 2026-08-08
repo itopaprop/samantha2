@@ -12,7 +12,7 @@ import { EditStaffModal } from '../../components/modals/EditStaffModal';
 import { EditShiftModal } from '../../components/modals/EditShiftModal';
 import { ViewShiftsModal } from '../../components/modals/ViewShiftsModal';
 import { ComposeMessageModal } from '../../components/modals/ComposeMessageModal';
-import { CareCategory, UserRole, StaffMember, Resident, Shift } from '../../types';
+import { CareCategory, UserRole, StaffMember, Resident, Shift, CommunityEvent } from '../../types';
 import { 
   Users, 
   UserCheck, 
@@ -47,7 +47,13 @@ import {
   MapPin,
   Play,
   Printer,
-  X
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Share2,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
@@ -68,6 +74,7 @@ export const AdminDashboard: React.FC = () => {
     deleteStaff, 
     deleteShift, 
     markMessageAsRead,
+    showToast,
     logout 
   } = useApp();
 
@@ -87,6 +94,8 @@ export const AdminDashboard: React.FC = () => {
   const [createdCredentials, setCreatedCredentials] = useState<CredentialsData | null>(null);
   const [selectedResidentModal, setSelectedResidentModal] = useState<any>(null);
   const [selectedStaffModal, setSelectedStaffModal] = useState<StaffMember | null>(null);
+  const [viewingEvent, setViewingEvent] = useState<CommunityEvent | null>(null);
+  const [adminZoomScale, setAdminZoomScale] = useState<number>(1);
 
   // Edit modal states
   const [editingResident, setEditingResident] = useState<Resident | null>(null);
@@ -1041,28 +1050,81 @@ export const AdminDashboard: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {events.map((evt) => (
-                <div key={evt.id} className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden flex flex-col justify-between shadow-xs hover:shadow-md transition-all">
-                  <div className="relative h-40 bg-slate-200">
-                    <img src={evt.imageUrl || 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80'} alt={evt.title} className="w-full h-full object-cover" />
-                    <button
-                      onClick={() => deleteEvent(evt.id)}
-                      className="absolute top-2 right-2 p-1.5 bg-rose-600/90 hover:bg-rose-700 text-white rounded-lg transition-colors cursor-pointer"
-                      title="Delete Event"
+                <div key={evt.id} className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden flex flex-col justify-between shadow-xs hover:shadow-md transition-all group">
+                  <div>
+                    {/* Flyer Poster Preview Header */}
+                    <div 
+                      onClick={() => setViewingEvent(evt)}
+                      className="relative h-48 bg-slate-900 overflow-hidden cursor-pointer group/img"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                    <span className="absolute bottom-2 left-2 text-[10px] font-bold bg-amber-500 text-slate-950 px-2 py-0.5 rounded shadow-xs">
-                      {evt.category}
-                    </span>
-                  </div>
-                  <div className="p-4 space-y-2 flex-1">
-                    <h3 className="font-bold text-slate-900 text-sm leading-tight">{evt.title}</h3>
-                    <p className="text-xs text-slate-600 line-clamp-2">{evt.description}</p>
-                    <div className="text-[11px] text-slate-500 space-y-1 pt-2 border-t border-slate-200/80">
-                      <div>📅 <strong>{evt.date}</strong> ({evt.time || 'All day'})</div>
-                      <div>📍 {evt.location}</div>
-                      <div>👤 Host: {evt.organizer || 'Care Team'}</div>
+                      <img 
+                        src={evt.imageUrl || 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80'} 
+                        alt={evt.title} 
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          if (!target.dataset.triedDrive) {
+                            target.dataset.triedDrive = 'true';
+                            const match = (evt.imageUrl || '').match(/(?:id=|\/d\/)([a-zA-Z0-9_-]+)/);
+                            if (match && match[1]) {
+                              target.src = `https://drive.google.com/uc?export=view&id=${match[1]}`;
+                              return;
+                            }
+                          }
+                          if (!target.dataset.fallback) {
+                            target.dataset.fallback = 'true';
+                            target.src = 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80';
+                          }
+                        }}
+                        className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-500 opacity-90" 
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteEvent(evt.id);
+                        }}
+                        className="absolute top-2 right-2 p-1.5 bg-rose-600/90 hover:bg-rose-700 text-white rounded-lg transition-colors cursor-pointer z-10"
+                        title="Delete Event"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="absolute bottom-2 left-2 text-[10px] font-bold bg-amber-500 text-slate-950 px-2 py-0.5 rounded shadow-xs z-10">
+                        {evt.category}
+                      </span>
+
+                      {/* Hover Sheen Overlay */}
+                      <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover/img:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                        <span className="px-3 py-1.5 bg-slate-900/90 text-white rounded-full text-xs font-bold border border-white/20 shadow-xl flex items-center gap-1.5 transform translate-y-2 group-hover/img:translate-y-0 transition-all">
+                          <Eye className="w-3.5 h-3.5 text-amber-400" /> View Poster
+                        </span>
+                      </div>
                     </div>
+
+                    <div className="p-4 space-y-2">
+                      <h3 
+                        onClick={() => setViewingEvent(evt)}
+                        className="font-bold text-slate-900 text-sm leading-tight hover:text-amber-600 transition-colors cursor-pointer"
+                      >
+                        {evt.title}
+                      </h3>
+                      <p className="text-xs text-slate-600 line-clamp-2">{evt.description}</p>
+                      <div className="text-[11px] text-slate-500 space-y-1 pt-2 border-t border-slate-200/80">
+                        <div>📅 <strong>{evt.date}</strong> ({evt.time || 'All day'})</div>
+                        <div>📍 {evt.location}</div>
+                        <div>👤 Host: {evt.organizer || 'Care Team'}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card Action Footer */}
+                  <div className="p-4 pt-0">
+                    <button
+                      onClick={() => setViewingEvent(evt)}
+                      className="w-full py-2 px-3 rounded-xl text-xs font-bold bg-slate-900 hover:bg-amber-500 hover:text-slate-950 text-white transition-all flex items-center justify-center gap-2 cursor-pointer group/btn shadow-xs"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-amber-400 group-hover/btn:text-slate-950 transition-colors" />
+                      <span>View Details</span>
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1477,6 +1539,224 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Event Details / Full Flyer Lightbox Modal */}
+      {viewingEvent && (() => {
+        const handleAdminShare = async (e: React.MouseEvent) => {
+          e.stopPropagation();
+          const shareUrl = window.location.href;
+          const shareData = {
+            title: viewingEvent.title,
+            text: `${viewingEvent.title} - ${viewingEvent.date} at ${viewingEvent.location}`,
+            url: shareUrl,
+          };
+
+          let shared = false;
+          if (navigator.share) {
+            try {
+              await navigator.share(shareData);
+              shared = true;
+              showToast('Event flyer shared successfully!', 'success');
+            } catch (err) {
+              // Fallback to clipboard
+            }
+          }
+
+          if (!shared) {
+            try {
+              await navigator.clipboard.writeText(shareUrl);
+              showToast('Event flyer link copied to clipboard!', 'success');
+            } catch (err) {
+              showToast('Unable to copy link to clipboard', 'error');
+            }
+          }
+        };
+
+        const toggleAdminZoom = () => {
+          setAdminZoomScale(prev => (prev === 1 ? 1.8 : prev >= 2.5 ? 1 : prev + 0.5));
+        };
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/92 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto"
+            onClick={() => {
+              setAdminZoomScale(1);
+              setViewingEvent(null);
+            }}
+          >
+            {/* Floating Top Close Button */}
+            <button
+              onClick={() => {
+                setAdminZoomScale(1);
+                setViewingEvent(null);
+              }}
+              className="fixed top-4 right-4 md:top-6 md:right-6 z-50 p-3 rounded-full bg-slate-900/90 text-white hover:bg-rose-600 hover:scale-105 active:scale-95 transition-all shadow-2xl border border-slate-700/80 cursor-pointer"
+              aria-label="Close modal"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            {/* Modal Box */}
+            <div
+              className="relative max-w-4xl w-full my-auto bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col lg:flex-row text-white max-h-[90vh]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Poster Image View */}
+              <div className="w-full lg:w-3/5 bg-slate-950 flex flex-col relative min-h-[300px] lg:min-h-[460px]">
+                {/* Floating Top Header Badges & Share Icon */}
+                <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-20 pointer-events-none">
+                  <span className="pointer-events-auto text-[10px] font-extrabold uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-1 rounded-lg shadow-md">
+                    {viewingEvent.category}
+                  </span>
+
+                  <button
+                    onClick={handleAdminShare}
+                    className="pointer-events-auto p-2 rounded-xl bg-slate-900/90 text-amber-400 hover:bg-amber-500 hover:text-slate-950 transition-all shadow-xl border border-slate-700/80 cursor-pointer flex items-center gap-1.5 text-xs font-bold px-3"
+                    title="Share Event Flyer"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    <span className="hidden sm:inline">Share</span>
+                  </button>
+                </div>
+
+                {/* Canvas Area with Image Zoom */}
+                <div className="w-full h-full flex-1 flex items-center justify-center p-4 pt-16 pb-16 overflow-auto scrollbar-thin">
+                  <div className="relative flex items-center justify-center transition-all duration-300">
+                    <img
+                      src={viewingEvent.imageUrl || 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80'}
+                      alt={viewingEvent.title}
+                      referrerPolicy="no-referrer"
+                      onClick={toggleAdminZoom}
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.dataset.triedDrive) {
+                          target.dataset.triedDrive = 'true';
+                          const match = (viewingEvent.imageUrl || '').match(/(?:id=|\/d\/)([a-zA-Z0-9_-]+)/);
+                          if (match && match[1]) {
+                            target.src = `https://drive.google.com/uc?export=view&id=${match[1]}`;
+                            return;
+                          }
+                        }
+                        if (!target.dataset.fallback) {
+                          target.dataset.fallback = 'true';
+                          target.src = 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80';
+                        }
+                      }}
+                      style={{
+                        transform: `scale(${adminZoomScale})`,
+                        transformOrigin: 'center center',
+                        transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+                      }}
+                      className={`max-h-[70vh] w-auto max-w-full object-contain rounded-2xl shadow-2xl border border-slate-800 transition-transform ${adminZoomScale > 1 ? 'cursor-zoom-out' : 'cursor-zoom-in'}`}
+                      title="Click poster to zoom in/out"
+                    />
+                  </div>
+                </div>
+
+                {/* Bottom Zoom Controls Toolbar */}
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 shadow-2xl text-xs font-bold text-slate-200">
+                  <button
+                    onClick={() => setAdminZoomScale(prev => Math.max(1, +(prev - 0.3).toFixed(1)))}
+                    disabled={adminZoomScale <= 1}
+                    className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 disabled:opacity-40 hover:text-white transition-colors cursor-pointer disabled:cursor-not-allowed"
+                    title="Zoom Out"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </button>
+                  <span className="px-2 text-[11px] font-mono text-amber-400 select-none min-w-[45px] text-center">
+                    {Math.round(adminZoomScale * 100)}%
+                  </span>
+                  <button
+                    onClick={() => setAdminZoomScale(prev => Math.min(2.5, +(prev + 0.3).toFixed(1)))}
+                    disabled={adminZoomScale >= 2.5}
+                    className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 disabled:opacity-40 hover:text-white transition-colors cursor-pointer disabled:cursor-not-allowed"
+                    title="Zoom In"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                  {adminZoomScale > 1 && (
+                    <button
+                      onClick={() => setAdminZoomScale(1)}
+                      className="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer ml-1"
+                      title="Reset Zoom"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Event Details Content Panel */}
+              <div className="w-full lg:w-2/5 p-6 sm:p-8 flex flex-col justify-between overflow-y-auto space-y-6 max-h-[50vh] lg:max-h-[85vh] bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800">
+                <div className="space-y-4">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 text-xs font-bold border border-amber-500/20">
+                    <Sparkles className="w-3.5 h-3.5" /> Full Event Poster
+                  </div>
+
+                  <h2 className="text-xl sm:text-2xl font-extrabold text-white leading-snug">
+                    {viewingEvent.title}
+                  </h2>
+
+                  <div className="space-y-2.5 text-xs text-slate-300 bg-slate-950/70 p-4 rounded-2xl border border-slate-800">
+                    <div className="flex items-center gap-2.5 text-slate-200 font-semibold">
+                      <Calendar className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>{viewingEvent.date}</span>
+                      {viewingEvent.time && <span className="text-slate-400 font-normal">({viewingEvent.time})</span>}
+                    </div>
+
+                    <div className="flex items-center gap-2.5 text-slate-300">
+                      <MapPin className="w-4 h-4 text-sky-400 shrink-0" />
+                      <span>{viewingEvent.location}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 text-slate-400 text-[11px]">
+                      <Users className="w-4 h-4 text-slate-500 shrink-0" />
+                      <span>Host: <strong className="text-slate-200">{viewingEvent.organizer || 'Care Team'}</strong></span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Description</h4>
+                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-normal">
+                      {viewingEvent.description}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Modal Footer Actions */}
+                <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row gap-3">
+                  <button
+                    onClick={handleAdminShare}
+                    className="py-2.5 px-4 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="Share flyer link"
+                  >
+                    <Share2 className="w-3.5 h-3.5" /> Share
+                  </button>
+                  <button
+                    onClick={() => {
+                      deleteEvent(viewingEvent.id);
+                      setAdminZoomScale(1);
+                      setViewingEvent(null);
+                    }}
+                    className="py-2.5 px-4 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAdminZoomScale(1);
+                      setViewingEvent(null);
+                    }}
+                    className="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

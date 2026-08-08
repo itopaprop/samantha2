@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, Calendar, MapPin, Clock, Upload, Sparkles, Image as ImageIcon } from 'lucide-react';
+import { X, Calendar, Upload, Sparkles } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
@@ -12,9 +12,6 @@ export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('2026-08-25');
-  const [time, setTime] = useState('14:00 - 17:00');
-  const [location, setLocation] = useState('Main Campus Central Gardens');
-  const [category, setCategory] = useState<'Community Celebration' | 'Health & Wellness' | 'Family & Resident Gathering' | 'Educational & Workshop' | 'Cultural & Arts'>('Community Celebration');
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [status, setStatus] = useState<'Upcoming' | 'Ongoing' | 'Completed'>('Upcoming');
@@ -35,14 +32,14 @@ export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !date || !location.trim()) return;
+    if (!title.trim() || !date) return;
 
     addEvent({
       title: title.trim(),
       date,
-      time: time.trim() || '14:00 - 16:00',
-      location: location.trim(),
-      category,
+      time: '14:00 - 17:00',
+      location: 'Main Campus',
+      category: 'Community Celebration',
       description: description.trim() || 'Join us for this community gathering.',
       imageUrl: imageUrl || 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80',
       status,
@@ -99,19 +96,15 @@ export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Event Category *
+                Event Date *
               </label>
-              <select
-                value={category}
-                onChange={e => setCategory(e.target.value as any)}
+              <input
+                type="date"
+                required
+                value={date}
+                onChange={e => setDate(e.target.value)}
                 className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none font-medium"
-              >
-                <option value="Community Celebration">Community Celebration</option>
-                <option value="Health & Wellness">Health & Wellness</option>
-                <option value="Family & Resident Gathering">Family & Resident Gathering</option>
-                <option value="Educational & Workshop">Educational & Workshop</option>
-                <option value="Cultural & Arts">Cultural & Arts</option>
-              </select>
+              />
             </div>
 
             <div>
@@ -130,61 +123,17 @@ export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Event Date *
-              </label>
-              <input
-                type="date"
-                required
-                value={date}
-                onChange={e => setDate(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none font-medium"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Time Interval
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. 14:00 - 17:00"
-                value={time}
-                onChange={e => setTime(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none font-medium"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Location *
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Main Campus Gardens / Parlor"
-                value={location}
-                onChange={e => setLocation(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none font-medium"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Organizer / Host
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Clinical Nursing Unit"
-                value={organizer}
-                onChange={e => setOrganizer(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none font-medium"
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+              Organizer / Host
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Clinical Nursing Unit"
+              value={organizer}
+              onChange={e => setOrganizer(e.target.value)}
+              className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none font-medium"
+            />
           </div>
 
           <div>

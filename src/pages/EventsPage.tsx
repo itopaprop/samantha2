@@ -15,7 +15,11 @@ import {
   Maximize2,
   X,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Share2,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw
 } from 'lucide-react';
 
 export const EventsPage: React.FC = () => {
@@ -24,6 +28,7 @@ export const EventsPage: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedEventIndex, setSelectedEventIndex] = useState<number | null>(null);
+  const [zoomScale, setZoomScale] = useState<number>(1);
 
   const categories = [
     { id: 'all', label: 'All Events' },
@@ -298,22 +303,64 @@ export const EventsPage: React.FC = () => {
 
         const handlePrev = (e: React.MouseEvent) => {
           e.stopPropagation();
+          setZoomScale(1);
           setSelectedEventIndex((selectedEventIndex - 1 + totalEvents) % totalEvents);
         };
 
         const handleNext = (e: React.MouseEvent) => {
           e.stopPropagation();
+          setZoomScale(1);
           setSelectedEventIndex((selectedEventIndex + 1) % totalEvents);
+        };
+
+        const handleShare = async (e: React.MouseEvent) => {
+          e.stopPropagation();
+          const shareUrl = window.location.href;
+          const shareData = {
+            title: evt.title,
+            text: `${evt.title} - ${evt.date} at ${evt.location}`,
+            url: shareUrl,
+          };
+
+          let shared = false;
+          if (navigator.share) {
+            try {
+              await navigator.share(shareData);
+              shared = true;
+              showToast('Event flyer shared successfully!', 'success');
+            } catch (err) {
+              // Fallback to clipboard if Web Share API is blocked in iframe or cancelled
+            }
+          }
+
+          if (!shared) {
+            try {
+              await navigator.clipboard.writeText(shareUrl);
+              showToast('Event flyer link copied to clipboard!', 'success');
+            } catch (err) {
+              showToast('Unable to copy link to clipboard', 'error');
+            }
+          }
+        };
+
+        const toggleZoom = () => {
+          setZoomScale(prev => (prev === 1 ? 1.8 : prev >= 2.5 ? 1 : prev + 0.5));
         };
 
         return (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/92 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto"
-            onClick={() => setSelectedEventIndex(null)}
+            onClick={() => {
+              setZoomScale(1);
+              setSelectedEventIndex(null);
+            }}
           >
             {/* Floating Top Close Button */}
             <button
-              onClick={() => setSelectedEventIndex(null)}
+              onClick={() => {
+                setZoomScale(1);
+                setSelectedEventIndex(null);
+              }}
               className="fixed top-4 right-4 md:top-6 md:right-6 z-50 p-3 rounded-full bg-slate-900/90 text-white hover:bg-rose-600 hover:scale-105 active:scale-95 transition-all shadow-2xl border border-slate-700/80 cursor-pointer"
               aria-label="Close modal"
             >
@@ -348,36 +395,93 @@ export const EventsPage: React.FC = () => {
               )}
 
               {/* Flyer Image Container */}
-              <div className="w-full lg:w-3/5 bg-slate-950 flex items-center justify-center p-4 sm:p-6 relative min-h-[280px] lg:min-h-[460px] overflow-hidden">
-                <img
-                  src={evt.imageUrl || 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80'}
-                  alt={evt.title}
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    const target = e.currentTarget;
-                    if (!target.dataset.triedDrive) {
-                      target.dataset.triedDrive = 'true';
-                      const match = (evt.imageUrl || '').match(/(?:id=|\/d\/)([a-zA-Z0-9_-]+)/);
-                      if (match && match[1]) {
-                        target.src = `https://drive.google.com/uc?export=view&id=${match[1]}`;
-                        return;
-                      }
-                    }
-                    if (!target.dataset.fallback) {
-                      target.dataset.fallback = 'true';
-                      target.src = 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80';
-                    }
-                  }}
-                  className="max-h-[75vh] w-auto max-w-full object-contain rounded-2xl shadow-2xl border border-slate-800"
-                />
-                <div className="absolute top-4 left-4 flex gap-2 z-10">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-1 rounded-lg shadow-md">
-                    {evt.category}
-                  </span>
-                  {evt.status === 'Completed' && (
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg border border-slate-700">
-                      Past Event
+              <div className="w-full lg:w-3/5 bg-slate-950 flex flex-col relative min-h-[300px] lg:min-h-[480px]">
+                {/* Floating Top Header Badges & Share Icon */}
+                <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-20 pointer-events-none">
+                  <div className="flex gap-2 pointer-events-auto">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-1 rounded-lg shadow-md">
+                      {evt.category}
                     </span>
+                    {evt.status === 'Completed' && (
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg border border-slate-700">
+                        Past Event
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={handleShare}
+                    className="pointer-events-auto p-2 rounded-xl bg-slate-900/90 text-amber-400 hover:bg-amber-500 hover:text-slate-950 transition-all shadow-xl border border-slate-700/80 cursor-pointer flex items-center gap-1.5 text-xs font-bold px-3"
+                    title="Share Event Flyer"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    <span className="hidden sm:inline">Share</span>
+                  </button>
+                </div>
+
+                {/* Canvas Area with Image Zoom */}
+                <div className="w-full h-full flex-1 flex items-center justify-center p-4 pt-16 pb-16 overflow-auto scrollbar-thin">
+                  <div className="relative flex items-center justify-center transition-all duration-300">
+                    <img
+                      src={evt.imageUrl || 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80'}
+                      alt={evt.title}
+                      referrerPolicy="no-referrer"
+                      onClick={toggleZoom}
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.dataset.triedDrive) {
+                          target.dataset.triedDrive = 'true';
+                          const match = (evt.imageUrl || '').match(/(?:id=|\/d\/)([a-zA-Z0-9_-]+)/);
+                          if (match && match[1]) {
+                            target.src = `https://drive.google.com/uc?export=view&id=${match[1]}`;
+                            return;
+                          }
+                        }
+                        if (!target.dataset.fallback) {
+                          target.dataset.fallback = 'true';
+                          target.src = 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80';
+                        }
+                      }}
+                      style={{
+                        transform: `scale(${zoomScale})`,
+                        transformOrigin: 'center center',
+                        transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+                      }}
+                      className={`max-h-[70vh] w-auto max-w-full object-contain rounded-2xl shadow-2xl border border-slate-800 transition-transform ${zoomScale > 1 ? 'cursor-zoom-out' : 'cursor-zoom-in'}`}
+                      title="Click poster to zoom in/out"
+                    />
+                  </div>
+                </div>
+
+                {/* Bottom Zoom Controls Toolbar */}
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 shadow-2xl text-xs font-bold text-slate-200">
+                  <button
+                    onClick={() => setZoomScale(prev => Math.max(1, +(prev - 0.3).toFixed(1)))}
+                    disabled={zoomScale <= 1}
+                    className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 disabled:opacity-40 hover:text-white transition-colors cursor-pointer disabled:cursor-not-allowed"
+                    title="Zoom Out"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </button>
+                  <span className="px-2 text-[11px] font-mono text-amber-400 select-none min-w-[45px] text-center">
+                    {Math.round(zoomScale * 100)}%
+                  </span>
+                  <button
+                    onClick={() => setZoomScale(prev => Math.min(2.5, +(prev + 0.3).toFixed(1)))}
+                    disabled={zoomScale >= 2.5}
+                    className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 disabled:opacity-40 hover:text-white transition-colors cursor-pointer disabled:cursor-not-allowed"
+                    title="Zoom In"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                  {zoomScale > 1 && (
+                    <button
+                      onClick={() => setZoomScale(1)}
+                      className="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer ml-1"
+                      title="Reset Zoom"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
                   )}
                 </div>
               </div>
@@ -424,17 +528,18 @@ export const EventsPage: React.FC = () => {
                 {/* Actions */}
                 <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row gap-3">
                   <button
-                    onClick={() => {
-                      handleRsvp(evt.title);
-                      setSelectedEventIndex(null);
-                    }}
-                    className="flex-1 py-3 px-4 rounded-xl text-xs font-extrabold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    onClick={handleShare}
+                    className="flex-1 py-3 px-5 rounded-xl text-xs font-extrabold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    title="Share event flyer"
                   >
-                    <HeartHandshake className="w-4 h-4" />
-                    <span>RSVP / Reserve Spot</span>
+                    <Share2 className="w-4 h-4" />
+                    <span>Share Event Flyer</span>
                   </button>
                   <button
-                    onClick={() => setSelectedEventIndex(null)}
+                    onClick={() => {
+                      setZoomScale(1);
+                      setSelectedEventIndex(null);
+                    }}
                     className="py-3 px-5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all cursor-pointer"
                   >
                     Close
