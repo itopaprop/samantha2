@@ -46,7 +46,8 @@ export const HomePage: React.FC = () => {
       image: 'https://lh3.googleusercontent.com/d/1RD_YHQAFkpt9Z7RhI-wIRuTXbR4VrQeL=s1600',
       title: 'Compassionate Care, Happy Living',
       subtitle: 'Providing exceptional elderly care and child care services in a safe, loving, and professional environment.',
-      tag: 'Elderly Residential & Memory Care'
+      tag: 'Elderly Residential & Memory Care',
+      objectPosition: 'object-top'
     },
     {
       driveId: '14C5r5SG-WEy_EW0Emfcihbcr1gf54Lrx',
@@ -197,7 +198,7 @@ export const HomePage: React.FC = () => {
                   target.src = `https://drive.google.com/uc?export=view&id=${slide.driveId}`;
                 }
               }}
-              className={`w-full h-full object-cover ${slide.objectPosition || 'object-top'} filter brightness-[0.45]`}
+              className={`w-full h-full object-cover ${slide.objectPosition || 'object-center'} filter brightness-[0.45]`}
             />
           </div>
         ))}

@@ -1149,13 +1149,43 @@ export const AdminDashboard: React.FC = () => {
                 <div key={item.id} className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-200/90 shadow-xs relative aspect-[4/3] group">
                   {item.mediaType === 'video' && item.videoUrl ? (
                     <div className="relative w-full h-full bg-slate-950 flex items-center justify-center">
-                      <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover opacity-90" />
+                      <img
+                        src={item.imageUrl}
+                        alt={item.title}
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          if (!target.dataset.triedDrive) {
+                            target.dataset.triedDrive = 'true';
+                            const match = item.imageUrl.match(/(?:id=|\/d\/)([a-zA-Z0-9_-]+)/);
+                            if (match && match[1]) {
+                              target.src = `https://drive.google.com/uc?export=view&id=${match[1]}`;
+                            }
+                          }
+                        }}
+                        className="w-full h-full object-cover opacity-90"
+                      />
                       <div className="absolute top-3 left-3 bg-rose-600 text-white text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md flex items-center gap-1 shadow-md">
                         <Play className="w-3 h-3 fill-current" /> Video
                       </div>
                     </div>
                   ) : (
-                    <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover" />
+                    <img
+                      src={item.imageUrl}
+                      alt={item.title}
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.dataset.triedDrive) {
+                          target.dataset.triedDrive = 'true';
+                          const match = item.imageUrl.match(/(?:id=|\/d\/)([a-zA-Z0-9_-]+)/);
+                          if (match && match[1]) {
+                            target.src = `https://drive.google.com/uc?export=view&id=${match[1]}`;
+                          }
+                        }
+                      }}
+                      className="w-full h-full object-cover"
+                    />
                   )}
 
                   <button

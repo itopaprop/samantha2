@@ -103,6 +103,14 @@ export const LightboxModal: React.FC<Props> = ({
             referrerPolicy="no-referrer"
             onError={(e) => {
               const target = e.currentTarget;
+              if (!target.dataset.triedDrive) {
+                target.dataset.triedDrive = 'true';
+                const match = image.imageUrl.match(/(?:id=|\/d\/)([a-zA-Z0-9_-]+)/);
+                if (match && match[1]) {
+                  target.src = `https://drive.google.com/uc?export=view&id=${match[1]}`;
+                  return;
+                }
+              }
               if (!target.dataset.fallback) {
                 target.dataset.fallback = 'true';
                 target.src = 'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=800&q=80';

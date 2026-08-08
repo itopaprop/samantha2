@@ -156,7 +156,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(() => {
-    const saved = localStorage.getItem('shh_gallery');
+    const saved = localStorage.getItem('shh_gallery_v2');
     return saved ? JSON.parse(saved) : INITIAL_GALLERY;
   });
 
@@ -220,7 +220,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [jobs]);
 
   useEffect(() => {
-    safeSave('shh_gallery', galleryItems);
+    safeSave('shh_gallery_v2', galleryItems);
   }, [galleryItems]);
 
   const showToast = (msg: string) => {

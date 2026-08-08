@@ -18,7 +18,8 @@ import {
   Check, 
   Ruler, 
   FileText, 
-  Send
+  Send,
+  MessageCircle
 } from 'lucide-react';
 
 export const RoofingPage: React.FC = () => {
@@ -314,11 +315,13 @@ export const RoofingPage: React.FC = () => {
               </div>
 
               <a
-                href="tel:+2347069332193"
-                className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm rounded-xl text-center transition-colors flex items-center justify-center gap-2"
+                href="https://wa.me/2347069332193?text=Hello%20Samanthasappy%20Home%2C%20I%20would%20like%20to%20chat%20with%20a%20roof%20engineer."
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm rounded-xl text-center transition-colors flex items-center justify-center gap-2 cursor-pointer"
               >
-                <Phone className="w-4 h-4" />
-                Speak to Roof Engineer Now
+                <MessageCircle className="w-4 h-4 fill-slate-950" />
+                Chat with roof engineer now
               </a>
             </div>
           </div>

@@ -122,7 +122,6 @@ export const Footer: React.FC = () => {
               <li><button onClick={() => handleNav('events')} className="hover:text-sky-400 transition-colors">Events & Activities</button></li>
               <li><button onClick={() => handleNav('gallery')} className="hover:text-sky-400 transition-colors">Photo Gallery</button></li>
               <li><button onClick={() => handleNav('careers')} className="hover:text-sky-400 transition-colors">Careers & Training</button></li>
-              <li><button onClick={() => handleNav('login')} className="hover:text-sky-400 transition-colors font-medium text-amber-400">Portal Login</button></li>
             </ul>
           </div>
 
