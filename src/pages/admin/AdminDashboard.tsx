@@ -12,6 +12,7 @@ import { EditStaffModal } from '../../components/modals/EditStaffModal';
 import { EditShiftModal } from '../../components/modals/EditShiftModal';
 import { ViewShiftsModal } from '../../components/modals/ViewShiftsModal';
 import { ComposeMessageModal } from '../../components/modals/ComposeMessageModal';
+import { ShareEventModal } from '../../components/modals/ShareEventModal';
 import { CareCategory, UserRole, StaffMember, Resident, Shift, CommunityEvent } from '../../types';
 import { 
   Users, 
@@ -96,6 +97,7 @@ export const AdminDashboard: React.FC = () => {
   const [selectedStaffModal, setSelectedStaffModal] = useState<StaffMember | null>(null);
   const [viewingEvent, setViewingEvent] = useState<CommunityEvent | null>(null);
   const [adminZoomScale, setAdminZoomScale] = useState<number>(1);
+  const [sharingAdminEvent, setSharingAdminEvent] = useState<CommunityEvent | null>(null);
 
   // Edit modal states
   const [editingResident, setEditingResident] = useState<Resident | null>(null);
@@ -1542,34 +1544,9 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Event Details / Full Flyer Lightbox Modal */}
       {viewingEvent && (() => {
-        const handleAdminShare = async (e: React.MouseEvent) => {
+        const handleAdminShare = (e: React.MouseEvent) => {
           e.stopPropagation();
-          const shareUrl = window.location.href;
-          const shareData = {
-            title: viewingEvent.title,
-            text: `${viewingEvent.title} - ${viewingEvent.date} at ${viewingEvent.location}`,
-            url: shareUrl,
-          };
-
-          let shared = false;
-          if (navigator.share) {
-            try {
-              await navigator.share(shareData);
-              shared = true;
-              showToast('Event flyer shared successfully!', 'success');
-            } catch (err) {
-              // Fallback to clipboard
-            }
-          }
-
-          if (!shared) {
-            try {
-              await navigator.clipboard.writeText(shareUrl);
-              showToast('Event flyer link copied to clipboard!', 'success');
-            } catch (err) {
-              showToast('Unable to copy link to clipboard', 'error');
-            }
-          }
+          setSharingAdminEvent(viewingEvent);
         };
 
         const toggleAdminZoom = () => {
@@ -1757,6 +1734,13 @@ export const AdminDashboard: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* Share Admin Event Modal */}
+      <ShareEventModal
+        isOpen={!!sharingAdminEvent}
+        onClose={() => setSharingAdminEvent(null)}
+        event={sharingAdminEvent}
+      />
 
     </div>
   );

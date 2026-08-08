@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { ShareEventModal } from '../components/modals/ShareEventModal';
+import { CommunityEvent } from '../types';
 import { 
   Calendar, 
   Clock, 
@@ -29,6 +31,7 @@ export const EventsPage: React.FC = () => {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedEventIndex, setSelectedEventIndex] = useState<number | null>(null);
   const [zoomScale, setZoomScale] = useState<number>(1);
+  const [sharingEvent, setSharingEvent] = useState<CommunityEvent | null>(null);
 
   const categories = [
     { id: 'all', label: 'All Events' },
@@ -259,13 +262,23 @@ export const EventsPage: React.FC = () => {
                 </div>
 
                 {/* Card Action Footer */}
-                <div className="p-6 pt-0">
+                <div className="p-6 pt-0 flex gap-2">
                   <button
                     onClick={() => setSelectedEventIndex(idx)}
-                    className="w-full py-2.5 px-4 rounded-xl text-xs font-extrabold bg-slate-900 hover:bg-amber-500 hover:text-slate-950 text-white shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer group/btn"
+                    className="flex-1 py-2.5 px-4 rounded-xl text-xs font-extrabold bg-slate-900 hover:bg-amber-500 hover:text-slate-950 text-white shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer group/btn"
                   >
                     <Eye className="w-4 h-4 text-amber-400 group-hover/btn:text-slate-950 transition-colors" />
                     <span>View Detail</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSharingEvent(evt);
+                    }}
+                    className="py-2.5 px-3 rounded-xl text-xs font-bold bg-slate-100 hover:bg-amber-500 hover:text-slate-950 text-slate-700 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="Share Event"
+                  >
+                    <Share2 className="w-4 h-4 text-amber-600 hover:text-slate-950" />
                   </button>
                 </div>
               </div>
@@ -313,34 +326,9 @@ export const EventsPage: React.FC = () => {
           setSelectedEventIndex((selectedEventIndex + 1) % totalEvents);
         };
 
-        const handleShare = async (e: React.MouseEvent) => {
+        const handleShare = (e: React.MouseEvent) => {
           e.stopPropagation();
-          const shareUrl = window.location.href;
-          const shareData = {
-            title: evt.title,
-            text: `${evt.title} - ${evt.date} at ${evt.location}`,
-            url: shareUrl,
-          };
-
-          let shared = false;
-          if (navigator.share) {
-            try {
-              await navigator.share(shareData);
-              shared = true;
-              showToast('Event flyer shared successfully!', 'success');
-            } catch (err) {
-              // Fallback to clipboard if Web Share API is blocked in iframe or cancelled
-            }
-          }
-
-          if (!shared) {
-            try {
-              await navigator.clipboard.writeText(shareUrl);
-              showToast('Event flyer link copied to clipboard!', 'success');
-            } catch (err) {
-              showToast('Unable to copy link to clipboard', 'error');
-            }
-          }
+          setSharingEvent(evt);
         };
 
         const toggleZoom = () => {
@@ -550,6 +538,13 @@ export const EventsPage: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* Share Event Modal */}
+      <ShareEventModal
+        isOpen={!!sharingEvent}
+        onClose={() => setSharingEvent(null)}
+        event={sharingEvent}
+      />
 
     </div>
   );
