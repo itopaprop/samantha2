@@ -15,10 +15,10 @@ export const LoginPage: React.FC = () => {
   const { loginUser } = useApp();
 
   const [selectedRole, setSelectedRole] = useState<UserRole>('Admin');
-  const [email, setEmail] = useState('admin@samanthasappy.com');
-  const [password, setPassword] = useState('@samantha');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberMe, setRememberMe] = useState(false);
   const [forgotModal, setForgotModal] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
   const [logoSrc, setLogoSrc] = useState('https://lh3.googleusercontent.com/d/1sUJpAFMzsPRgNuvKDSyRU01sgnLK41Fg');
@@ -28,18 +28,8 @@ export const LoginPage: React.FC = () => {
   const handleRoleChange = (role: UserRole) => {
     setSelectedRole(role);
     setAuthError(null);
-    if (role === 'Admin') {
-      setEmail('admin@samanthasappy.com');
-      setPassword('@samantha');
-    }
-    if (role === 'Staff') {
-      setEmail('s.jenkins@samanthasappyhome.com');
-      setPassword('@staff123');
-    }
-    if (role === 'Resident Relative') {
-      setEmail('david.miller@example.com');
-      setPassword('@relative123');
-    }
+    setEmail('');
+    setPassword('');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -117,7 +107,7 @@ export const LoginPage: React.FC = () => {
 
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Username / Email Address *
@@ -129,6 +119,8 @@ export const LoginPage: React.FC = () => {
                   required
                   value={email}
                   onChange={e => setEmail(e.target.value)}
+                  placeholder="Enter your email address"
+                  autoComplete="off"
                   className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
                 />
               </div>
@@ -152,6 +144,8 @@ export const LoginPage: React.FC = () => {
                   required
                   value={password}
                   onChange={e => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  autoComplete="new-password"
                   className="w-full pl-9 pr-20 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
                 />
                 <button
