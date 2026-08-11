@@ -1,5 +1,17 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
+  signInWithGoogle, 
+  signInWithEmail, 
+  logoutFirebaseUser, 
+  db 
+} from '../lib/firebase';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  onSnapshot 
+} from 'firebase/firestore';
+import { 
   User, 
   UserRole, 
   Resident, 
@@ -45,6 +57,7 @@ interface AppContextType {
   currentUser: User | null;
   users: User[];
   loginUser: (email: string, role: UserRole, password?: string) => boolean;
+  loginWithGoogle: (role: UserRole) => Promise<boolean>;
   switchDemoRole: (role: UserRole) => void;
   logout: () => void;
   
@@ -270,6 +283,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
+  const loginWithGoogle = async (role: UserRole): Promise<boolean> => {
+    try {
+      const gUser = await signInWithGoogle();
+      if (!gUser) {
+        // User closed or cancelled the sign-in popup window
+        return false;
+      }
+      if (!gUser.email) {
+        showToast('Google Sign-In failed: No email associated with Google account.');
+        return false;
+      }
+
+      const cleanEmail = gUser.email.trim().toLowerCase();
+      let matchedUser = users.find(u => u.email.trim().toLowerCase() === cleanEmail);
+
+      if (!matchedUser) {
+        matchedUser = {
+          id: `usr-g-${gUser.uid.slice(0, 8)}`,
+          name: gUser.displayName || cleanEmail.split('@')[0],
+          email: cleanEmail,
+          role: role,
+          avatar: gUser.photoURL || undefined,
+        };
+        setUsers(prev => [...prev, matchedUser!]);
+      } else if (matchedUser.role !== role) {
+        showToast(`Access Denied: ${cleanEmail} is registered as ${matchedUser.role}. Please select ${matchedUser.role} portal.`);
+        return false;
+      }
+
+      setCurrentUser(matchedUser);
+      setCurrentPage('dashboard');
+      showToast(`Welcome, ${matchedUser.name}! Signed in via Firebase Google Authentication.`);
+      return true;
+    } catch (err: any) {
+      if (err?.message) {
+        showToast(`Google Sign-In: ${err.message}`);
+      }
+      return false;
+    }
+  };
+
   const switchDemoRole = (role: UserRole) => {
     const found = users.find(u => u.role === role);
     if (found) {
@@ -280,6 +334,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logout = () => {
+    logoutFirebaseUser();
     setCurrentUser(null);
     setCurrentPage('home');
     showToast('You have been logged out safely.');
@@ -688,6 +743,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       currentUser,
       users,
       loginUser,
+      loginWithGoogle,
       switchDemoRole,
       logout,
       residents,

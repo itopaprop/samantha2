@@ -1,0 +1,87 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "Registered user profiles with roles (Admin, Staff, Resident Relative)",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["Admin", "Staff", "Resident Relative"] },
+        "phone": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "residents": {
+      "title": "Residents",
+      "description": "Residents residing at SamanthaSappy Care Home",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fullName": { "type": "string" },
+        "roomNumber": { "type": "string" },
+        "careCategory": { "type": "string" },
+        "age": { "type": "number" },
+        "dateOfBirth": { "type": "string" },
+        "emergencyContact": { "type": "string" },
+        "status": { "type": "string" },
+        "carePlanNotes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["fullName", "roomNumber", "careCategory"]
+    },
+    "staff": {
+      "title": "Staff Members",
+      "description": "Caregivers, nurses, and administrative personnel",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fullName": { "type": "string" },
+        "role": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "status": { "type": "string" },
+        "shiftPreference": { "type": "string" }
+      },
+      "required": ["fullName", "email", "role"]
+    },
+    "shifts": {
+      "title": "Shifts",
+      "description": "Scheduled work shifts for staff members",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "staffId": { "type": "string" },
+        "staffName": { "type": "string" },
+        "role": { "type": "string" },
+        "date": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["staffName", "date", "startTime", "endTime"]
+    },
+    "community_events": {
+      "title": "Community Events",
+      "description": "Events and activities hosted by SamanthaSappy Care Home",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "location": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string" },
+        "rsvpCount": { "type": "number" },
+        "capacity": { "type": "number" },
+        "imageUrl": { "type": "string" }
+      },
+      "required": ["title", "date", "location"]
+    }
+  }
+}
