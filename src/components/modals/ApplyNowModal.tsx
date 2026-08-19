@@ -12,13 +12,18 @@ import {
   CheckCircle2, 
   FileText,
   Stethoscope,
-  HeartHandshake
+  HeartHandshake,
+  Building2,
+  Copy,
+  Check,
+  MessageCircle
 } from 'lucide-react';
 
 export const ApplyNowModal: React.FC = () => {
-  const { isApplyModalOpen, setIsApplyModalOpen, showToast, addStaff, addResident } = useApp();
+  const { isApplyModalOpen, setIsApplyModalOpen, showToast, submitApplication } = useApp();
   const [appType, setAppType] = useState<'caregiver' | 'resident'>('caregiver');
   const [submitted, setSubmitted] = useState(false);
+  const [copiedAcc, setCopiedAcc] = useState<number | null>(null);
 
   // Applicant Photo State
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -97,7 +102,14 @@ export const ApplyNowModal: React.FC = () => {
     setSubmitted(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleCopyAccount = (accNum: string, accIdx: number) => {
+    navigator.clipboard.writeText(accNum);
+    setCopiedAcc(accIdx);
+    showToast(`Account number ${accNum} copied to clipboard!`);
+    setTimeout(() => setCopiedAcc(null), 3000);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const formattedRefs = [ref1, ref2]
@@ -110,52 +122,25 @@ export const ApplyNowModal: React.FC = () => {
         photoUrl: r.photoUrl || undefined,
       }));
 
-    if (appType === 'caregiver') {
-      addStaff({
-        name: fullName || 'Caregiver Applicant',
-        role: position,
-        qualification: `${experience} • NVQ Level 3 Care`,
-        phone: phone || '+44 7700 900111',
-        email: email || 'applicant@samanthasappy.co.uk',
-        shiftPreference: 'Day Shift',
-        status: 'Active',
-        assignedResidentsCount: 0,
-        avatar: photoPreview || undefined,
-        references: formattedRefs,
-      });
-      showToast(`Caregiver application for ${fullName} submitted successfully!`);
-    } else {
-      addResident({
-        name: fullName || 'Resident Applicant',
-        age: 78,
-        roomNumber: 'Room Pending',
-        category: careCategory,
-        healthStatus: 'Stable',
-        medicalNotes: medicalNotes || 'Resident admission application received via online portal.',
-        assignedStaffName: 'Admissions Coordinator',
-        avatar: photoPreview || undefined,
-        emergencyContact: {
-          name: ref1.name || sponsorName || 'Next of Kin',
-          relationship: ref1.relationship || 'Sponsor',
-          phone: ref1.phone || phone || '+44 7700 900222',
-        },
-        references: formattedRefs,
-        lastActivityUpdate: 'Admission application submitted and undergoing review.',
-        vitals: {
-          bloodPressure: '120/80 mmHg',
-          heartRate: '72 bpm',
-          temperature: '36.6 °C',
-          oxygenLevel: '98%',
-        },
-      });
-      showToast(`Resident admission application for ${fullName} submitted successfully!`);
-    }
+    await submitApplication({
+      type: appType,
+      fullName: fullName || (appType === 'caregiver' ? 'Caregiver Applicant' : 'Resident Applicant'),
+      email: email || 'applicant@samanthasappy.com',
+      phone: phone || '+234 706 933 2193',
+      photoUrl: photoPreview || undefined,
+      positionOrCategory: appType === 'caregiver' ? position : careCategory,
+      notesOrStatement: appType === 'caregiver' ? `${experience} • ${statement}` : medicalNotes,
+      sponsorName: appType === 'resident' ? sponsorName : undefined,
+      references: formattedRefs,
+    });
 
     setSubmitted(true);
-    setTimeout(() => {
-      setIsApplyModalOpen(false);
-      resetForm();
-    }, 2500);
+    if (appType === 'caregiver') {
+      setTimeout(() => {
+        setIsApplyModalOpen(false);
+        resetForm();
+      }, 3000);
+    }
   };
 
   return (
@@ -169,8 +154,12 @@ export const ApplyNowModal: React.FC = () => {
               <UserCheck className="w-5 h-5 text-sky-200" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-bold text-white">Care Portal Application</h2>
-              <p className="text-xs text-sky-100/90 font-medium">Apply as a Caregiver or Request Resident Admission</p>
+              <h2 className="text-base sm:text-lg font-bold text-white">
+                {submitted && appType === 'resident' ? 'Resident Care Payment Details' : 'Care Portal Application'}
+              </h2>
+              <p className="text-xs text-sky-100/90 font-medium">
+                {submitted && appType === 'resident' ? 'Official Samanthasappy Bank Accounts' : 'Apply as a Caregiver or Request Resident Admission'}
+              </p>
             </div>
           </div>
           <button 
@@ -184,16 +173,116 @@ export const ApplyNowModal: React.FC = () => {
         {/* Modal Body */}
         <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-5">
           {submitted ? (
-            <div className="py-12 text-center space-y-4">
-              <CheckCircle2 className="w-16 h-16 text-emerald-500 mx-auto animate-bounce" />
-              <h3 className="text-xl font-bold text-slate-900">Application Submitted!</h3>
-              <p className="text-sm text-slate-600 max-w-md mx-auto">
-                Thank you, <span className="font-semibold text-slate-900">{fullName}</span>. Your {appType === 'caregiver' ? 'caregiver job application' : 'resident care admission request'} has been safely logged with attached references.
-              </p>
-              <div className="pt-2">
-                <span className="inline-block px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-semibold border border-emerald-200">
-                  Ref Code: #{Math.floor(100000 + Math.random() * 900000)}
-                </span>
+            <div className="py-4 space-y-5">
+              <div className="text-center space-y-2">
+                <CheckCircle2 className="w-14 h-14 text-emerald-500 mx-auto animate-bounce" />
+                <h3 className="text-xl font-extrabold text-slate-900">
+                  {appType === 'resident' ? 'Resident Care Application Submitted Successfully!' : 'Caregiver Application Submitted!'}
+                </h3>
+                <p className="text-sm text-slate-600 max-w-md mx-auto">
+                  Thank you, <span className="font-semibold text-slate-900">{fullName}</span>. Your {appType === 'caregiver' ? 'caregiver job application' : 'resident care admission request'} has been safely logged with our admin team.
+                </p>
+              </div>
+
+              {/* Samanthasappy Account Details Popup Card */}
+              {appType === 'resident' && (
+                <div className="bg-gradient-to-br from-slate-50 to-sky-50/50 rounded-2xl p-5 border border-sky-100 space-y-4 shadow-sm animate-in zoom-in-95 duration-200">
+                  <div className="flex items-center gap-2.5 pb-2.5 border-b border-sky-200/60">
+                    <div className="w-8 h-8 rounded-lg bg-sky-700 text-white flex items-center justify-center shrink-0">
+                      <Building2 className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900">Samanthasappy Bank Account Details</h4>
+                      <p className="text-[11px] text-slate-500">Official accounts for resident care registration & admission fees</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* Account 1 */}
+                    <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2 relative hover:border-sky-300 transition-colors">
+                      <div className="text-xs font-extrabold text-sky-800 uppercase tracking-wider flex items-center justify-between">
+                        <span>Stanbic IBTC</span>
+                        <span className="text-[10px] px-2 py-0.5 bg-sky-50 text-sky-700 rounded-full font-bold">Account 1</span>
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-slate-500 font-medium">Account Name</div>
+                        <div className="text-xs font-bold text-slate-900">SAMANTHASAPP WORLD CONCEPT</div>
+                      </div>
+                      <div className="pt-1 flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
+                        <div>
+                          <div className="text-[10px] text-slate-400 font-semibold uppercase">Account No</div>
+                          <div className="text-base font-extrabold text-slate-900 tracking-wider font-mono">0005392596</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyAccount('0005392596', 1)}
+                          className="px-2.5 py-1 text-xs bg-sky-700 hover:bg-sky-800 text-white rounded-lg flex items-center gap-1 font-bold transition-all cursor-pointer shadow-2xs"
+                        >
+                          {copiedAcc === 1 ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedAcc === 1 ? 'Copied' : 'Copy'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Account 2 */}
+                    <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2 relative hover:border-teal-300 transition-colors">
+                      <div className="text-xs font-extrabold text-teal-800 uppercase tracking-wider flex items-center justify-between">
+                        <span>WEMA BANK</span>
+                        <span className="text-[10px] px-2 py-0.5 bg-teal-50 text-teal-700 rounded-full font-bold">Account 2</span>
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-slate-500 font-medium">Account Name</div>
+                        <div className="text-xs font-bold text-slate-900">SAMANTHASAPP WORLD CONCEPT</div>
+                      </div>
+                      <div className="pt-1 flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
+                        <div>
+                          <div className="text-[10px] text-slate-400 font-semibold uppercase">Account No</div>
+                          <div className="text-base font-extrabold text-slate-900 tracking-wider font-mono">0229796137</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyAccount('0229796137', 2)}
+                          className="px-2.5 py-1 text-xs bg-teal-700 hover:bg-teal-800 text-white rounded-lg flex items-center gap-1 font-bold transition-all cursor-pointer shadow-2xs"
+                        >
+                          {copiedAcc === 2 ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedAcc === 2 ? 'Copied' : 'Copy'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Written below account details */}
+                  <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="space-y-0.5 text-center sm:text-left">
+                      <p className="text-xs font-bold text-emerald-900 capitalize tracking-tight">
+                        send reciept via whatsapp after payment
+                      </p>
+                      <p className="text-[11px] text-emerald-700 font-medium">
+                        Send proof of payment directly to our lead care administrator via WhatsApp for instant payment verification (+234 706 933 2193)
+                      </p>
+                    </div>
+
+                    <a
+                      href="https://wa.me/2347069332193?text=Hello%20Samanthasappy%20Care%20Home,%20I%20have%20submitted%20a%20Resident%20Care%20Application%20and%20completed%20the%20payment.%20Here%20is%20my%20payment%20receipt."
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Send Receipt via WhatsApp</span>
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setIsApplyModalOpen(false); resetForm(); }}
+                  className="px-6 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer transition-all"
+                >
+                  Done & Close
+                </button>
               </div>
             </div>
           ) : (

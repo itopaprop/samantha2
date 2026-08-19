@@ -82,6 +82,38 @@
         "imageUrl": { "type": "string" }
       },
       "required": ["title", "date", "location"]
+    },
+    "applications": {
+      "title": "Care Applications",
+      "description": "Resident and Caregiver application submissions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "positionOrCategory": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["fullName", "email", "type"]
+    },
+    "consultation_bookings": {
+      "title": "Consultation Bookings",
+      "description": "Booked consultations for prospective residents and families",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "preferredDate": { "type": "string" },
+        "preferredTime": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["fullName", "email", "preferredDate"]
     }
   }
 }

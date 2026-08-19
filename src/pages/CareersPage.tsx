@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 export const CareersPage: React.FC = () => {
-  const { showToast, jobs } = useApp();
+  const { showToast, jobs, submitApplication } = useApp();
   const [selectedPosition, setSelectedPosition] = useState<string>('Senior Care Assistant');
   const [submitted, setSubmitted] = useState(false);
 
@@ -46,10 +46,31 @@ export const CareersPage: React.FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const formattedRefs = [form.ref1, form.ref2]
+      .filter(r => r.name.trim() !== '')
+      .map(r => ({
+        name: r.name,
+        relationship: r.relationship,
+        phone: r.phone,
+        email: r.email || undefined,
+        photoUrl: r.photoUrl || undefined,
+      }));
+
+    await submitApplication({
+      type: 'caregiver',
+      fullName: form.fullName || 'Job Applicant',
+      email: form.email || 'applicant@samanthasappy.com',
+      phone: form.phone || '+234 706 933 2193',
+      photoUrl: form.photoUrl || undefined,
+      positionOrCategory: form.position,
+      notesOrStatement: form.coverLetter,
+      references: formattedRefs,
+    });
+
     setSubmitted(true);
-    showToast(`Application submitted for ${form.position}!`);
     setTimeout(() => {
       setSubmitted(false);
       setForm({

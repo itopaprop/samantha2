@@ -47,12 +47,21 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
-    const success = loginUser(email, selectedRole, password);
-    if (!success) {
-      setAuthError(`Access Denied: Invalid credentials or account type mismatch for '${selectedRole}' portal.`);
+    setIsSubmitting(true);
+    try {
+      const success = await loginUser(email, selectedRole, password);
+      if (!success) {
+        setAuthError(`Access Denied: Invalid credentials or account type mismatch for '${selectedRole}' portal.`);
+      }
+    } catch (err: any) {
+      setAuthError(err?.message || 'An error occurred during authentication.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -190,10 +199,11 @@ export const LoginPage: React.FC = () => {
 
             <button
               type="submit"
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
+              disabled={isSubmitting}
+              className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white font-bold py-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
             >
               <KeyRound className="w-4 h-4" />
-              Sign In to {selectedRole} Portal
+              {isSubmitting ? 'Authenticating...' : `Sign In to ${selectedRole} Portal`}
             </button>
           </form>
 
@@ -233,11 +243,6 @@ export const LoginPage: React.FC = () => {
             <span>{isGoogleLoading ? 'Connecting to Google...' : `Sign in with Google (${selectedRole})`}</span>
           </button>
 
-          {/* Firebase Active Badge */}
-          <div className="pt-2 flex items-center justify-center gap-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50/80 p-2 rounded-xl border border-emerald-200/60">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-            <span>Firebase Auth & Firestore Real-Time Database Connected</span>
-          </div>
 
         </div>
 

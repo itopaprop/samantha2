@@ -99,6 +99,8 @@ export interface Message {
   content: string;
   attachmentName?: string;
   attachmentUrl?: string;
+  applicantPhotoUrl?: string;
+  references?: Reference[];
   isRead: boolean;
   timestamp: string;
 }
@@ -162,6 +164,21 @@ export interface CommunityEvent {
   imageUrl?: string;
   status: 'Upcoming' | 'Ongoing' | 'Completed';
   organizer?: string;
+}
+
+export interface ApplicationSubmission {
+  id: string;
+  type: 'caregiver' | 'resident';
+  fullName: string;
+  email: string;
+  phone: string;
+  photoUrl?: string;
+  positionOrCategory: string;
+  notesOrStatement?: string;
+  sponsorName?: string;
+  references: Reference[];
+  createdAt: string;
+  status: 'Received' | 'Under Review' | 'Approved' | 'Declined';
 }
 
 export interface ConsultationBooking {

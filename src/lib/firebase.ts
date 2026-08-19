@@ -82,3 +82,29 @@ export const logoutFirebaseUser = async () => {
 
 export { app, onAuthStateChanged };
 export type { FirebaseUser };
+
+/**
+ * Strips or truncates large base64 image strings before sending to Firestore
+ * to prevent write queue exhaustion or document limit overflow.
+ */
+export const sanitizeForFirestore = (data: any): any => {
+  if (data === null || data === undefined) return data;
+  if (typeof data === 'string') {
+    if (data.startsWith('data:image/') && data.length > 500) {
+      return '[Photo Document Attached]';
+    }
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeForFirestore(item));
+  }
+  if (typeof data === 'object') {
+    const cleaned: Record<string, any> = {};
+    for (const key of Object.keys(data)) {
+      cleaned[key] = sanitizeForFirestore(data[key]);
+    }
+    return cleaned;
+  }
+  return data;
+};
+

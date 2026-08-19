@@ -54,7 +54,8 @@ import {
   Share2,
   ZoomIn,
   ZoomOut,
-  RotateCcw
+  RotateCcw,
+  FileText
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
@@ -63,7 +64,10 @@ export const AdminDashboard: React.FC = () => {
     residents, 
     staff, 
     shifts, 
-    messages, 
+    messages,
+    deleteMessage,
+    applications,
+    deleteApplication,
     activityLogs, 
     events,
     deleteEvent,
@@ -80,7 +84,8 @@ export const AdminDashboard: React.FC = () => {
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'residents' | 'staff' | 'shifts' | 'messages' | 'events' | 'jobs' | 'gallery' | 'settings'>('overview');
-  const [messagingTab, setMessagingTab] = useState<'inbox' | 'sent'>('inbox');
+  const [messagingTab, setMessagingTab] = useState<'inbox' | 'sent' | 'applications'>('inbox');
+  const [deletingItem, setDeletingItem] = useState<{ type: 'message' | 'application'; id: string; title: string } | null>(null);
   
   // Modals state
   const [isAddResidentOpen, setIsAddResidentOpen] = useState(false);
@@ -98,6 +103,7 @@ export const AdminDashboard: React.FC = () => {
   const [viewingEvent, setViewingEvent] = useState<CommunityEvent | null>(null);
   const [adminZoomScale, setAdminZoomScale] = useState<number>(1);
   const [sharingAdminEvent, setSharingAdminEvent] = useState<CommunityEvent | null>(null);
+  const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
 
   // Edit modal states
   const [editingResident, setEditingResident] = useState<Resident | null>(null);
@@ -961,10 +967,10 @@ export const AdminDashboard: React.FC = () => {
               </button>
             </div>
 
-            <div className="flex gap-2 border-b border-slate-200 pb-2">
+            <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
               <button
                 onClick={() => setMessagingTab('inbox')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                   messagingTab === 'inbox'
                     ? 'bg-slate-900 text-white'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -974,7 +980,7 @@ export const AdminDashboard: React.FC = () => {
               </button>
               <button
                 onClick={() => setMessagingTab('sent')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                   messagingTab === 'sent'
                     ? 'bg-slate-900 text-white'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -982,54 +988,298 @@ export const AdminDashboard: React.FC = () => {
               >
                 <Send className="w-3.5 h-3.5" /> Sent Items ({sentMessages.length})
               </button>
+              <button
+                onClick={() => setMessagingTab('applications')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                  messagingTab === 'applications'
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" /> Care Applications ({applications.length})
+              </button>
             </div>
 
-            <div className="space-y-3">
-              {(messagingTab === 'inbox' ? inboxMessages : sentMessages).map((msg) => (
-                <div
-                  key={msg.id}
-                  onClick={() => markMessageAsRead(msg.id)}
-                  className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-                    !msg.isRead && messagingTab === 'inbox'
-                      ? 'bg-sky-50/80 border-sky-300 font-semibold shadow-2xs'
-                      : 'bg-slate-50 border-slate-200'
-                  }`}
-                >
-                  <div className="flex justify-between items-start">
-                    <div className="font-bold text-slate-900 text-sm">{msg.subject}</div>
-                    <span className="text-[10px] text-slate-400">{msg.timestamp}</span>
+            {/* MESSAGES VIEW (INBOX / SENT) */}
+            {(messagingTab === 'inbox' || messagingTab === 'sent') && (
+              <div className="space-y-3">
+                {(messagingTab === 'inbox' ? inboxMessages : sentMessages).length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 text-xs bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    No {messagingTab} messages found.
                   </div>
-                  <div className="text-xs text-slate-500 mt-1">
-                    {messagingTab === 'inbox' ? `From: ${msg.senderName} (${msg.senderRole})` : `To: ${msg.receiverName} (${msg.receiverRole})`}
-                  </div>
-                  <p className="text-xs text-slate-700 mt-2 leading-relaxed">
-                    {msg.content}
-                  </p>
-
-                  {(msg.attachmentName || msg.attachmentUrl) && (
-                    <div 
-                      className="mt-3 pt-3 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200/90 shadow-2xs"
-                      onClick={(e) => e.stopPropagation()}
+                ) : (
+                  (messagingTab === 'inbox' ? inboxMessages : sentMessages).map((msg) => (
+                    <div
+                      key={msg.id}
+                      onClick={() => markMessageAsRead(msg.id)}
+                      className={`p-4 rounded-2xl border transition-all cursor-pointer relative group ${
+                        !msg.isRead && messagingTab === 'inbox'
+                          ? 'bg-sky-50/80 border-sky-300 font-semibold shadow-2xs'
+                          : 'bg-slate-50 border-slate-200'
+                      }`}
                     >
-                      <div className="flex items-center gap-2 text-xs font-bold text-slate-800 min-w-0">
-                        <Paperclip className="w-4 h-4 text-sky-700 shrink-0" />
-                        <span className="truncate">{msg.attachmentName || 'Attached Document'}</span>
+                      <div className="flex justify-between items-start gap-3">
+                        <div className="font-bold text-slate-900 text-sm">{msg.subject}</div>
+                        <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <span className="text-[10px] text-slate-400">{msg.timestamp}</span>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingItem({ type: 'message', id: msg.id, title: msg.subject })}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-rose-200 flex items-center gap-1 text-xs font-bold"
+                            title="Delete or Retain Message"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                            <span className="hidden sm:inline text-rose-600 text-[11px]">Delete</span>
+                          </button>
+                        </div>
                       </div>
-                      <a
-                        href={msg.attachmentUrl || `data:text/plain;charset=utf-8,${encodeURIComponent(msg.content)}`}
-                        download={msg.attachmentName || 'attachment.txt'}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-700 hover:bg-sky-800 text-white rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer shadow-xs"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Download Attachment</span>
-                      </a>
+                      <div className="text-xs text-slate-500 mt-1">
+                        {messagingTab === 'inbox' ? `From: ${msg.senderName} (${msg.senderRole})` : `To: ${msg.receiverName} (${msg.receiverRole})`}
+                      </div>
+                      <p className="text-xs text-slate-700 mt-2 leading-relaxed">
+                        {msg.content}
+                      </p>
+
+                      {(msg.attachmentName || msg.attachmentUrl) && (
+                        <div 
+                          className="mt-3 pt-3 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200/90 shadow-2xs"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-800 min-w-0">
+                            <Paperclip className="w-4 h-4 text-sky-700 shrink-0" />
+                            <span className="truncate">{msg.attachmentName || 'Attached Document'}</span>
+                          </div>
+                          <a
+                            href={msg.attachmentUrl || `data:text/plain;charset=utf-8,${encodeURIComponent(msg.content)}`}
+                            download={msg.attachmentName || 'attachment.txt'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-700 hover:bg-sky-800 text-white rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer shadow-xs"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Download Attachment</span>
+                          </a>
+                        </div>
+                      )}
+
+                      {/* References & Applicant Photos Panel */}
+                      {((msg.references && msg.references.length > 0) || msg.applicantPhotoUrl) && (
+                        <div 
+                          className="mt-3 pt-3 border-t border-slate-200/80 space-y-3 bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 pb-1 border-b border-slate-100">
+                            <Paperclip className="w-4 h-4 text-sky-700" />
+                            <span>Submitted Applicant & Reference Image Documents</span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {/* Applicant Photo */}
+                            {msg.applicantPhotoUrl && (
+                              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                                <div className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                                  <span>Applicant Photo / ID</span>
+                                  <span className="text-[10px] px-2 py-0.5 bg-sky-100 text-sky-800 font-bold rounded-md">Primary</span>
+                                </div>
+                                <div className="relative group overflow-hidden rounded-xl border border-slate-200 bg-slate-900 h-32">
+                                  <img 
+                                    src={msg.applicantPhotoUrl} 
+                                    alt="Applicant Photo" 
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform cursor-pointer"
+                                    onClick={() => setPreviewImage({ url: msg.applicantPhotoUrl!, title: `${msg.subject} - Applicant Photo` })}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewImage({ url: msg.applicantPhotoUrl!, title: `${msg.subject} - Applicant Photo` })}
+                                    className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold gap-1 cursor-pointer"
+                                  >
+                                    <Eye className="w-4 h-4 text-amber-300" /> View Photo
+                                  </button>
+                                </div>
+                                <a
+                                  href={msg.applicantPhotoUrl}
+                                  download="Applicant_Photo.jpg"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-sky-700 hover:bg-sky-800 text-white rounded-lg text-[11px] font-bold cursor-pointer transition-colors shadow-2xs"
+                                >
+                                  <Download className="w-3 h-3" /> Download Photo
+                                </a>
+                              </div>
+                            )}
+
+                            {/* Reference Images */}
+                            {msg.references && msg.references.map((ref, idx) => (
+                              <div key={idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                                <div>
+                                  <div className="text-xs font-extrabold text-slate-900">{ref.name || `Reference ${idx + 1}`}</div>
+                                  <div className="text-[11px] text-sky-700 font-bold">{ref.relationship || 'Guarantor / Reference'}</div>
+                                  <div className="text-[11px] text-slate-600">📞 {ref.phone || 'N/A'} {ref.email ? `| ✉️ ${ref.email}` : ''}</div>
+                                </div>
+
+                                {ref.photoUrl ? (
+                                  <div className="space-y-1.5 pt-1">
+                                    <div className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Reference Photo Document</div>
+                                    <div className="relative group overflow-hidden rounded-xl border border-slate-200 bg-slate-900 h-32">
+                                      <img 
+                                        src={ref.photoUrl} 
+                                        alt={ref.name} 
+                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform cursor-pointer"
+                                        onClick={() => setPreviewImage({ url: ref.photoUrl!, title: `Reference Document: ${ref.name} (${ref.relationship})` })}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => setPreviewImage({ url: ref.photoUrl!, title: `Reference Document: ${ref.name} (${ref.relationship})` })}
+                                        className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold gap-1 cursor-pointer"
+                                      >
+                                        <Eye className="w-4 h-4 text-amber-300" /> View Full Image
+                                      </button>
+                                    </div>
+                                    <a
+                                      href={ref.photoUrl}
+                                      download={`${(ref.name || 'Reference').replace(/\s+/g, '_')}_Doc.jpg`}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-sky-700 hover:bg-sky-800 text-white rounded-lg text-[11px] font-bold cursor-pointer transition-colors shadow-2xs"
+                                    >
+                                      <Download className="w-3 h-3" /> Download Document
+                                    </a>
+                                  </div>
+                                ) : (
+                                  <div className="text-[11px] text-slate-400 italic bg-white p-2 rounded-lg border border-slate-100">
+                                    No photo image attached for this reference
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* CARE APPLICATIONS SUBMISSIONS VIEW */}
+            {messagingTab === 'applications' && (
+              <div className="space-y-4">
+                {applications.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 text-xs bg-slate-50 rounded-2xl border border-dashed border-slate-200 space-y-1">
+                    <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    <div className="font-bold text-slate-600">No care applications logged in database.</div>
+                    <div>When job seekers or clients submit care applications, they will appear here with full details and image attachments.</div>
+                  </div>
+                ) : (
+                  applications.map((app) => (
+                    <div key={app.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-200">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-md uppercase tracking-wider ${
+                              app.type === 'caregiver' ? 'bg-teal-100 text-teal-800' : 'bg-sky-100 text-sky-800'
+                            }`}>
+                              {app.type === 'caregiver' ? 'Caregiver Staff Application' : 'Resident Care Admission Application'}
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-500">Submitted: {app.createdAt}</span>
+                          </div>
+                          <h3 className="text-base font-extrabold text-slate-900 mt-1">{app.fullName}</h3>
+                        </div>
+
+                        {/* Action Buttons: Retain or Delete Application */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            Retained in Database
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingItem({ type: 'application', id: app.id, title: `Application for ${app.fullName}` })}
+                            className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                            title="Delete Application Submission"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Contact Info</span>
+                          <div className="font-bold text-slate-800">✉️ {app.email}</div>
+                          <div className="text-slate-600 font-medium">📞 {app.phone}</div>
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Category / Role</span>
+                          <div className="font-bold text-slate-800">{app.positionOrCategory}</div>
+                          {app.sponsorName && <div className="text-slate-600">Sponsor: {app.sponsorName}</div>}
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Medical / Qualifications Note</span>
+                          <div className="text-slate-700 line-clamp-2">{app.notesOrStatement || 'N/A'}</div>
+                        </div>
+                      </div>
+
+                      {/* Attached Images preview */}
+                      {((app.references && app.references.length > 0) || app.photoUrl) && (
+                        <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-3">
+                          <div className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 pb-1 border-b border-slate-100">
+                            <Paperclip className="w-4 h-4 text-sky-700" />
+                            <span>Attached Applicant Photo & Reference Images</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {app.photoUrl && (
+                              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3">
+                                <img
+                                  src={app.photoUrl}
+                                  alt="Applicant Photo"
+                                  className="w-12 h-12 rounded-lg object-cover cursor-pointer hover:opacity-90 shrink-0 border border-slate-200"
+                                  onClick={() => setPreviewImage({ url: app.photoUrl!, title: `Application Photo: ${app.fullName}` })}
+                                />
+                                <div>
+                                  <div className="text-xs font-bold text-slate-900">Applicant Photo Document</div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewImage({ url: app.photoUrl!, title: `Application Photo: ${app.fullName}` })}
+                                    className="text-[11px] font-bold text-sky-700 hover:underline cursor-pointer flex items-center gap-1 mt-0.5"
+                                  >
+                                    <Eye className="w-3 h-3 text-amber-600" /> View Photo
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            {app.references && app.references.map((ref, idx) => (
+                              <div key={idx} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3">
+                                {ref.photoUrl ? (
+                                  <img
+                                    src={ref.photoUrl}
+                                    alt={ref.name}
+                                    className="w-12 h-12 rounded-lg object-cover cursor-pointer hover:opacity-90 shrink-0 border border-slate-200"
+                                    onClick={() => setPreviewImage({ url: ref.photoUrl!, title: `Reference Document: ${ref.name} (${ref.relationship})` })}
+                                  />
+                                ) : (
+                                  <div className="w-12 h-12 rounded-lg bg-slate-200 flex items-center justify-center text-slate-400 text-[10px] shrink-0 font-bold">No Doc</div>
+                                )}
+                                <div className="min-w-0">
+                                  <div className="text-xs font-bold text-slate-900 truncate">{ref.name} ({ref.relationship})</div>
+                                  <div className="text-[11px] text-slate-500">📞 {ref.phone}</div>
+                                  {ref.photoUrl && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewImage({ url: ref.photoUrl!, title: `Reference Document: ${ref.name}` })}
+                                      className="text-[11px] font-bold text-sky-700 hover:underline cursor-pointer flex items-center gap-1 mt-0.5"
+                                    >
+                                      <Eye className="w-3 h-3 text-amber-600" /> View Document
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -1400,6 +1650,54 @@ export const AdminDashboard: React.FC = () => {
               <div className="text-slate-700 leading-relaxed font-medium">{selectedResidentModal.medicalNotes || 'No specific medical notes recorded.'}</div>
             </div>
 
+            {/* Attached References & Images Section */}
+            {selectedResidentModal.references && selectedResidentModal.references.length > 0 && (
+              <div className="p-4 bg-sky-50/70 rounded-2xl border border-sky-100 space-y-3 text-xs">
+                <div className="font-bold text-sky-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-sky-700" />
+                  <span>Attached References & Guarantor Documents ({selectedResidentModal.references.length})</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {selectedResidentModal.references.map((ref: any, idx: number) => (
+                    <div key={idx} className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
+                      <div className="font-bold text-slate-900">{ref.name}</div>
+                      <div className="text-[11px] text-sky-700 font-bold">{ref.relationship}</div>
+                      <div className="text-[11px] text-slate-600">📞 {ref.phone} {ref.email ? `| ✉️ ${ref.email}` : ''}</div>
+                      {ref.photoUrl ? (
+                        <div className="pt-1 space-y-1">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase">Reference Image</div>
+                          <div className="relative group overflow-hidden rounded-lg border border-slate-200 bg-slate-900 h-28">
+                            <img 
+                              src={ref.photoUrl} 
+                              alt={ref.name} 
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform cursor-pointer"
+                              onClick={() => setPreviewImage({ url: ref.photoUrl, title: `Resident Reference: ${ref.name} (${ref.relationship})` })}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setPreviewImage({ url: ref.photoUrl, title: `Resident Reference: ${ref.name} (${ref.relationship})` })}
+                              className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold gap-1 cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-amber-300" /> View Photo
+                            </button>
+                          </div>
+                          <a
+                            href={ref.photoUrl}
+                            download={`${(ref.name || 'Reference').replace(/\s+/g, '_')}_Ref_Doc.jpg`}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-sky-700 hover:bg-sky-800 text-white rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
+                          >
+                            <Download className="w-3 h-3" /> Download Image
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-400 italic bg-slate-50 p-1.5 rounded-lg">No document photo attached</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center gap-3 pt-2">
               <button
                 onClick={() => handlePrintResident(selectedResidentModal)}
@@ -1477,6 +1775,54 @@ export const AdminDashboard: React.FC = () => {
                 <div className="font-semibold text-slate-800">{selectedStaffModal.qualification || 'Certified Care Specialist'}</div>
               </div>
             </div>
+
+            {/* Attached Staff References & Images Section */}
+            {selectedStaffModal.references && selectedStaffModal.references.length > 0 && (
+              <div className="p-4 bg-teal-50/70 rounded-2xl border border-teal-100 space-y-3 text-xs">
+                <div className="font-bold text-teal-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-teal-700" />
+                  <span>Submitted Staff References & Guarantor Documents ({selectedStaffModal.references.length})</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {selectedStaffModal.references.map((ref: any, idx: number) => (
+                    <div key={idx} className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
+                      <div className="font-bold text-slate-900">{ref.name}</div>
+                      <div className="text-[11px] text-teal-700 font-bold">{ref.relationship}</div>
+                      <div className="text-[11px] text-slate-600">📞 {ref.phone} {ref.email ? `| ✉️ ${ref.email}` : ''}</div>
+                      {ref.photoUrl ? (
+                        <div className="pt-1 space-y-1">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase">Reference Image</div>
+                          <div className="relative group overflow-hidden rounded-lg border border-slate-200 bg-slate-900 h-28">
+                            <img 
+                              src={ref.photoUrl} 
+                              alt={ref.name} 
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform cursor-pointer"
+                              onClick={() => setPreviewImage({ url: ref.photoUrl, title: `Staff Reference: ${ref.name} (${ref.relationship})` })}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setPreviewImage({ url: ref.photoUrl, title: `Staff Reference: ${ref.name} (${ref.relationship})` })}
+                              className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold gap-1 cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-amber-300" /> View Photo
+                            </button>
+                          </div>
+                          <a
+                            href={ref.photoUrl}
+                            download={`${(ref.name || 'Reference').replace(/\s+/g, '_')}_Ref_Doc.jpg`}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
+                          >
+                            <Download className="w-3 h-3" /> Download Image
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-400 italic bg-slate-50 p-1.5 rounded-lg">No document photo attached</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Assigned Residents List Section */}
             <div className="space-y-3 pt-2">
@@ -1741,6 +2087,121 @@ export const AdminDashboard: React.FC = () => {
         onClose={() => setSharingAdminEvent(null)}
         event={sharingAdminEvent}
       />
+
+      {/* Lightbox Image Preview Modal */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div
+            className="relative max-w-3xl w-full bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden shadow-2xl p-6 text-white space-y-4 max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h3 className="text-base font-extrabold text-white truncate pr-4">{previewImage.title}</h3>
+              <button
+                onClick={() => setPreviewImage(null)}
+                className="p-2 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto flex items-center justify-center bg-slate-950 p-2 rounded-2xl border border-slate-800 min-h-[300px]">
+              <img
+                src={previewImage.url}
+                alt={previewImage.title}
+                className="max-h-[65vh] w-auto max-w-full object-contain rounded-xl shadow-xl"
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <a
+                href={previewImage.url}
+                download="Document_Image.jpg"
+                className="px-4 py-2 bg-sky-700 hover:bg-sky-800 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer shadow-sm"
+              >
+                <Download className="w-4 h-4" /> Download Full Quality
+              </a>
+              <button
+                type="button"
+                onClick={() => setPreviewImage(null)}
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete or Retain Confirmation Modal */}
+      {deletingItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setDeletingItem(null)}
+        >
+          <div
+            className="max-w-md w-full bg-white rounded-3xl p-6 border border-slate-200 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-extrabold text-slate-900">Manage Received Item</h3>
+                <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                  You selected <strong className="text-slate-900">"{deletingItem.title}"</strong>.
+                  Do you want to retain this in the admin portal or permanently delete it?
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 text-xs text-slate-600 space-y-1.5">
+              <div className="font-bold text-slate-800">Choose Option:</div>
+              <div className="flex items-start gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <span><strong>Retain Item</strong>: Keep this message or application saved in records.</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <Trash2 className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span><strong>Delete Item</strong>: Permanently remove from system storage.</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeletingItem(null);
+                  showToast('Item retained in portal records.');
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                Retain Item
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (deletingItem.type === 'message') {
+                    deleteMessage(deletingItem.id);
+                  } else if (deletingItem.type === 'application') {
+                    deleteApplication(deletingItem.id);
+                  }
+                  setDeletingItem(null);
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
