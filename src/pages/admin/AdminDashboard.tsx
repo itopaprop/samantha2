@@ -206,7 +206,7 @@ export const AdminDashboard: React.FC = () => {
   // Stat Calculations
   const totalResidents = residents.length;
   const totalStaff = staff.length;
-  const studentCaregivers = residents.filter(r => r.careCategory === 'Student Caregiver').length;
+  const dementiaCareClients = residents.filter(r => r.careCategory === 'Dementia Support').length;
   const domiciliaryClients = residents.filter(r => r.careCategory === 'Domiciliary Care').length;
   const dailyCareClients = residents.filter(r => r.careCategory === 'Daily Living Assistance' || r.careCategory === 'Residential Elderly Care').length;
   const vulnerableClients = residents.filter(r => r.careCategory === 'Vulnerable Adult Support').length;
@@ -231,7 +231,10 @@ export const AdminDashboard: React.FC = () => {
     s.position.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const inboxMessages = messages.filter(m => m.receiverId === currentUser.id);
+  const inboxMessages = messages.filter(m => 
+    m.receiverId === currentUser.id || 
+    (currentUser.role === 'Admin' && (m.receiverRole === 'Admin' || m.receiverId === 'usr-admin-1' || !m.receiverId))
+  );
   const sentMessages = messages.filter(m => m.senderId === currentUser.id);
 
   return (
@@ -526,10 +529,10 @@ export const AdminDashboard: React.FC = () => {
                   <Plus className="w-3.5 h-3.5" /> Add Resident
                 </button>
                 <button
-                  onClick={() => triggerAddResidentWithCategory('Student Caregiver')}
+                  onClick={() => triggerAddResidentWithCategory('Dementia Support')}
                   className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                 >
-                  <GraduationCap className="w-3.5 h-3.5" /> Add Student Caregiver
+                  <Brain className="w-3.5 h-3.5" /> Add Dementia Support
                 </button>
                 <button
                   onClick={() => triggerAddResidentWithCategory('Domiciliary Care')}
@@ -567,9 +570,9 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-2">
-                <div className="text-xs font-bold text-purple-700 uppercase tracking-wider">Student Caregivers</div>
-                <div className="text-3xl font-extrabold text-purple-700">{studentCaregivers}</div>
-                <div className="text-[11px] text-slate-400 font-medium">Training Trainees</div>
+                <div className="text-xs font-bold text-purple-700 uppercase tracking-wider">Dementia Support</div>
+                <div className="text-3xl font-extrabold text-purple-700">{dementiaCareClients}</div>
+                <div className="text-[11px] text-slate-400 font-medium">Specialist Memory Care</div>
               </div>
 
               <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-2">
@@ -1217,14 +1220,35 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Attached Images preview */}
-                      {((app.references && app.references.length > 0) || app.photoUrl) && (
+                      {/* Attached Images & Receipt preview */}
+                      {((app.references && app.references.length > 0) || app.photoUrl || app.receiptUrl) && (
                         <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-3">
                           <div className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 pb-1 border-b border-slate-100">
                             <Paperclip className="w-4 h-4 text-sky-700" />
-                            <span>Attached Applicant Photo & Reference Images</span>
+                            <span>Attached Documents & Payment Receipts</span>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {app.receiptUrl && (
+                              <div className="p-2.5 bg-emerald-50/80 rounded-xl border border-emerald-200 flex items-center gap-3">
+                                <img
+                                  src={app.receiptUrl}
+                                  alt="Payment Receipt"
+                                  className="w-12 h-12 rounded-lg object-cover cursor-pointer hover:opacity-90 shrink-0 border border-emerald-300"
+                                  onClick={() => setPreviewImage({ url: app.receiptUrl!, title: `Payment Receipt: ${app.fullName}` })}
+                                />
+                                <div className="min-w-0">
+                                  <div className="text-xs font-bold text-emerald-950 truncate">Payment Receipt / Proof</div>
+                                  <div className="text-[11px] text-emerald-700 truncate font-medium">{app.receiptName || 'Bank Transfer Proof'}</div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewImage({ url: app.receiptUrl!, title: `Payment Receipt: ${app.fullName}` })}
+                                    className="text-[11px] font-bold text-emerald-700 hover:underline cursor-pointer flex items-center gap-1 mt-0.5"
+                                  >
+                                    <Eye className="w-3 h-3 text-emerald-600" /> View Receipt
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                             {app.photoUrl && (
                               <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3">
                                 <img

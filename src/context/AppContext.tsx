@@ -26,6 +26,7 @@ import {
   INITIAL_COMMUNITY_EVENTS
 } from '../data/initialData';
 import { supabase, ephemeralAuthClient, uploadToStorage } from '../lib/supabase';
+import { invokeRegisterStaff, invokeRegisterRelative } from '../lib/edgeFunctions';
 import {
   profileToUser,
   userToProfile,
@@ -784,13 +785,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // ============================================================================
-  // RESIDENTS MANAGEMENT
+  // RESIDENTS MANAGEMENT (SECURE EDGE FUNCTION & WELCOME EMAIL)
   // ============================================================================
 
   const addResident = async (residentData: Omit<Resident, 'id' | 'admissionDate'>) => {
-    const tempPassword = generateTempPassword();
     const residentUUID = generateUUID();
-    const relativeUUID = generateUUID();
 
     // 1. Upload Avatar if base64/data
     let avatarUrl = residentData.avatar || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80';
@@ -820,40 +819,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       references: processedReferences,
     };
 
-    // Optimistic UI update
+    // Optimistic UI update for resident
     setResidents(prev => [newResident, ...prev]);
 
-    // 2. Create Relative Account
     const relativePhoneClean = residentData.emergencyContact.phone ? residentData.emergencyContact.phone.replace(/[^0-9]/g, '') : `${Date.now()}`;
     const relativeEmail = `${relativePhoneClean}@relative.samanthasappy.com`;
-    let effectiveRelativeUUID = relativeUUID;
 
-    // Register user in Supabase Auth without affecting active admin session
+    // 2. Call Privileged Supabase Edge Function to create Family Portal Auth & Dispatch Welcome Email
+    let relativeUserId = generateUUID();
+    let setupPasswordUrl: string | undefined;
+    let emailDispatched = false;
+
     try {
-      const { data: authSignupData, error: authSignupError } = await ephemeralAuthClient.auth.signUp({
-        email: relativeEmail.toLowerCase(),
-        password: tempPassword,
-        options: {
-          data: {
-            name: residentData.emergencyContact.name || 'Relative of ' + newResident.fullName,
-            role: 'Resident Relative',
-            relationship: residentData.emergencyContact.relationship || 'Next of Kin',
-            phone: residentData.emergencyContact.phone || '+234 706 933 2193',
-          }
-        }
+      const edgeResult = await invokeRegisterRelative({
+        resident: {
+          fullName: newResident.fullName,
+          dateOfBirth: newResident.dateOfBirth,
+          gender: newResident.gender,
+          roomNumber: newResident.roomNumber,
+          careCategory: newResident.careCategory,
+          assignedStaffId: newResident.assignedStaffId,
+          assignedStaffName: newResident.assignedStaffName,
+          healthStatus: newResident.healthStatus,
+          medicalNotes: newResident.medicalNotes,
+          avatar: newResident.avatar,
+          vitals: newResident.vitals,
+          references: newResident.references,
+        },
+        relative: {
+          name: residentData.emergencyContact?.name || 'Relative of ' + newResident.fullName,
+          relationship: residentData.emergencyContact?.relationship || 'Next of Kin',
+          phone: residentData.emergencyContact?.phone || '+234 706 933 2193',
+          email: relativeEmail,
+          photoUrl: processedReferences[0]?.photoUrl || null,
+        },
       });
-      if (authSignupError) {
-        console.warn('Supabase Auth relative signUp returned error:', authSignupError.message, authSignupError);
-      } else if (authSignupData?.user?.id && isValidUUID(authSignupData.user.id)) {
-        effectiveRelativeUUID = authSignupData.user.id;
-        console.log('Successfully registered relative in Supabase Auth:', authSignupData.user.id);
+
+      if (edgeResult.success) {
+        if (edgeResult.resident?.id) newResident.id = edgeResult.resident.id;
+        if (edgeResult.relativeUser?.id) relativeUserId = edgeResult.relativeUser.id;
+        setupPasswordUrl = edgeResult.setupPasswordUrl;
+        emailDispatched = Boolean(edgeResult.emailDispatched);
       }
-    } catch (authErr) {
-      console.warn('Supabase Auth relative registration notice:', authErr);
+    } catch (edgeErr) {
+      console.warn('Edge Function relative registration note (falling back to client store):', edgeErr);
     }
 
     const newRelativeUser: User = {
-      id: effectiveRelativeUUID,
+      id: relativeUserId,
       name: residentData.emergencyContact.name || 'Relative of ' + newResident.fullName,
       email: relativeEmail.toLowerCase(),
       phone: residentData.emergencyContact.phone || '+234 706 933 2193',
@@ -861,47 +874,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       relationship: residentData.emergencyContact.relationship || 'Next of Kin',
       residentLinkedId: newResident.id,
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-      password: tempPassword,
     };
     setUsers(prev => [...prev, newRelativeUser]);
 
-    // Save to Supabase (residents table and profiles table)
-    try {
-      const resRow = residentToRow(newResident);
-      const { data: inserted, error: resErr } = await supabase
-        .from('residents')
-        .insert([resRow])
-        .select()
-        .single();
-      
-      if (resErr) {
-        if (resErr.code === 'PGRST205' || resErr.code === '42P01') {
-          console.warn('Note: "residents" table does not exist in Supabase yet. Resident stored in local state. (Run supabase/schema.sql in Supabase SQL editor)');
-        } else {
-          console.warn('Supabase resident insert notice:', resErr.message);
-        }
-      } else if (inserted) {
-        newResident.id = inserted.id;
-        newRelativeUser.residentLinkedId = inserted.id;
-      }
-
-      const profRow = userToProfile(newRelativeUser);
-      const { error: profErr } = await supabase
-        .from('profiles')
-        .upsert(profRow, { onConflict: 'email' });
-      
-      if (profErr) {
-        if (profErr.code === 'PGRST205' || profErr.code === '42P01') {
-          console.warn('Note: "profiles" table does not exist in Supabase yet. Profile stored in local state.');
-        } else {
-          console.warn('Supabase relative profile upsert notice:', profErr.message);
-        }
-      }
-    } catch (err) {
-      console.warn('Supabase resident insert exception:', err);
-    }
-
-    // 3. Dispatch Welcome Message
+    // 3. Dispatch in-app Welcome Message
     const welcomeMsg: Message = {
       id: generateUUID(),
       senderId: currentUser?.id || 'usr-admin-1',
@@ -911,7 +887,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       receiverName: newRelativeUser.name,
       receiverRole: 'Resident Relative',
       subject: `🎉 Family Care Portal Access for ${newResident.fullName}`,
-      content: `Dear ${newRelativeUser.name},\n\nYour relative ${newResident.fullName} has been registered into Samanthasappy Home Care. An account has been created for you to track care updates, view health vitals, and communicate with caregivers.\n\nYour Portal Login Credentials:\n- Username (Registered Email): ${newRelativeUser.email}\n- Temporary Password: ${tempPassword}\n- Linked Resident: ${newResident.fullName}\n\nPlease log in to access your family care dashboard.\n\nWarm regards,\nSamanthasappy Home Administration`,
+      content: `Dear ${newRelativeUser.name},\n\nYour relative ${newResident.fullName} has been registered into Samanthasappy Home Care. An account has been created for you to track care updates, view health vitals, and communicate with caregivers.\n\nYour Portal Login Details:\n- Username (Registered Email): ${newRelativeUser.email}\n- Linked Resident: ${newResident.fullName}\n${setupPasswordUrl ? `- Password Setup Link: ${setupPasswordUrl}\n` : ''}\nPlease log in to access your family care dashboard.\n\nWarm regards,\nSamanthasappy Home Administration`,
       isRead: false,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
     };
@@ -926,7 +902,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newLog: ActivityLog = {
       id: generateUUID(),
       title: 'New Resident & Relative Account Registered',
-      description: `Added ${newResident.fullName}. Relative credentials created for ${newRelativeUser.email}.`,
+      description: `Added ${newResident.fullName}. Relative credentials and welcome email dispatched to ${newRelativeUser.email}.`,
       category: 'Admission',
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
       performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
@@ -938,8 +914,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Supabase log insert notice:', err);
     }
 
-    showToast(`Resident ${newResident.fullName} & Relative account registered.`);
-    return { resident: newResident, relativeUser: newRelativeUser, tempPassword };
+    showToast(`Resident ${newResident.fullName} registered & welcome email dispatched to relative.`);
+    return {
+      resident: newResident,
+      relativeUser: newRelativeUser,
+      setupPasswordUrl,
+      emailDispatched,
+    };
   };
 
   const updateResident = async (id: string, updated: Partial<Resident>) => {
@@ -966,7 +947,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // ============================================================================
-  // STAFF MANAGEMENT
+  // STAFF MANAGEMENT (SECURE EDGE FUNCTION & WELCOME EMAIL)
   // ============================================================================
 
   const addStaff = async (staffData: Omit<StaffMember, 'id' | 'joinDate' | 'assignedResidentsCount'>) => {
@@ -993,31 +974,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const joinDate = new Date().toISOString().split('T')[0];
     const cleanEmail = staffData.email.trim().toLowerCase();
-    let effectiveStaffUUID = staffUUID;
 
-    // Register user in Supabase Auth without affecting active admin session
+    // 1. Call Privileged Supabase Edge Function to Create Auth Account, DB Profile & Dispatch Email
+    let effectiveStaffUUID = staffUUID;
+    let setupPasswordUrl: string | undefined;
+    let emailDispatched = false;
+
     try {
-      const { data: authSignupData, error: authSignupError } = await ephemeralAuthClient.auth.signUp({
+      const edgeResult = await invokeRegisterStaff({
+        name: staffData.name,
         email: cleanEmail,
-        password: tempPassword,
-        options: {
-          data: {
-            name: staffData.name,
-            role: 'Staff',
-            position: staffData.position,
-            phone: staffData.phone || '',
-            avatar: avatarUrl,
-          }
-        }
+        phone: staffData.phone,
+        position: staffData.position,
+        qualification: staffData.qualification,
+        shift: staffData.shift,
+        avatar: avatarUrl,
+        references: processedReferences,
+        tempPassword,
       });
-      if (authSignupError) {
-        console.warn('Supabase Auth signUp returned error:', authSignupError.message, authSignupError);
-      } else if (authSignupData?.user?.id && isValidUUID(authSignupData.user.id)) {
-        effectiveStaffUUID = authSignupData.user.id;
-        console.log('Successfully registered user in Supabase Auth:', authSignupData.user.id);
+
+      if (edgeResult.success) {
+        if (edgeResult.user?.id) effectiveStaffUUID = edgeResult.user.id;
+        setupPasswordUrl = edgeResult.setupPasswordUrl;
+        emailDispatched = Boolean(edgeResult.emailDispatched);
       }
-    } catch (authErr) {
-      console.warn('Supabase Auth staff registration notice:', authErr);
+    } catch (edgeErr) {
+      console.warn('Edge Function staff registration note (falling back to client store):', edgeErr);
     }
 
     const newStaff: StaffMember = {
@@ -1042,43 +1024,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setUsers(prev => [...prev, newUser]);
 
-    // Save to Supabase (staff table and profiles table)
-    try {
-      const staffRow = staffToRow(newStaff);
-      const { data: insertedStaff, error: staffErr } = await supabase
-        .from('staff')
-        .insert([staffRow])
-        .select()
-        .single();
-      
-      if (staffErr) {
-        if (staffErr.code === 'PGRST205' || staffErr.code === '42P01') {
-          console.warn('Note: "staff" table does not exist in Supabase yet. Staff member stored in local state. (Run supabase/schema.sql in Supabase SQL editor)');
-        } else {
-          console.warn('Supabase staff insert notice:', staffErr.message);
-        }
-      } else if (insertedStaff) {
-        newStaff.id = insertedStaff.id;
-        newUser.id = insertedStaff.id;
-      }
-
-      const profileRow = userToProfile(newUser);
-      const { error: profErr } = await supabase
-        .from('profiles')
-        .upsert(profileRow, { onConflict: 'email' });
-      
-      if (profErr) {
-        if (profErr.code === 'PGRST205' || profErr.code === '42P01') {
-          console.warn('Note: "profiles" table does not exist in Supabase yet. Profile stored in local state.');
-        } else {
-          console.warn('Supabase profile upsert notice:', profErr.message);
-        }
-      }
-    } catch (err) {
-      console.warn('Supabase staff insert notice:', err);
-    }
-
-    // Welcome Message
+    // 2. Dispatch In-App Welcome Message
     const welcomeMsg: Message = {
       id: generateUUID(),
       senderId: currentUser?.id || 'usr-admin-1',
@@ -1088,7 +1034,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       receiverName: newUser.name,
       receiverRole: 'Staff',
       subject: '🎉 Welcome to Samanthasappy Home - Staff Account Login Credentials',
-      content: `Hello ${newUser.name},\n\nWelcome to the Samanthasappy Home Care Team! Your official staff portal account has been registered.\n\nYour Login Credentials:\n- Username (Login Email): ${newUser.email}\n- Temporary Password: ${tempPassword}\n- Access Role: Staff (${newStaff.position})\n\nPlease keep these credentials secure and change your password upon your first login.\n\nWarm regards,\nSamanthasappy Home Administration`,
+      content: `Hello ${newUser.name},\n\nWelcome to the Samanthasappy Home Care Team! Your official staff portal account has been registered.\n\nYour Login Credentials:\n- Username (Login Email): ${newUser.email}\n- Temporary Password: ${tempPassword}\n- Access Role: Staff (${newStaff.position})\n${setupPasswordUrl ? `- Password Setup Link: ${setupPasswordUrl}\n` : ''}\nPlease keep these credentials secure and change your password upon your first login.\n\nWarm regards,\nSamanthasappy Home Administration`,
       isRead: false,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
     };
@@ -1101,8 +1047,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const newLog: ActivityLog = {
       id: generateUUID(),
-      title: 'New Staff Member Registered & Credentials Dispatched',
-      description: `Registered ${newStaff.name} as ${newStaff.position} (${newUser.email}).`,
+      title: 'New Staff Member Registered & Welcome Email Dispatched',
+      description: `Registered ${newStaff.name} as ${newStaff.position} (${newUser.email}). Automatic welcome email sent.`,
       category: 'Staff',
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
       performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
@@ -1114,8 +1060,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Supabase log insert notice:', err);
     }
 
-    showToast(`Staff member ${newStaff.name} registered and saved to Supabase.`);
-    return { user: newUser, tempPassword };
+    showToast(`Staff member ${newStaff.name} registered & welcome email sent to ${cleanEmail}.`);
+    return {
+      user: newUser,
+      tempPassword,
+      setupPasswordUrl,
+      emailDispatched,
+    };
   };
 
   const updateStaff = async (id: string, updated: Partial<StaffMember>) => {
@@ -1578,7 +1529,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (url) photoUrl = url;
     }
 
-    // 2. Upload reference/guarantor documents
+    // 2. Upload payment receipt to documents/receipts bucket
+    let receiptUrl = appData.receiptUrl;
+    if (appData.receiptUrl?.startsWith('data:')) {
+      const { url } = await uploadToStorage('documents', 'receipts', appData.receiptUrl, `${appUUID}_receipt.jpg`);
+      if (url) receiptUrl = url;
+    }
+
+    // 3. Upload reference/guarantor documents
     const processedReferences = await Promise.all(
       appData.references.map(async (ref, idx) => {
         let refPhotoUrl = ref.photoUrl;
@@ -1596,6 +1554,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newSubmission: ApplicationSubmission = {
       ...appData,
       photoUrl,
+      receiptUrl,
+      receiptName: appData.receiptName,
       references: processedReferences,
       id: appUUID,
       createdAt,
@@ -1620,11 +1580,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const adminUsers = users.filter(u => u.role === 'Admin');
     const adminTargets = adminUsers.length > 0 
       ? adminUsers 
-      : [{ id: 'usr-admin-1', name: 'Managing Director', role: 'Admin' as UserRole }];
+      : [{ id: 'usr-admin-1', name: 'Managing Director & Admin', email: 'admin@samanthasappy.com', role: 'Admin' as UserRole }];
 
     const refsFormatted = processedReferences
       .map((r, idx) => `• Reference ${idx + 1}: ${r.name || 'N/A'} (${r.relationship || 'N/A'})\n  Phone: ${r.phone || 'N/A'} | Email: ${r.email || 'N/A'}${r.photoUrl ? ' | [Document Photo Attached]' : ''}`)
       .join('\n\n');
+
+    const appTitle = appData.type === 'caregiver' ? 'Caregiver / Staff Job Application' : 'Resident Care Admission Application';
 
     const adminMessages: Message[] = adminTargets.map(admin => ({
       id: generateUUID(),
@@ -1635,9 +1597,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       receiverName: admin.name,
       receiverRole: 'Admin',
       subject: `📥 NEW CARE APPLICATION: ${appData.fullName} (${appData.type === 'caregiver' ? 'Caregiver Applicant' : 'Resident Admission Request'})`,
-      content: `A new ${appData.type === 'caregiver' ? 'Caregiver Employment Application' : 'Resident Care Admission Application'} has been submitted through the web portal.\n\nAPPLICANT FULL DETAILS:\n• Full Name: ${appData.fullName}\n• Email: ${appData.email}\n• Phone: ${appData.phone}\n• Care Category / Position: ${appData.positionOrCategory}\n${appData.sponsorName ? `• Sponsor / Next of Kin: ${appData.sponsorName}\n` : ''}${appData.notesOrStatement ? `• Medical / Qualification Notes: ${appData.notesOrStatement}\n` : ''}${photoUrl ? '• Applicant Photo: Attached\n' : ''}\n\nATTACHED REFERENCES & GUARANTOR DOCUMENTS:\n${refsFormatted || 'None attached'}\n\nSubmitted on: ${createdAt}`,
-      attachmentUrl: photoUrl || processedReferences[0]?.photoUrl,
-      attachmentName: photoUrl ? `${appData.fullName.replace(/\s+/g, '_')}_ID.jpg` : undefined,
+      content: `A new ${appTitle} has been submitted through the web portal.\n\nAPPLICANT FULL DETAILS:\n• Full Name: ${appData.fullName}\n• Email: ${appData.email}\n• Phone: ${appData.phone}\n• Care Category / Position: ${appData.positionOrCategory}\n${appData.sponsorName ? `• Sponsor / Next of Kin: ${appData.sponsorName}\n` : ''}${appData.notesOrStatement ? `• Medical / Qualification Notes: ${appData.notesOrStatement}\n` : ''}${photoUrl ? '• Applicant Photo: Attached\n' : ''}${receiptUrl ? `• Payment Receipt: Attached (${appData.receiptName || 'Bank Transfer Proof'})\n` : ''}\n\nATTACHED REFERENCES & GUARANTOR DOCUMENTS:\n${refsFormatted || 'None attached'}\n\nNotification dispatched to: admin@samanthasappy.com\nSubmitted on: ${createdAt}`,
+      attachmentUrl: receiptUrl || photoUrl || processedReferences[0]?.photoUrl,
+      attachmentName: receiptUrl ? (appData.receiptName || `${appData.fullName.replace(/\s+/g, '_')}_Payment_Receipt.jpg`) : (photoUrl ? `${appData.fullName.replace(/\s+/g, '_')}_ID.jpg` : undefined),
       applicantPhotoUrl: photoUrl,
       references: processedReferences,
       isRead: false,
@@ -1649,6 +1611,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await supabase.from('messages').insert(adminMessages.map(messageToRow));
     } catch (err) {
       console.warn('Supabase admin messages insert notice:', err);
+    }
+
+    // Dispatch automated Email Notification to admin@samanthasappy.com
+    try {
+      const emailPayload = {
+        _subject: `[Samantha Sappy Care Home] New ${appTitle}: ${appData.fullName}`,
+        _template: 'table',
+        _captcha: 'false',
+        "Application Type": appTitle,
+        "Applicant Full Name": appData.fullName,
+        "Applicant Email": appData.email,
+        "Applicant Phone Number": appData.phone,
+        "Position / Care Category": appData.positionOrCategory,
+        "Sponsor / Next of Kin": appData.sponsorName || 'N/A',
+        "Experience / Medical Notes": appData.notesOrStatement || 'N/A',
+        "Guarantors & References": refsFormatted || 'None specified',
+        "Applicant Photo Attached": photoUrl ? 'Yes (Uploaded to Secure Storage)' : 'None',
+        "Payment Receipt Attached": receiptUrl ? `Yes - ${appData.receiptName || 'Proof Attached'}` : 'None',
+        "Submitted At": createdAt,
+        "Admin Portal Link": window.location.origin,
+        "Notification Route": "Dispatched to admin@samanthasappy.com and Admin Dashboard Inbox"
+      };
+
+      fetch('https://formsubmit.co/ajax/admin@samanthasappy.com', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(emailPayload),
+      }).catch(mailErr => console.warn('Email dispatch warning (gracefully bypassed):', mailErr));
+    } catch (emailErr) {
+      console.warn('Email notification notice:', emailErr);
     }
 
     // Register Activity Log

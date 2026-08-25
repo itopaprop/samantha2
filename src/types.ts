@@ -9,7 +9,11 @@ export type CareCategory =
   | 'Vulnerable Adult Support' 
   | 'Medication Support' 
   | 'Recreational Activities'
-  | 'Student Caregiver';
+  | 'weekend/short stay care'
+  | 'Home assistance'
+  | 'Maids'
+  | 'Hospital care'
+  | 'Children short stay & dancing club';
 
 export interface Reference {
   name: string;
@@ -173,6 +177,8 @@ export interface ApplicationSubmission {
   email: string;
   phone: string;
   photoUrl?: string;
+  receiptUrl?: string;
+  receiptName?: string;
   positionOrCategory: string;
   notesOrStatement?: string;
   sponsorName?: string;

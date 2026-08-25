@@ -24,58 +24,50 @@ export const ServicesPage: React.FC = () => {
     // Elderly Care
     {
       category: 'elderly',
-      badge: 'Elderly Care',
       title: 'Residential Elderly Care',
-      desc: 'Full residential suite living with 24/7 nursing oversight, daily personal care, house-keeping, customized nutrition, and vibrant social activities.',
-      features: ['24/7 Nursing Supervision', 'Personal Hygiene & Bathing Assistance', 'Daily Housekeeping & Laundry', 'Nutritious Chef-Prepared Meals', 'Emergency Call System']
+      desc: 'Full residential suite living with 24/7 caregiving oversight, daily personal care, house-keeping, customized nutrition, and vibrant social activities.',
+      features: ['24/7 Caregiving Supervision', 'Personal Hygiene & Bathing Assistance', 'Daily Housekeeping & Laundry', 'Nutritious Chef-Prepared Meals', 'Emergency Call System']
     },
     {
       category: 'elderly',
-      badge: 'Elderly Care',
       title: 'Assisted Living',
       desc: 'Designed for seniors who value independence while receiving gentle assistance with daily tasks, medication reminders, and mobility support.',
       features: ['Independent Suite Options', 'Medication Management', 'Mobility & Transfer Support', 'Social Dining & Club Access', 'Scheduled Transportation']
     },
     {
       category: 'elderly',
-      badge: 'Elderly Care',
       title: 'Specialized Dementia & Memory Support',
       desc: 'Evidence-based sensory therapy, Snoezelen light relaxation, validation communication, and memory stimulation in secure, soothing environments.',
       features: ['Certified Dementia Practitioners', 'Snoezelen Multi-Sensory Lounge', 'Memory Reminiscence Wall', 'De-escalation & Calming Protocols', 'Encrypted Family Portal Logs']
     },
     {
       category: 'elderly',
-      badge: 'Elderly Care',
       title: 'Respite Care (Short-Term Stays)',
       desc: 'Temporary short-term residential stays providing relief for family caregivers during holidays or medical recoveries.',
       features: ['Flexible Duration (1 week to 3 months)', 'Full Suite Access', 'Complete Medical Vitals Tracking', 'Physical Therapy Access', 'Seamless Transition Back Home']
     },
     {
       category: 'elderly',
-      badge: 'Elderly Care',
       title: 'End-of-Life & Palliative Support',
       desc: 'Compassionate, dignified comfort care focusing on pain relief, spiritual warmth, emotional support, and peaceful family presence.',
-      features: ['Dedicated Palliative Nurses', 'Pain & Symptom Management', 'Private Family Overnight Parlor', 'Spiritual & Emotional Counseling', '24/7 Family Access']
+      features: ['Dedicated Palliative Caregivers', 'Pain & Symptom Management', 'Private Family Overnight Parlor', 'Spiritual & Emotional Counseling', '24/7 Family Access']
     },
 
     // Child Care
     {
       category: 'child',
-      badge: 'Child Care',
       title: 'Sunshine Day Care Center',
       desc: 'Full-day and half-day early childhood care for toddlers and young children in a safe, soft-padded learning environment.',
       features: ['Montessori Learning Tools', 'Soft Impact Safeguarded Playroom', 'CCTV Monitored Entrances', 'Organic Snack & Lunch Menu', 'Pediatric First Aid Trained Staff']
     },
     {
       category: 'child',
-      badge: 'Child Care',
       title: 'Early Learning & Cognitive Activities',
       desc: 'Structured early education focusing on language acquisition, motor skills, interactive storytime, numbers, and creative arts.',
       features: ['Montessori Educator Guided', 'Fine & Gross Motor Play', 'Music & Rhythmic Circle', 'Guided Clay & Watercolor Art', 'Progress Tracking Cards']
     },
     {
       category: 'child',
-      badge: 'Child Care',
       title: 'Supervised Outdoor & Sensory Play',
       desc: 'Enclosed garden play park equipped with sandboxes, sensory water bays, and mini botanical gardening boxes.',
       features: ['Fenced Enclosed Play Park', 'Sensory Texture Station', 'Botanical Planting Box', 'Sun Safety Compliance', 'Constant Educator Ratios']
@@ -84,28 +76,24 @@ export const ServicesPage: React.FC = () => {
     // Additional Services
     {
       category: 'additional',
-      badge: 'Additional Care',
       title: 'Domiciliary Care (Home Visit Visits)',
       desc: 'Professional caregivers visit clients in their own private homes to assist with morning routines, meal prep, and medication administration.',
-      features: ['Morning & Evening Visits', 'Meal Preparation', 'Medication Reminders', 'Light Housework', 'Companionship Strolls']
+      features: ['Morning & Evening Visits', 'Meal Preparation', 'Medication Reminders', 'Companionship Strolls']
     },
     {
       category: 'additional',
-      badge: 'Additional Care',
       title: 'Vulnerable Adult Support',
       desc: 'Tailored daily living assistance for adults with physical disabilities or sensory impairments seeking structured autonomy.',
       features: ['Individualized Care Plan', 'Sensory Accommodation', 'Life Skills & Mobility Coaching', 'Community Activity Outings', 'Safeguarded Advocacy']
     },
     {
       category: 'additional',
-      badge: 'Additional Care',
       title: 'Health Monitoring & Vital Analytics',
       desc: 'Routine daily check of blood pressure, heart rate, blood glucose, temperature, and weight recorded in encrypted EHR logs.',
-      features: ['Daily Registered Nurse Checks', 'GP / Hospital Coordination', 'Emergency Tele-health Portal', 'Encrypted Relative Dashboard Access', 'Automated Health Alerts']
+      features: ['Daily Caregiver Health Checks', 'GP / Hospital Coordination', 'Emergency Tele-health Portal', 'Encrypted Relative Dashboard Access', 'Automated Health Alerts']
     },
     {
       category: 'additional',
-      badge: 'Additional Care',
       title: 'Dietitian Meal Planning & Hydration',
       desc: 'Chef-prepared fresh meals tailored to diabetic, low-sodium, dysphagia (pureed), halal, and vegetarian preferences.',
       features: ['Clinical Dietitian Review', 'Hydration Goal Tracking', 'Texture Modified Options', 'Fresh Farm-to-Table Ingredients', 'Special Family Dining Events']
@@ -187,9 +175,6 @@ export const ServicesPage: React.FC = () => {
               className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
             >
               <div className="space-y-3">
-                <span className="inline-block text-[10px] font-bold text-sky-800 bg-sky-50 px-2.5 py-1 rounded-md uppercase border border-sky-100">
-                  {service.badge}
-                </span>
                 <h3 className="text-xl font-bold text-slate-900">{service.title}</h3>
                 <p className="text-xs text-slate-600 leading-relaxed">
                   {service.desc}

@@ -114,7 +114,7 @@ export const RoofingContactPage: React.FC = () => {
                     <a href="tel:+2347069332193" className="font-bold text-white hover:text-amber-400 text-base">
                       +234 706 933 2193
                     </a>
-                    <div className="text-[11px] text-slate-400 mt-0.5">+234 708 969 9883 | +234 814 047 7119</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">+234 708 969 9883 | +234 814 047 7119 | 08126679055</div>
                   </div>
                 </div>
 

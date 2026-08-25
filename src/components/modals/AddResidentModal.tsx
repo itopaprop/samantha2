@@ -76,19 +76,20 @@ export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCate
         }
       });
 
-      onClose();
       setFullName('');
       setMedicalNotes('');
       setImagePreview(null);
       setRef1({ name: '', relationship: 'Primary Family Contact / Next of Kin', phone: '', email: '', photoUrl: null });
       setRef2({ name: '', relationship: 'Secondary Contact / Medical Referee', phone: '', email: '', photoUrl: null });
+      onClose();
 
       if (onSuccessCredentials && result?.relativeUser) {
         onSuccessCredentials({
           type: 'Resident Relative',
           accountName: result.relativeUser.name || 'Relative of ' + (result.resident?.fullName || fullName),
           email: result.relativeUser.email,
-          tempPassword: result.tempPassword || 'CareTeam@2025!',
+          setupPasswordUrl: result.setupPasswordUrl,
+          emailDispatched: result.emailDispatched,
           extraInfo: `Linked Resident: ${result.resident?.fullName || fullName} (${careCategory})`,
         });
       }
@@ -200,7 +201,11 @@ export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCate
                 <option value="Daily Living Assistance">Daily Living Assistance</option>
                 <option value="Domiciliary Care">Domiciliary Care</option>
                 <option value="Vulnerable Adult Support">Vulnerable Adult Support</option>
-                <option value="Student Caregiver">Student Caregiver</option>
+                <option value="weekend/short stay care">weekend/short stay care</option>
+                <option value="Home assistance">Home assistance</option>
+                <option value="Maids">Maids</option>
+                <option value="Hospital care">Hospital care</option>
+                <option value="Children short stay & dancing club">Children short stay & dancing club</option>
               </select>
             </div>
           </div>

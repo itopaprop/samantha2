@@ -90,13 +90,25 @@ export const EditStaffModal: React.FC<Props> = ({ isOpen, onClose, staffMember }
 
             <div>
               <label className="block font-bold text-slate-700 mb-1">Position / Job Title</label>
-              <input
-                type="text"
-                required
+              <select
                 value={position}
                 onChange={e => setPosition(e.target.value)}
                 className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500"
-              />
+              >
+                <option value="Senior Caregiver">Senior Caregiver</option>
+                <option value="Caregiver">Caregiver</option>
+                <option value="Supervisor">Supervisor</option>
+                <option value="Home assistant">Home assistant</option>
+                <option value="Human Resourse">Human Resourse</option>
+                <option value="Front Desk Officer">Front Desk Officer</option>
+                <option value="Manager">Manager</option>
+                <option value="Driver">Driver</option>
+                <option value="Security">Security</option>
+                <option value="Cleaner">Cleaner</option>
+                {position && !["Senior Caregiver", "Caregiver", "Supervisor", "Home assistant", "Human Resourse", "Front Desk Officer", "Manager", "Driver", "Security", "Cleaner"].includes(position) && (
+                  <option value={position}>{position}</option>
+                )}
+              </select>
             </div>
           </div>
 
@@ -139,6 +151,7 @@ export const EditStaffModal: React.FC<Props> = ({ isOpen, onClose, staffMember }
                 <option value="Afternoon Shift (14:30 - 22:30)">Afternoon Shift (14:30 - 22:30)</option>
                 <option value="Night Shift (22:00 - 07:30)">Night Shift (22:00 - 07:30)</option>
                 <option value="Flexible Shift Rotation">Flexible Shift Rotation</option>
+                <option value="to be determined(TBD)">to be determined(TBD)</option>
               </select>
             </div>
 

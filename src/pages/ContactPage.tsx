@@ -79,6 +79,7 @@ export const ContactPage: React.FC = () => {
                     <div className="text-slate-600">+2347069332193</div>
                     <div className="text-slate-600">+2347089699883</div>
                     <div className="text-slate-600">+2348140477119</div>
+                    <div className="text-slate-600">08126679055 (+2348126679055)</div>
                   </div>
                 </div>
 

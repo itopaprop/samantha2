@@ -16,7 +16,7 @@ export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose, onSuccessCrede
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [position, setPosition] = useState('Site Administrator');
+  const [position, setPosition] = useState('Senior Caregiver');
   const [shift, setShift] = useState('Morning (07:00 - 15:30)');
   const [qualification, setQualification] = useState('NVQ Level 3 Health & Social Care');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -74,6 +74,8 @@ export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose, onSuccessCrede
           accountName: result.user.name || name.trim(),
           email: result.user.email || formattedEmail,
           tempPassword: result.tempPassword || 'CareTeam@2025!',
+          setupPasswordUrl: result.setupPasswordUrl,
+          emailDispatched: result.emailDispatched,
           extraInfo: `Position: ${position} | Qualification: ${qualification}`,
         });
       }
@@ -203,13 +205,16 @@ export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose, onSuccessCrede
                 onChange={e => setPosition(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
               >
-                <option value="Site Administrator">Site Administrator</option>
-                <option value="Senior Nurse & Care Lead">Senior Nurse & Care Lead</option>
-                <option value="Dementia Care Specialist">Dementia Care Specialist</option>
-                <option value="Senior Care Assistant">Senior Care Assistant</option>
-                <option value="Child Development Educator">Child Development Educator</option>
-                <option value="Domiciliary Care Assistant">Domiciliary Care Assistant</option>
-                <option value="Healthcare Administrator">Healthcare Administrator</option>
+                <option value="Senior Caregiver">Senior Caregiver</option>
+                <option value="Caregiver">Caregiver</option>
+                <option value="Supervisor">Supervisor</option>
+                <option value="Home assistant">Home assistant</option>
+                <option value="Human Resourse">Human Resourse</option>
+                <option value="Front Desk Officer">Front Desk Officer</option>
+                <option value="Manager">Manager</option>
+                <option value="Driver">Driver</option>
+                <option value="Security">Security</option>
+                <option value="Cleaner">Cleaner</option>
               </select>
             </div>
             <div>
@@ -223,6 +228,7 @@ export const AddStaffModal: React.FC<Props> = ({ isOpen, onClose, onSuccessCrede
                 <option value="Afternoon (14:30 - 22:30)">Afternoon (14:30 - 22:30)</option>
                 <option value="Night (22:00 - 07:30)">Night (22:00 - 07:30)</option>
                 <option value="Flexible Visits">Flexible Visits</option>
+                <option value="to be determined(TBD)">to be determined(TBD)</option>
               </select>
             </div>
           </div>

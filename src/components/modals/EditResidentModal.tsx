@@ -173,10 +173,14 @@ export const EditResidentModal: React.FC<Props> = ({ isOpen, onClose, resident }
                 <option value="Child Care Services">Child Care Services</option>
                 <option value="Daily Living Assistance">Daily Living Assistance</option>
                 <option value="Domiciliary Care">Domiciliary Care</option>
-                <option value="Student Caregiver">Student Caregiver</option>
                 <option value="Vulnerable Adult Support">Vulnerable Adult Support</option>
                 <option value="Medication Support">Medication Support</option>
                 <option value="Recreational Activities">Recreational Activities</option>
+                <option value="weekend/short stay care">weekend/short stay care</option>
+                <option value="Home assistance">Home assistance</option>
+                <option value="Maids">Maids</option>
+                <option value="Hospital care">Hospital care</option>
+                <option value="Children short stay & dancing club">Children short stay & dancing club</option>
               </select>
             </div>
 

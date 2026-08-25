@@ -58,7 +58,7 @@ export const LoginPage: React.FC = () => {
     try {
       const success = await loginUser(email, selectedRole, password);
       if (!success) {
-        setAuthError(`Access Denied: Invalid credentials or account type mismatch for '${selectedRole}' portal.`);
+        setAuthError(`Access Denied: Invalid credentials or account type mismatch.`);
       }
     } catch (err: any) {
       setAuthError(err?.message || 'An error occurred during authentication.');

@@ -234,7 +234,7 @@ export const INITIAL_RESIDENTS: Resident[] = [
     dateOfBirth: '2001-09-04',
     gender: 'Female',
     roomNumber: 'Caregiver Training Center - Room B',
-    careCategory: 'Student Caregiver',
+    careCategory: 'Daily Living Assistance',
     assignedStaffId: 'usr-staff-2',
     assignedStaffName: 'Marcus Vance',
     medicalNotes: 'Student Caregiver Trainee completing NVQ Level 3 practical residency module in eldercare & safeguarding.',

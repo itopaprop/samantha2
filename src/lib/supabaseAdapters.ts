@@ -330,6 +330,8 @@ export function applicationFromRow(row: any): ApplicationSubmission {
     email: row.email,
     phone: row.phone,
     photoUrl: row.photo_url || undefined,
+    receiptUrl: row.receipt_url || undefined,
+    receiptName: row.receipt_name || undefined,
     positionOrCategory: row.position_or_category,
     notesOrStatement: row.notes_or_statement || undefined,
     sponsorName: row.sponsor_name || undefined,
@@ -347,6 +349,8 @@ export function applicationToRow(a: Partial<ApplicationSubmission>): any {
   if (a.email !== undefined) row.email = a.email.toLowerCase().trim();
   if (a.phone !== undefined) row.phone = a.phone;
   if (a.photoUrl !== undefined) row.photo_url = a.photoUrl;
+  if (a.receiptUrl !== undefined) row.receipt_url = a.receiptUrl;
+  if (a.receiptName !== undefined) row.receipt_name = a.receiptName;
   if (a.positionOrCategory !== undefined) row.position_or_category = a.positionOrCategory;
   if (a.notesOrStatement !== undefined) row.notes_or_statement = a.notesOrStatement;
   if (a.sponsorName !== undefined) row.sponsor_name = a.sponsorName;

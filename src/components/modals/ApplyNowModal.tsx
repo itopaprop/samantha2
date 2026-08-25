@@ -1,22 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   X, 
   Send, 
   UserCheck, 
-  Heart, 
   Upload, 
   Image as ImageIcon, 
   Trash2, 
-  Users, 
   CheckCircle2, 
-  FileText,
   Stethoscope,
   HeartHandshake,
   Building2,
   Copy,
   Check,
-  MessageCircle
+  MessageCircle,
+  Paperclip,
+  Receipt,
+  FileCheck,
+  AlertCircle,
+  Banknote
 } from 'lucide-react';
 
 export const ApplyNowModal: React.FC = () => {
@@ -25,8 +27,19 @@ export const ApplyNowModal: React.FC = () => {
   const [submitted, setSubmitted] = useState(false);
   const [copiedAcc, setCopiedAcc] = useState<number | null>(null);
 
+  // Fee Notice Popup State for Resident Care Admission (Auto disappears in 25s)
+  const [showFeeNotice, setShowFeeNotice] = useState(false);
+  const [feeTimeLeft, setFeeTimeLeft] = useState(25);
+  const feeTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const feeCountdownRef = useRef<NodeJS.Timeout | null>(null);
+
   // Applicant Photo State
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+
+  // Receipt Attachment State (Resident Care Admission)
+  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+  const [receiptFileName, setReceiptFileName] = useState<string | null>(null);
+  const [receiptFileType, setReceiptFileType] = useState<string | null>(null);
 
   // Common & Caregiver Fields
   const [fullName, setFullName] = useState('');
@@ -43,25 +56,6 @@ export const ApplyNowModal: React.FC = () => {
   const [careCategory, setCareCategory] = useState<'Elderly Residential' | 'Dementia Care' | 'Respite Care' | 'Nursing Care'>('Dementia Care');
   const [medicalNotes, setMedicalNotes] = useState('');
 
-  // 2 References State
-  const [ref1, setRef1] = useState<{ name: string; relationship: string; phone: string; email: string; photoUrl: string | null }>({
-    name: '',
-    relationship: '',
-    phone: '',
-    email: '',
-    photoUrl: null
-  });
-
-  const [ref2, setRef2] = useState<{ name: string; relationship: string; phone: string; email: string; photoUrl: string | null }>({
-    name: '',
-    relationship: '',
-    phone: '',
-    email: '',
-    photoUrl: null
-  });
-
-  if (!isApplyModalOpen) return null;
-
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -73,20 +67,66 @@ export const ApplyNowModal: React.FC = () => {
     }
   };
 
-  const handleRefPhotoUpload = (refNum: 1 | 2, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleReceiptUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setReceiptFileName(file.name);
+      setReceiptFileType(file.type);
       const reader = new FileReader();
       reader.onloadend = () => {
-        const url = reader.result as string;
-        if (refNum === 1) setRef1(prev => ({ ...prev, photoUrl: url }));
-        else setRef2(prev => ({ ...prev, photoUrl: url }));
+        setReceiptPreview(reader.result as string);
+        showToast('Payment receipt attached successfully!');
       };
       reader.readAsDataURL(file);
     }
   };
 
+  const startFeeNoticeTimer = () => {
+    if (feeTimerRef.current) clearTimeout(feeTimerRef.current);
+    if (feeCountdownRef.current) clearInterval(feeCountdownRef.current);
+    
+    setShowFeeNotice(true);
+    setFeeTimeLeft(25);
+
+    feeCountdownRef.current = setInterval(() => {
+      setFeeTimeLeft((prev) => {
+        if (prev <= 1) {
+          if (feeCountdownRef.current) clearInterval(feeCountdownRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    feeTimerRef.current = setTimeout(() => {
+      setShowFeeNotice(false);
+    }, 25000);
+  };
+
+  const closeFeeNotice = () => {
+    if (feeTimerRef.current) clearTimeout(feeTimerRef.current);
+    if (feeCountdownRef.current) clearInterval(feeCountdownRef.current);
+    setShowFeeNotice(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (feeTimerRef.current) clearTimeout(feeTimerRef.current);
+      if (feeCountdownRef.current) clearInterval(feeCountdownRef.current);
+    };
+  }, []);
+
+  const handleSelectAppType = (type: 'caregiver' | 'resident') => {
+    setAppType(type);
+    if (type === 'resident') {
+      startFeeNoticeTimer();
+    } else {
+      closeFeeNotice();
+    }
+  };
+
   const resetForm = () => {
+    closeFeeNotice();
     setFullName('');
     setEmail('');
     setPhone('');
@@ -97,30 +137,30 @@ export const ApplyNowModal: React.FC = () => {
     setCareCategory('Dementia Care');
     setMedicalNotes('');
     setPhotoPreview(null);
-    setRef1({ name: '', relationship: '', phone: '', email: '', photoUrl: null });
-    setRef2({ name: '', relationship: '', phone: '', email: '', photoUrl: null });
+    setReceiptPreview(null);
+    setReceiptFileName(null);
+    setReceiptFileType(null);
     setSubmitted(false);
   };
 
-  const handleCopyAccount = (accNum: string, accIdx: number) => {
-    navigator.clipboard.writeText(accNum);
+  const handleCopyAccount = (textToCopy: string, accIdx: number) => {
+    navigator.clipboard.writeText(textToCopy);
     setCopiedAcc(accIdx);
-    showToast(`Account number ${accNum} copied to clipboard!`);
+    if (textToCopy.toLowerCase().includes('samanthasappy')) {
+      showToast('Account name "Samanthasappy world concept" copied!');
+    } else {
+      showToast(`Account number ${textToCopy} copied to clipboard!`);
+    }
     setTimeout(() => setCopiedAcc(null), 3000);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const formattedRefs = [ref1, ref2]
-      .filter(r => r.name.trim() !== '')
-      .map(r => ({
-        name: r.name,
-        relationship: r.relationship,
-        phone: r.phone,
-        email: r.email,
-        photoUrl: r.photoUrl || undefined,
-      }));
+    if (appType === 'resident' && !receiptPreview) {
+      showToast('Payment receipt is mandatory. Please attach your payment receipt before submitting.');
+      return;
+    }
 
     await submitApplication({
       type: appType,
@@ -128,10 +168,12 @@ export const ApplyNowModal: React.FC = () => {
       email: email || 'applicant@samanthasappy.com',
       phone: phone || '+234 706 933 2193',
       photoUrl: photoPreview || undefined,
+      receiptUrl: (appType === 'resident' && receiptPreview) ? receiptPreview : undefined,
+      receiptName: (appType === 'resident' && receiptFileName) ? receiptFileName : undefined,
       positionOrCategory: appType === 'caregiver' ? position : careCategory,
       notesOrStatement: appType === 'caregiver' ? `${experience} • ${statement}` : medicalNotes,
       sponsorName: appType === 'resident' ? sponsorName : undefined,
-      references: formattedRefs,
+      references: [],
     });
 
     setSubmitted(true);
@@ -142,6 +184,8 @@ export const ApplyNowModal: React.FC = () => {
       }, 3000);
     }
   };
+
+  if (!isApplyModalOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
@@ -182,6 +226,18 @@ export const ApplyNowModal: React.FC = () => {
                 <p className="text-sm text-slate-600 max-w-md mx-auto">
                   Thank you, <span className="font-semibold text-slate-900">{fullName}</span>. Your {appType === 'caregiver' ? 'caregiver job application' : 'resident care admission request'} has been safely logged with our admin team.
                 </p>
+
+                {/* Dispatch Status Badges */}
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-sky-50 border border-sky-200 text-sky-800 rounded-full text-xs font-semibold">
+                    <Check className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Admin Dashboard Inbox Notified</span>
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-full text-xs font-semibold">
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Email Sent to admin@samanthasappy.com</span>
+                  </div>
+                </div>
               </div>
 
               {/* Samanthasappy Account Details Popup Card */}
@@ -252,25 +308,53 @@ export const ApplyNowModal: React.FC = () => {
                   </div>
 
                   {/* Written below account details */}
-                  <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200 flex flex-col sm:flex-row items-center justify-between gap-3">
-                    <div className="space-y-0.5 text-center sm:text-left">
-                      <p className="text-xs font-bold text-emerald-900 capitalize tracking-tight">
-                        send reciept via whatsapp after payment
-                      </p>
-                      <p className="text-[11px] text-emerald-700 font-medium">
-                        Send proof of payment directly to our lead care administrator via WhatsApp for instant payment verification (+234 706 933 2193)
-                      </p>
+                  <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200 space-y-3">
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pb-2 border-b border-emerald-200/70">
+                      <div className="space-y-0.5 text-center sm:text-left">
+                        <p className="text-xs font-bold text-emerald-900 capitalize tracking-tight flex items-center justify-center sm:justify-start gap-1.5">
+                          <Receipt className="w-4 h-4 text-emerald-700" />
+                          <span>Send Receipt via WhatsApp or Attach Here</span>
+                        </p>
+                        <p className="text-[11px] text-emerald-700 font-medium">
+                          {receiptPreview ? (
+                            <span className="font-bold text-emerald-800 flex items-center gap-1 mt-0.5">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 inline" />
+                              Receipt Attached: {receiptFileName || 'Proof of Payment'} (Logged with Admin)
+                            </span>
+                          ) : (
+                            'Send proof of payment directly to our lead care administrator via WhatsApp (+234 706 933 2193) or attach below'
+                          )}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {!receiptPreview && (
+                          <label className="cursor-pointer px-3 py-2 bg-white hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-300 shadow-2xs transition-all flex items-center gap-1.5">
+                            <Upload className="w-3.5 h-3.5 text-emerald-700" />
+                            <span>Attach Receipt</span>
+                            <input
+                              type="file"
+                              accept="image/*,application/pdf"
+                              onChange={handleReceiptUpload}
+                              className="hidden"
+                            />
+                          </label>
+                        )}
+                        <a
+                          href="https://wa.me/2347069332193?text=Hello%20Samanthasappy%20Care%20Home,%20I%20have%20submitted%20a%20Resident%20Care%20Application%20and%20completed%20the%20payment.%20Here%20is%20my%20payment%20receipt."
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                          <span>Send via WhatsApp</span>
+                        </a>
+                      </div>
                     </div>
 
-                    <a
-                      href="https://wa.me/2347069332193?text=Hello%20Samanthasappy%20Care%20Home,%20I%20have%20submitted%20a%20Resident%20Care%20Application%20and%20completed%20the%20payment.%20Here%20is%20my%20payment%20receipt."
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      <span>Send Receipt via WhatsApp</span>
-                    </a>
+                    <p className="text-[10px] text-emerald-800/80 text-center sm:text-left italic">
+                      Official Reference: SAMANTHASAPP WORLD CONCEPT • stanbic ibtc: 0005392596 | wema bank: 0229796137
+                    </p>
                   </div>
                 </div>
               )}
@@ -292,7 +376,7 @@ export const ApplyNowModal: React.FC = () => {
               <div className="p-1.5 bg-slate-100/90 rounded-2xl flex items-center gap-2 border border-slate-200/80">
                 <button
                   type="button"
-                  onClick={() => setAppType('caregiver')}
+                  onClick={() => handleSelectAppType('caregiver')}
                   className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
                     appType === 'caregiver'
                       ? 'bg-sky-700 text-white shadow-sm'
@@ -305,7 +389,7 @@ export const ApplyNowModal: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => setAppType('resident')}
+                  onClick={() => handleSelectAppType('resident')}
                   className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
                     appType === 'resident'
                       ? 'bg-teal-700 text-white shadow-sm'
@@ -317,61 +401,235 @@ export const ApplyNowModal: React.FC = () => {
                 </button>
               </div>
 
-              {/* Photo Upload Section */}
-              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
-                <label className="block text-xs font-bold text-slate-800 mb-2">
-                  {appType === 'caregiver' ? 'Caregiver Applicant Photo *' : 'Resident Photograph / ID *'}
-                </label>
-                <div className="flex items-center gap-4">
-                  <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-slate-300 bg-white flex flex-col items-center justify-center overflow-hidden shrink-0 relative group">
-                    {photoPreview ? (
-                      <>
-                        <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => setPhotoPreview(null)}
-                          className="absolute inset-0 bg-slate-900/60 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
-                          title="Remove photo"
-                        >
-                          <Trash2 className="w-5 h-5 text-red-400" />
-                        </button>
-                      </>
-                    ) : (
-                      <div className="text-center p-2 text-slate-400">
-                        <ImageIcon className="w-6 h-6 mx-auto mb-1 text-slate-300" />
-                        <span className="text-[10px]">No Photo</span>
-                      </div>
-                    )}
-                  </div>
+              {/* Popup Card: Resident Application fee is N10,000.00 (Disappears after 25s or when cancelled) */}
+              {showFeeNotice && appType === 'resident' && (
+                <div className="relative p-4 bg-gradient-to-r from-emerald-950 via-teal-900 to-sky-950 text-white rounded-2xl shadow-xl border-2 border-emerald-400/60 animate-in fade-in slide-in-from-top-2 duration-300 overflow-hidden">
+                  {/* Progress bar countdown indicator (25s) */}
+                  <div 
+                    className="absolute bottom-0 left-0 h-1 bg-gradient-to-r from-emerald-400 to-teal-300 transition-all duration-1000 ease-linear rounded-full"
+                    style={{ width: `${(feeTimeLeft / 25) * 100}%` }}
+                  />
 
-                  <div className="space-y-1.5 flex-1">
-                    <div className="flex items-center gap-2">
-                      <label className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-1.5 bg-sky-700 hover:bg-sky-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors">
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>Attach Photograph</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handlePhotoUpload}
-                          className="hidden"
-                        />
-                      </label>
-                      {photoPreview && (
-                        <button
-                          type="button"
-                          onClick={() => setPhotoPreview(null)}
-                          className="px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-xl border border-red-200 cursor-pointer"
-                        >
-                          Remove
-                        </button>
-                      )}
+                  <div className="flex items-start justify-between gap-3 relative z-10">
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center shrink-0 text-emerald-300 shadow-inner">
+                        <Banknote className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider bg-emerald-400/20 text-emerald-300 px-2 py-0.5 rounded-md border border-emerald-400/30">
+                            Admission Notice
+                          </span>
+                          <span className="text-[11px] text-emerald-200/90 font-medium">
+                            Auto-closes in {feeTimeLeft}s
+                          </span>
+                        </div>
+                        <h4 className="text-sm sm:text-base font-extrabold text-white tracking-tight flex items-center gap-1.5">
+                          <span>Resident Application fee is N10,000.00</span>
+                        </h4>
+                        <p className="text-xs text-slate-200 leading-relaxed">
+                          Please note that a processing fee of <span className="font-bold text-emerald-300">₦10,000.00 (N10,000.00)</span> applies for resident admission. Kindly make payment using the official bank details below and attach the payment receipt to proceed.
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-[11px] text-slate-500">
-                      Upload recent passport photograph or ID photo (PNG, JPG). Max 5MB.
-                    </p>
+
+                    <button
+                      type="button"
+                      onClick={closeFeeNotice}
+                      className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white transition-colors shrink-0 cursor-pointer"
+                      title="Cancel / Close notice"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {/* Photo Upload Section & Mini Bank Account Details Card */}
+              {appType === 'resident' ? (
+                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-stretch">
+                    {/* Left: Resident Photograph / ID */}
+                    <div className="md:col-span-6 flex flex-col justify-between space-y-2">
+                      <label className="block text-xs font-bold text-slate-800">
+                        Resident Photograph / ID *
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <div className="w-18 h-18 rounded-2xl border-2 border-dashed border-slate-300 bg-white flex flex-col items-center justify-center overflow-hidden shrink-0 relative group">
+                          {photoPreview ? (
+                            <>
+                              <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => setPhotoPreview(null)}
+                                className="absolute inset-0 bg-slate-900/60 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                                title="Remove photo"
+                              >
+                                <Trash2 className="w-4 h-4 text-red-400" />
+                              </button>
+                            </>
+                          ) : (
+                            <div className="text-center p-1.5 text-slate-400">
+                              <ImageIcon className="w-5 h-5 mx-auto mb-0.5 text-slate-300" />
+                              <span className="text-[9px]">No Photo</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-1 flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-700 hover:bg-sky-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors">
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>Attach Photograph</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handlePhotoUpload}
+                                className="hidden"
+                              />
+                            </label>
+                            {photoPreview && (
+                              <button
+                                type="button"
+                                onClick={() => setPhotoPreview(null)}
+                                className="px-2 py-1 text-[11px] text-red-600 hover:bg-red-50 rounded-lg border border-red-200 cursor-pointer"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-500 leading-tight">
+                            Upload recent passport photograph or ID photo (PNG, JPG). Max 5MB.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Mini Bank Account Details Card */}
+                    <div className="md:col-span-6 p-3 bg-gradient-to-br from-amber-50/95 via-orange-50/60 to-amber-50/90 rounded-xl border border-amber-200/90 shadow-2xs space-y-2 flex flex-col justify-center">
+                      <div className="flex items-center justify-between gap-1 border-b border-amber-200/80 pb-1.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Building2 className="w-3.5 h-3.5 text-amber-800 shrink-0" />
+                          <span className="text-[11px] font-bold text-amber-950 uppercase tracking-wide">
+                            Official Bank Account Details
+                          </span>
+                        </div>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-200/80 text-amber-900 rounded-md shrink-0">
+                          Verified
+                        </span>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        {/* Account Name */}
+                        <div className="flex items-center justify-between gap-2 p-1.5 bg-white/95 rounded-lg border border-amber-200/80 shadow-2xs">
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-semibold text-slate-500">Account Details / Name:</div>
+                            <div className="text-xs font-extrabold text-amber-950 truncate tracking-tight">Samanthasappy world concept</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyAccount('Samanthasappy world concept', 100)}
+                            className="px-2.5 py-1 bg-amber-800 hover:bg-amber-900 text-white rounded-md text-[10px] font-bold flex items-center gap-1 shrink-0 transition-colors shadow-2xs cursor-pointer"
+                            title="Copy Account Name"
+                          >
+                            {copiedAcc === 100 ? <Check className="w-3 h-3 text-emerald-200" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedAcc === 100 ? 'Copied' : 'Copy'}</span>
+                          </button>
+                        </div>
+
+                        {/* Stanbic IBTC */}
+                        <div className="flex items-center justify-between gap-2 p-1.5 bg-white/95 rounded-lg border border-amber-200/70 shadow-2xs">
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-semibold text-slate-600 truncate">Bank Stanbic IBTC account number:</div>
+                            <div className="text-xs font-extrabold font-mono text-slate-900 tracking-wide">0005392596</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyAccount('0005392596', 101)}
+                            className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-md text-[10px] font-bold flex items-center gap-1 shrink-0 transition-colors shadow-2xs cursor-pointer"
+                            title="Copy Stanbic IBTC Account Number"
+                          >
+                            {copiedAcc === 101 ? <Check className="w-3 h-3 text-emerald-200" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedAcc === 101 ? 'Copied' : 'Copy'}</span>
+                          </button>
+                        </div>
+
+                        {/* Wema Bank */}
+                        <div className="flex items-center justify-between gap-2 p-1.5 bg-white/95 rounded-lg border border-amber-200/70 shadow-2xs">
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-semibold text-slate-600 truncate">Wema bank Account number:</div>
+                            <div className="text-xs font-extrabold font-mono text-slate-900 tracking-wide">0229796137</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyAccount('0229796137', 102)}
+                            className="px-2.5 py-1 bg-amber-700 hover:bg-amber-800 text-white rounded-md text-[10px] font-bold flex items-center gap-1 shrink-0 transition-colors shadow-2xs cursor-pointer"
+                            title="Copy Wema Bank Account Number"
+                          >
+                            {copiedAcc === 102 ? <Check className="w-3 h-3 text-emerald-200" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedAcc === 102 ? 'Copied' : 'Copy'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                  <label className="block text-xs font-bold text-slate-800 mb-2">
+                    Caregiver Applicant Photo *
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-slate-300 bg-white flex flex-col items-center justify-center overflow-hidden shrink-0 relative group">
+                      {photoPreview ? (
+                        <>
+                          <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => setPhotoPreview(null)}
+                            className="absolute inset-0 bg-slate-900/60 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                            title="Remove photo"
+                          >
+                            <Trash2 className="w-5 h-5 text-red-400" />
+                          </button>
+                        </>
+                      ) : (
+                        <div className="text-center p-2 text-slate-400">
+                          <ImageIcon className="w-6 h-6 mx-auto mb-1 text-slate-300" />
+                          <span className="text-[10px]">No Photo</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5 flex-1">
+                      <div className="flex items-center gap-2">
+                        <label className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-1.5 bg-sky-700 hover:bg-sky-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Attach Photograph</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handlePhotoUpload}
+                            className="hidden"
+                          />
+                        </label>
+                        {photoPreview && (
+                          <button
+                            type="button"
+                            onClick={() => setPhotoPreview(null)}
+                            className="px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-xl border border-red-200 cursor-pointer"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        Upload recent passport photograph or ID photo (PNG, JPG). Max 5MB.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Form Fields: Caregiver vs Resident */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -458,233 +716,154 @@ export const ApplyNowModal: React.FC = () => {
                   ></textarea>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Preferred Care Category *</label>
-                    <select
-                      value={careCategory}
-                      onChange={(e) => setCareCategory(e.target.value as any)}
-                      className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500 bg-white"
-                    >
-                      <option value="Dementia Care">Dementia & Memory Care</option>
-                      <option value="Elderly Residential">Elderly Residential Care</option>
-                      <option value="Nursing Care">24/7 Nursing & Rehabilitation</option>
-                      <option value="Respite Care">Respite & Short-Stay Care</option>
-                    </select>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Preferred Care Category *</label>
+                      <select
+                        value={careCategory}
+                        onChange={(e) => setCareCategory(e.target.value as any)}
+                        className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500 bg-white"
+                      >
+                        <option value="Dementia Care">Dementia & Memory Care</option>
+                        <option value="Elderly Residential">Elderly Residential Care</option>
+                        <option value="Nursing Care">24/7 Nursing & Rehabilitation</option>
+                        <option value="Respite Care">Respite & Short-Stay Care</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Medical / Mobility Notes</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Wheelchair assistance, dietary requirements..."
+                        value={medicalNotes}
+                        onChange={(e) => setMedicalNotes(e.target.value)}
+                        className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
+                      />
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Medical / Mobility Notes</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Wheelchair assistance, dietary requirements..."
-                      value={medicalNotes}
-                      onChange={(e) => setMedicalNotes(e.target.value)}
-                      className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                    />
+                  {/* Attachment Button / Box for Receipt under Resident Care Admission */}
+                  <div className={`p-4 rounded-2xl border transition-all space-y-3 ${receiptPreview ? 'bg-emerald-50/70 border-emerald-300' : 'bg-rose-50/50 border-rose-200'}`}>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5 uppercase tracking-wide">
+                        <Receipt className={`w-4 h-4 ${receiptPreview ? 'text-emerald-700' : 'text-rose-600'}`} />
+                        <span>Attach Payment Receipt / Proof of Transfer *</span>
+                      </label>
+                      <span className="text-[10px] font-extrabold text-rose-700 bg-rose-100/90 px-2.5 py-0.5 rounded-full border border-rose-300 tracking-wider uppercase">
+                        Mandatory
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Attach your bank transfer slip or deposit receipt for resident care admission processing. <span className="font-semibold text-rose-700">A receipt must be attached to enable form submission.</span>
+                    </p>
+
+                    {receiptPreview ? (
+                      <div className="p-3 bg-white rounded-xl border border-emerald-200 shadow-2xs flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-12 h-12 rounded-lg border border-emerald-200 bg-emerald-50 flex items-center justify-center overflow-hidden shrink-0">
+                            {receiptPreview.startsWith('data:image') || receiptFileType?.startsWith('image') ? (
+                              <img src={receiptPreview} alt="Receipt Preview" className="w-full h-full object-cover" />
+                            ) : (
+                              <FileCheck className="w-6 h-6 text-emerald-600" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-slate-900 truncate max-w-[200px] sm:max-w-[280px]">
+                                {receiptFileName || 'payment_receipt.jpg'}
+                              </span>
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                Attached & Verified
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-slate-500">Ready to submit with your application</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <label className="cursor-pointer px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold rounded-lg border border-emerald-200 transition-colors inline-flex items-center gap-1">
+                            <Upload className="w-3 h-3 text-emerald-600" />
+                            <span>Change</span>
+                            <input
+                              type="file"
+                              accept="image/*,application/pdf"
+                              onChange={handleReceiptUpload}
+                              className="hidden"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => { setReceiptPreview(null); setReceiptFileName(null); setReceiptFileType(null); }}
+                            className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors cursor-pointer"
+                            title="Remove Receipt"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 bg-white/95 rounded-xl border border-dashed border-rose-300 shadow-2xs">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                            <Paperclip className="w-4 h-4" />
+                          </div>
+                          <div className="text-left">
+                            <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                              <span>Attach Bank Transfer Receipt / Slip</span>
+                              <span className="text-rose-600 text-xs font-bold">*</span>
+                            </div>
+                            <div className="text-[10px] text-slate-500">PNG, JPG, PDF document (Max 10MB)</div>
+                          </div>
+                        </div>
+
+                        <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all shrink-0">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Attach Receipt</span>
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            onChange={handleReceiptUpload}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* 2 Required References Section with Photo/Document Holders */}
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
-                <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5 uppercase tracking-wider text-sky-800">
-                  <Users className="w-4 h-4 text-sky-600" /> 2 Required References & Attached Documents
-                </h4>
-
-                {/* Reference 1 */}
-                <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-3">
-                  <span className="text-[11px] font-bold text-sky-700 block">
-                    {appType === 'caregiver' ? 'Reference 1 (Primary Line Manager / Employer)' : 'Reference 1 (Primary Next of Kin / Medical Referee)'}
-                  </span>
-
-                  {/* Ref 1 Image Holder */}
-                  <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200/80">
-                    <div className="w-12 h-12 rounded-lg border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden shrink-0 relative group">
-                      {ref1.photoUrl ? (
-                        <>
-                          <img src={ref1.photoUrl} alt="Ref 1" className="w-full h-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => setRef1({ ...ref1, photoUrl: null })}
-                            className="absolute inset-0 bg-slate-900/60 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
-                            title="Remove document"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                          </button>
-                        </>
-                      ) : (
-                        <ImageIcon className="w-4 h-4 text-slate-300" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <label className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold bg-sky-50 hover:bg-sky-100 text-sky-800 rounded-md border border-sky-200 transition-colors">
-                          <Upload className="w-3 h-3 text-sky-600" />
-                          <span>{ref1.photoUrl ? 'Change Photo/Doc' : 'Attach Ref Photo / Document'}</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleRefPhotoUpload(1, e)}
-                            className="hidden"
-                          />
-                        </label>
-                        {ref1.photoUrl && (
-                          <button
-                            type="button"
-                            onClick={() => setRef1({ ...ref1, photoUrl: null })}
-                            className="text-[10px] text-red-600 hover:underline cursor-pointer"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Attach referee ID photo, passport, or reference document image</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="Referee Name *"
-                      value={ref1.name}
-                      onChange={e => setRef1({ ...ref1, name: e.target.value })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                    <input
-                      type="text"
-                      required
-                      placeholder="Relationship / Role *"
-                      value={ref1.relationship}
-                      onChange={e => setRef1({ ...ref1, relationship: e.target.value })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="Phone Number *"
-                      value={ref1.phone}
-                      onChange={e => setRef1({ ...ref1, phone: e.target.value })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                    <input
-                      type="email"
-                      placeholder="Email Address"
-                      value={ref1.email}
-                      onChange={e => setRef1({ ...ref1, email: e.target.value })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Reference 2 */}
-                <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-3">
-                  <span className="text-[11px] font-bold text-sky-700 block">
-                    {appType === 'caregiver' ? 'Reference 2 (Secondary Employer / Academic Referee)' : 'Reference 2 (Secondary Family / GP Referee)'}
-                  </span>
-
-                  {/* Ref 2 Image Holder */}
-                  <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200/80">
-                    <div className="w-12 h-12 rounded-lg border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden shrink-0 relative group">
-                      {ref2.photoUrl ? (
-                        <>
-                          <img src={ref2.photoUrl} alt="Ref 2" className="w-full h-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => setRef2({ ...ref2, photoUrl: null })}
-                            className="absolute inset-0 bg-slate-900/60 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
-                            title="Remove document"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                          </button>
-                        </>
-                      ) : (
-                        <ImageIcon className="w-4 h-4 text-slate-300" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <label className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold bg-sky-50 hover:bg-sky-100 text-sky-800 rounded-md border border-sky-200 transition-colors">
-                          <Upload className="w-3 h-3 text-sky-600" />
-                          <span>{ref2.photoUrl ? 'Change Photo/Doc' : 'Attach Ref Photo / Document'}</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleRefPhotoUpload(2, e)}
-                            className="hidden"
-                          />
-                        </label>
-                        {ref2.photoUrl && (
-                          <button
-                            type="button"
-                            onClick={() => setRef2({ ...ref2, photoUrl: null })}
-                            className="text-[10px] text-red-600 hover:underline cursor-pointer"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Attach referee ID photo, passport, or reference document image</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="Referee Name *"
-                      value={ref2.name}
-                      onChange={e => setRef2({ ...ref2, name: e.target.value })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                    <input
-                      type="text"
-                      required
-                      placeholder="Relationship / Role *"
-                      value={ref2.relationship}
-                      onChange={e => setRef2({ ...ref2, relationship: e.target.value })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="Phone Number *"
-                      value={ref2.phone}
-                      onChange={e => setRef2({ ...ref2, phone: e.target.value })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                    <input
-                      type="email"
-                      placeholder="Email Address"
-                      value={ref2.email}
-                      onChange={e => setRef2({ ...ref2, email: e.target.value })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
               {/* Submit Controls */}
-              <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => { setIsApplyModalOpen(false); resetForm(); }}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 text-xs font-bold bg-sky-700 hover:bg-sky-800 text-white rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>{appType === 'caregiver' ? 'Submit Caregiver Application' : 'Submit Resident Care Application'}</span>
-                </button>
+              <div className="pt-3 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100">
+                {appType === 'resident' && !receiptPreview ? (
+                  <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1.5 text-center sm:text-left">
+                    <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                    <span>Attach payment receipt above to enable application submission</span>
+                  </p>
+                ) : (
+                  <div className="hidden sm:block" />
+                )}
+
+                <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    onClick={() => { setIsApplyModalOpen(false); resetForm(); }}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={appType === 'resident' && !receiptPreview}
+                    className="px-6 py-2.5 text-xs font-bold bg-sky-700 hover:bg-sky-800 text-white rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
+                    title={appType === 'resident' && !receiptPreview ? 'Please attach a payment receipt to enable submission' : undefined}
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>{appType === 'caregiver' ? 'Submit Caregiver Application' : 'Submit Resident Care Application'}</span>
+                  </button>
+                </div>
               </div>
 
             </form>
