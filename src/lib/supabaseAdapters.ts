@@ -13,6 +13,26 @@ import {
 } from '../types';
 
 // ============================================================================
+// UUID HELPERS
+// ============================================================================
+
+export function isValidUUID(id?: string): boolean {
+  if (!id) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// ============================================================================
 // CONVERTERS: Supabase DB Row (snake_case) <---> App TypeScript Model (camelCase)
 // ============================================================================
 
@@ -27,12 +47,12 @@ export function profileToUser(row: any): User {
     relationship: row.relationship || undefined,
     residentLinkedId: row.resident_linked_id || undefined,
     avatar: row.avatar || undefined,
+    password: row.password || undefined,
   };
 }
 
 export function userToProfile(user: User): any {
-  return {
-    id: user.id,
+  const profile: any = {
     email: user.email.toLowerCase().trim(),
     name: user.name,
     phone: user.phone || null,
@@ -41,8 +61,13 @@ export function userToProfile(user: User): any {
     relationship: user.relationship || null,
     resident_linked_id: user.residentLinkedId || null,
     avatar: user.avatar || null,
+    password: user.password || null,
     updated_at: new Date().toISOString(),
   };
+  if (isValidUUID(user.id)) {
+    profile.id = user.id;
+  }
+  return profile;
 }
 
 export function residentFromRow(row: any): Resident {
@@ -68,7 +93,7 @@ export function residentFromRow(row: any): Resident {
 
 export function residentToRow(r: Partial<Resident>): any {
   const row: any = {};
-  if (r.id) row.id = r.id;
+  if (r.id && isValidUUID(r.id)) row.id = r.id;
   if (r.fullName !== undefined) row.full_name = r.fullName;
   if (r.dateOfBirth !== undefined) row.date_of_birth = r.dateOfBirth;
   if (r.gender !== undefined) row.gender = r.gender;
@@ -107,7 +132,7 @@ export function staffFromRow(row: any): StaffMember {
 
 export function staffToRow(s: Partial<StaffMember>): any {
   const row: any = {};
-  if (s.id) row.id = s.id;
+  if (s.id && isValidUUID(s.id)) row.id = s.id;
   if (s.name !== undefined) row.name = s.name;
   if (s.email !== undefined) row.email = s.email.toLowerCase().trim();
   if (s.phone !== undefined) row.phone = s.phone;
@@ -139,7 +164,7 @@ export function shiftFromRow(row: any): Shift {
 
 export function shiftToRow(s: Partial<Shift>): any {
   const row: any = {};
-  if (s.id) row.id = s.id;
+  if (s.id && isValidUUID(s.id)) row.id = s.id;
   if (s.staffId !== undefined) row.staff_id = s.staffId;
   if (s.staffName !== undefined) row.staff_name = s.staffName;
   if (s.shiftDate !== undefined) row.shift_date = s.shiftDate;
@@ -174,7 +199,7 @@ export function messageFromRow(row: any): Message {
 
 export function messageToRow(m: Partial<Message>): any {
   const row: any = {};
-  if (m.id) row.id = m.id;
+  if (m.id && isValidUUID(m.id)) row.id = m.id;
   if (m.senderId !== undefined) row.sender_id = m.senderId;
   if (m.senderName !== undefined) row.sender_name = m.senderName;
   if (m.senderRole !== undefined) row.sender_role = m.senderRole;
@@ -204,14 +229,17 @@ export function activityLogFromRow(row: any): ActivityLog {
 }
 
 export function activityLogToRow(log: Partial<ActivityLog>): any {
-  return {
-    ...(log.id && { id: log.id }),
+  const row: any = {
     title: log.title,
     description: log.description,
     category: log.category || 'General',
     timestamp: log.timestamp,
     performer: log.performer,
   };
+  if (log.id && isValidUUID(log.id)) {
+    row.id = log.id;
+  }
+  return row;
 }
 
 export function eventFromRow(row: any): CommunityEvent {
@@ -231,7 +259,7 @@ export function eventFromRow(row: any): CommunityEvent {
 
 export function eventToRow(e: Partial<CommunityEvent>): any {
   const row: any = {};
-  if (e.id) row.id = e.id;
+  if (e.id && isValidUUID(e.id)) row.id = e.id;
   if (e.title !== undefined) row.title = e.title;
   if (e.date !== undefined) row.date = e.date;
   if (e.time !== undefined) row.time = e.time;
@@ -258,7 +286,7 @@ export function jobFromRow(row: any): JobVacancy {
 
 export function jobToRow(j: Partial<JobVacancy>): any {
   const row: any = {};
-  if (j.id) row.id = j.id;
+  if (j.id && isValidUUID(j.id)) row.id = j.id;
   if (j.title !== undefined) row.title = j.title;
   if (j.type !== undefined) row.type = j.type;
   if (j.department !== undefined) row.department = j.department;
@@ -283,7 +311,7 @@ export function galleryFromRow(row: any): GalleryItem {
 
 export function galleryToRow(g: Partial<GalleryItem>): any {
   const row: any = {};
-  if (g.id) row.id = g.id;
+  if (g.id && isValidUUID(g.id)) row.id = g.id;
   if (g.title !== undefined) row.title = g.title;
   if (g.category !== undefined) row.category = g.category;
   if (g.imageUrl !== undefined) row.image_url = g.imageUrl;
@@ -313,7 +341,7 @@ export function applicationFromRow(row: any): ApplicationSubmission {
 
 export function applicationToRow(a: Partial<ApplicationSubmission>): any {
   const row: any = {};
-  if (a.id) row.id = a.id;
+  if (a.id && isValidUUID(a.id)) row.id = a.id;
   if (a.type !== undefined) row.type = a.type;
   if (a.fullName !== undefined) row.full_name = a.fullName;
   if (a.email !== undefined) row.email = a.email.toLowerCase().trim();
@@ -344,7 +372,7 @@ export function consultationFromRow(row: any): ConsultationBooking {
 
 export function consultationToRow(c: Partial<ConsultationBooking>): any {
   const row: any = {};
-  if (c.id) row.id = c.id;
+  if (c.id && isValidUUID(c.id)) row.id = c.id;
   if (c.fullName !== undefined) row.full_name = c.fullName;
   if (c.email !== undefined) row.email = c.email.toLowerCase().trim();
   if (c.phone !== undefined) row.phone = c.phone;

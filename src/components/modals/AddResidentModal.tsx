@@ -28,6 +28,7 @@ export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCate
   // 2 References State
   const [ref1, setRef1] = useState<{ name: string; relationship: string; phone: string; email: string; photoUrl: string | null }>({ name: '', relationship: 'Primary Family Contact / Next of Kin', phone: '', email: '', photoUrl: null });
   const [ref2, setRef2] = useState<{ name: string; relationship: string; phone: string; email: string; photoUrl: string | null }>({ name: '', relationship: 'Secondary Contact / Medical Referee', phone: '', email: '', photoUrl: null });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
@@ -39,53 +40,62 @@ export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCate
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!fullName.trim() || isSubmitting) return;
+
+    setIsSubmitting(true);
     const assignedStaffMember = staff.find(s => s.id === assignedStaffId);
     
-    const result = addResident({
-      fullName,
-      dateOfBirth,
-      gender,
-      roomNumber,
-      careCategory,
-      assignedStaffId,
-      assignedStaffName: assignedStaffMember ? assignedStaffMember.name : 'Unassigned',
-      healthStatus,
-      medicalNotes: medicalNotes || 'Initial baseline assessment completed.',
-      avatar: imagePreview || undefined,
-      emergencyContact: {
-        name: ref1.name || 'Family Contact',
-        relationship: ref1.relationship || 'Next of Kin',
-        phone: ref1.phone || '+234 706 933 2193',
-      },
-      references: [ref1, ref2]
-        .filter(r => r.name.trim() !== '')
-        .map(r => ({ ...r, photoUrl: r.photoUrl || undefined })),
-      lastActivityUpdate: 'Newly registered into care management portal.',
-      vitals: {
-        bloodPressure: '120/80 mmHg',
-        heartRate: '72 bpm',
-        temperature: '36.6 °C',
-        weight: '68 kg',
-      }
-    });
-
-    onClose();
-    setFullName('');
-    setMedicalNotes('');
-    setImagePreview(null);
-    setRef1({ name: '', relationship: 'Primary Family Contact / Next of Kin', phone: '', email: '', photoUrl: null });
-    setRef2({ name: '', relationship: 'Secondary Contact / Medical Referee', phone: '', email: '', photoUrl: null });
-
-    if (onSuccessCredentials && result) {
-      onSuccessCredentials({
-        type: 'Resident Relative',
-        accountName: result.relativeUser.name,
-        email: result.relativeUser.email,
-        tempPassword: result.tempPassword,
-        extraInfo: `Linked Resident: ${result.resident.fullName} (${careCategory})`,
+    try {
+      const result = await addResident({
+        fullName: fullName.trim(),
+        dateOfBirth,
+        gender,
+        roomNumber,
+        careCategory,
+        assignedStaffId,
+        assignedStaffName: assignedStaffMember ? assignedStaffMember.name : 'Unassigned',
+        healthStatus,
+        medicalNotes: medicalNotes || 'Initial baseline assessment completed.',
+        avatar: imagePreview || undefined,
+        emergencyContact: {
+          name: ref1.name || 'Family Contact',
+          relationship: ref1.relationship || 'Next of Kin',
+          phone: ref1.phone || '+234 706 933 2193',
+        },
+        references: [ref1, ref2]
+          .filter(r => r.name.trim() !== '')
+          .map(r => ({ ...r, photoUrl: r.photoUrl || undefined })),
+        lastActivityUpdate: 'Newly registered into care management portal.',
+        vitals: {
+          bloodPressure: '120/80 mmHg',
+          heartRate: '72 bpm',
+          temperature: '36.6 °C',
+          weight: '68 kg',
+        }
       });
+
+      onClose();
+      setFullName('');
+      setMedicalNotes('');
+      setImagePreview(null);
+      setRef1({ name: '', relationship: 'Primary Family Contact / Next of Kin', phone: '', email: '', photoUrl: null });
+      setRef2({ name: '', relationship: 'Secondary Contact / Medical Referee', phone: '', email: '', photoUrl: null });
+
+      if (onSuccessCredentials && result?.relativeUser) {
+        onSuccessCredentials({
+          type: 'Resident Relative',
+          accountName: result.relativeUser.name || 'Relative of ' + (result.resident?.fullName || fullName),
+          email: result.relativeUser.email,
+          tempPassword: result.tempPassword || 'CareTeam@2025!',
+          extraInfo: `Linked Resident: ${result.resident?.fullName || fullName} (${careCategory})`,
+        });
+      }
+    } catch (err) {
+      console.error('Error registering resident:', err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -473,9 +483,17 @@ export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCate
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-xs font-semibold bg-sky-700 hover:bg-sky-800 text-white rounded-xl shadow-sm cursor-pointer"
+              disabled={isSubmitting}
+              className="px-5 py-2 text-xs font-semibold bg-sky-700 hover:bg-sky-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl shadow-sm cursor-pointer flex items-center gap-2"
             >
-              Save Resident Record
+              {isSubmitting ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Saving Record...</span>
+                </>
+              ) : (
+                <span>Save Resident Record</span>
+              )}
             </button>
           </div>
         </form>

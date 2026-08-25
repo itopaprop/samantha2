@@ -16,6 +16,15 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+// Ephemeral client for registering users in Supabase Auth without overriding the current admin session
+export const ephemeralAuthClient = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  },
+});
+
 /**
  * Storage Helper: Upload a File or base64 data URL to Supabase Storage
  */
