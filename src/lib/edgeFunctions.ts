@@ -206,3 +206,74 @@ export async function invokeSubmitApplication(application: any): Promise<EdgeFun
   }
 }
 
+export interface AuthUserInfo {
+  id: string;
+  email: string;
+  createdAt: string;
+  lastSignInAt?: string | null;
+  displayName: string;
+  role: string;
+  position?: string;
+  phone?: string;
+  avatar?: string;
+  providers?: string[];
+  isAdmin: boolean;
+}
+
+/**
+ * Fetch live accounts registered in Supabase Auth & DB
+ */
+export async function invokeListAuthUsers(): Promise<{ success: boolean; users: AuthUserInfo[]; total: number; error?: string }> {
+  try {
+    const res = await fetch('/api/functions/list-auth-users');
+    if (res.ok) {
+      return await res.json();
+    }
+    const err = await res.json().catch(() => ({}));
+    return { success: false, users: [], total: 0, error: err.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { success: false, users: [], total: 0, error: err?.message || 'Failed to fetch auth users' };
+  }
+}
+
+/**
+ * Delete a specific user from Supabase Auth & Database tables
+ */
+export async function invokeDeleteUser(params: { userId?: string; email?: string }): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch('/api/functions/delete-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+    const err = await res.json().catch(() => ({}));
+    return { success: false, error: err.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Network error deleting user' };
+  }
+}
+
+/**
+ * Cleanup / Purge ALL non-admin users from Supabase Auth and Database
+ */
+export async function invokeCleanupNonAdminUsers(adminEmail: string = 'admin@samanthasappy.com'): Promise<{ success: boolean; message?: string; deletedCount?: number; error?: string }> {
+  try {
+    const res = await fetch('/api/functions/cleanup-non-admin-users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminEmail }),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+    const err = await res.json().catch(() => ({}));
+    return { success: false, error: err.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Network error cleaning up users' };
+  }
+}
+
+

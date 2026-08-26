@@ -49,7 +49,15 @@ import {
   where 
 } from 'firebase/firestore';
 import { supabase, ephemeralAuthClient, uploadToStorage } from '../lib/supabase';
-import { invokeRegisterStaff, invokeRegisterRelative, invokeSubmitApplication } from '../lib/edgeFunctions';
+import { 
+  invokeRegisterStaff, 
+  invokeRegisterRelative, 
+  invokeSubmitApplication,
+  invokeDeleteUser,
+  invokeCleanupNonAdminUsers,
+  invokeListAuthUsers,
+  AuthUserInfo
+} from '../lib/edgeFunctions';
 import {
   profileToUser,
   userToProfile,
@@ -105,6 +113,8 @@ interface AppContextType {
   switchDemoRole: (role: UserRole) => void;
   logout: () => void;
   updateUserProfile: (userId: string, updates: Partial<User>) => Promise<boolean>;
+  deleteUserAccount: (userId: string, email?: string) => Promise<boolean>;
+  purgeAllNonAdminUsers: () => Promise<{ success: boolean; deletedCount: number }>;
   
   residents: Resident[];
   addResident: (resident: Omit<Resident, 'id' | 'admissionDate'>) => Promise<{ resident: Resident; relativeUser: User; tempPassword: string }>;
@@ -1368,6 +1378,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       console.warn('Supabase resident delete notice:', err);
     }
+
+    // Clean up any linked relative user from local state, firestore, and Supabase Auth
+    const linkedRelative = users.find(u => u.residentLinkedId === id);
+    if (linkedRelative) {
+      setUsers(prev => prev.filter(u => u.id !== linkedRelative.id));
+      deleteDoc(doc(db, 'users', linkedRelative.id)).catch(() => {});
+      invokeDeleteUser({ userId: linkedRelative.id, email: linkedRelative.email }).catch(() => {});
+    }
+
     if (target) {
       showToast(`Removed resident ${target.fullName}.`);
     }
@@ -1560,18 +1579,78 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteStaff = async (id: string) => {
     const target = staff.find(s => s.id === id);
-    setStaff(prev => prev.filter(s => s.id !== id));
-    setUsers(prev => prev.filter(u => u.id !== id));
+    const targetUser = users.find(u => u.id === id || (target?.email && u.email.toLowerCase() === target.email.toLowerCase()));
+    const targetEmail = target?.email || targetUser?.email;
+
+    setStaff(prev => prev.filter(s => s.id !== id && (!targetEmail || s.email.toLowerCase() !== targetEmail.toLowerCase())));
+    setUsers(prev => prev.filter(u => u.id !== id && (!targetEmail || u.email.toLowerCase() !== targetEmail.toLowerCase())));
+    
     deleteDoc(doc(db, 'staff', id)).catch(() => {});
     deleteDoc(doc(db, 'users', id)).catch(() => {});
+    
+    // Automatically purge user from Supabase Auth (auth.users) & DB tables
+    invokeDeleteUser({ userId: id, email: targetEmail }).catch(() => {});
+
     try {
       await supabase.from('staff').delete().eq('id', id);
       await supabase.from('profiles').delete().eq('id', id);
+      if (targetEmail) {
+        await supabase.from('staff').delete().ilike('email', targetEmail);
+        await supabase.from('profiles').delete().ilike('email', targetEmail);
+      }
     } catch (err) {
       console.warn('Supabase staff delete notice:', err);
     }
     if (target) {
-      showToast(`Removed staff member ${target.name}.`);
+      showToast(`Removed staff member ${target.name} from directory and Supabase Auth.`);
+    }
+  };
+
+  const deleteUserAccount = async (userId: string, email?: string): Promise<boolean> => {
+    const cleanEmail = email?.trim().toLowerCase();
+    if (cleanEmail === 'admin@samanthasappy.com') {
+      showToast('Cannot delete the primary administrator account.');
+      return false;
+    }
+
+    setUsers(prev => prev.filter(u => u.id !== userId && (!cleanEmail || u.email.toLowerCase() !== cleanEmail)));
+    setStaff(prev => prev.filter(s => s.id !== userId && (!cleanEmail || s.email.toLowerCase() !== cleanEmail)));
+
+    deleteDoc(doc(db, 'users', userId)).catch(() => {});
+    deleteDoc(doc(db, 'staff', userId)).catch(() => {});
+
+    try {
+      await supabase.from('profiles').delete().eq('id', userId);
+      await supabase.from('staff').delete().or(`id.eq.${userId},user_id.eq.${userId}`);
+      if (cleanEmail) {
+        await supabase.from('profiles').delete().ilike('email', cleanEmail);
+        await supabase.from('staff').delete().ilike('email', cleanEmail);
+      }
+    } catch (dbErr) {
+      console.warn('Supabase DB delete note:', dbErr);
+    }
+
+    const delRes = await invokeDeleteUser({ userId, email: cleanEmail });
+    if (delRes.success) {
+      showToast(`Account ${cleanEmail || userId} deleted from Supabase Auth & database.`);
+      return true;
+    } else {
+      showToast(`Account removed. (Auth notice: ${delRes.error || 'Server processed'})`);
+      return false;
+    }
+  };
+
+  const purgeAllNonAdminUsers = async (): Promise<{ success: boolean; deletedCount: number }> => {
+    setUsers(prev => prev.filter(u => u.role === 'Admin' || u.email.toLowerCase() === 'admin@samanthasappy.com'));
+    setStaff(prev => prev.filter(s => s.role === 'Admin' || s.email.toLowerCase() === 'admin@samanthasappy.com'));
+
+    const result = await invokeCleanupNonAdminUsers('admin@samanthasappy.com');
+    if (result.success) {
+      showToast(`Purged ${result.deletedCount || 0} non-admin user account(s) from Supabase Auth.`);
+      return { success: true, deletedCount: result.deletedCount || 0 };
+    } else {
+      showToast(`Purge notice: ${result.error || 'Failed to cleanup'}`);
+      return { success: false, deletedCount: 0 };
     }
   };
 
@@ -2227,6 +2306,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       switchDemoRole,
       logout,
       updateUserProfile,
+      deleteUserAccount,
+      purgeAllNonAdminUsers,
       residents,
       addResident,
       updateResident,

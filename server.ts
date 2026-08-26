@@ -646,6 +646,214 @@ async function startServer() {
     }
   });
 
+  // 5. List all registered users from Supabase Auth & Database
+  app.get('/api/functions/list-auth-users', async (req, res) => {
+    try {
+      const supabaseAdmin = getSupabaseAdmin();
+      const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.listUsers();
+      
+      const { data: profileData } = await supabaseAdmin.from('profiles').select('*');
+      const { data: staffData } = await supabaseAdmin.from('staff').select('*');
+
+      const profilesMap = new Map((profileData || []).map((p: any) => [p.email?.toLowerCase(), p]));
+      const staffMap = new Map((staffData || []).map((s: any) => [s.email?.toLowerCase(), s]));
+
+      const authUsers = (authData?.users || []).map((u: any) => {
+        const emailLower = u.email?.toLowerCase() || '';
+        const profile = profilesMap.get(emailLower);
+        const staff = staffMap.get(emailLower);
+
+        return {
+          id: u.id,
+          email: u.email,
+          createdAt: u.created_at,
+          lastSignInAt: u.last_sign_in_at,
+          displayName: u.user_metadata?.name || profile?.name || staff?.name || (emailLower.split('@')[0]),
+          role: u.user_metadata?.role || profile?.role || (emailLower.includes('admin') ? 'Admin' : 'Staff'),
+          position: u.user_metadata?.position || profile?.position || staff?.position || '',
+          phone: u.user_metadata?.phone || profile?.phone || staff?.phone || '',
+          avatar: u.user_metadata?.avatar || profile?.avatar || staff?.avatar || '',
+          providers: u.app_metadata?.providers || ['email'],
+          isAdmin: emailLower === 'admin@samanthasappy.com' || profile?.role === 'Admin',
+        };
+      });
+
+      res.status(200).json({
+        success: true,
+        users: authUsers,
+        total: authUsers.length,
+      });
+    } catch (err: any) {
+      console.error('Error in /api/functions/list-auth-users:', err);
+      res.status(500).json({ error: err?.message || 'Failed to list auth users.' });
+    }
+  });
+
+  // 6. Delete specific user account from Supabase Auth & Database Tables
+  app.post('/api/functions/delete-user', async (req, res) => {
+    try {
+      const { userId, email } = req.body;
+      if (!userId && !email) {
+        res.status(400).json({ error: 'userId or email is required to delete a user.' });
+        return;
+      }
+
+      const cleanEmail = email ? email.trim().toLowerCase() : '';
+      const supabaseAdmin = getSupabaseAdmin();
+      let resolvedUserId = userId;
+
+      // Prevent deleting primary admin account
+      if (cleanEmail === 'admin@samanthasappy.com') {
+        res.status(403).json({ error: 'Cannot delete the primary administrator account.' });
+        return;
+      }
+
+      // If no userId provided, find user by email in auth.users
+      if (!resolvedUserId && cleanEmail) {
+        const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+        const found = listData?.users?.find((u: any) => u.email?.toLowerCase() === cleanEmail);
+        if (found) resolvedUserId = found.id;
+      }
+
+      let authDeleteSuccess = false;
+      let authDeleteError = null;
+
+      // 1. Delete from Supabase Auth (auth.users)
+      if (resolvedUserId) {
+        try {
+          const { error: delErr } = await supabaseAdmin.auth.admin.deleteUser(resolvedUserId);
+          if (!delErr) {
+            authDeleteSuccess = true;
+          } else {
+            authDeleteError = delErr.message;
+            console.warn(`Supabase Auth admin deleteUser error for ${resolvedUserId}:`, delErr.message);
+          }
+        } catch (err: any) {
+          authDeleteError = err?.message;
+          console.warn('Auth admin delete exception:', err);
+        }
+      }
+
+      // Try RPC fallback if available
+      try {
+        if (resolvedUserId) {
+          await supabaseAdmin.rpc('delete_user_by_admin', { target_user_id: resolvedUserId });
+        }
+        if (cleanEmail) {
+          await supabaseAdmin.rpc('delete_user_by_email', { target_email: cleanEmail });
+        }
+      } catch {
+        // RPC fallback optional
+      }
+
+      // 2. Delete from public.profiles table
+      if (resolvedUserId) {
+        await supabaseAdmin.from('profiles').delete().eq('id', resolvedUserId);
+      }
+      if (cleanEmail) {
+        await supabaseAdmin.from('profiles').delete().ilike('email', cleanEmail);
+      }
+
+      // 3. Delete from public.staff table
+      if (resolvedUserId) {
+        await supabaseAdmin.from('staff').delete().or(`id.eq.${resolvedUserId},user_id.eq.${resolvedUserId}`);
+      }
+      if (cleanEmail) {
+        await supabaseAdmin.from('staff').delete().ilike('email', cleanEmail);
+      }
+
+      // 4. Clean up from server in-memory list
+      if (cleanEmail) {
+        const uIdx = serverUsersList.findIndex(u => u.email?.toLowerCase() === cleanEmail);
+        if (uIdx >= 0) serverUsersList.splice(uIdx, 1);
+        const sIdx = serverStaffList.findIndex(s => s.email?.toLowerCase() === cleanEmail);
+        if (sIdx >= 0) serverStaffList.splice(sIdx, 1);
+      }
+      if (resolvedUserId) {
+        const uIdx = serverUsersList.findIndex(u => u.id === resolvedUserId);
+        if (uIdx >= 0) serverUsersList.splice(uIdx, 1);
+        const sIdx = serverStaffList.findIndex(s => s.id === resolvedUserId);
+        if (sIdx >= 0) serverStaffList.splice(sIdx, 1);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `User ${cleanEmail || resolvedUserId} successfully deleted from Supabase Auth and database.`,
+        authDeleted: authDeleteSuccess,
+        authError: authDeleteError,
+      });
+    } catch (err: any) {
+      console.error('Error in /api/functions/delete-user:', err);
+      res.status(500).json({ error: err?.message || 'Failed to delete user.' });
+    }
+  });
+
+  // 7. Cleanup / Purge ALL non-admin users from Supabase Auth & Database
+  app.post('/api/functions/cleanup-non-admin-users', async (req, res) => {
+    try {
+      const { adminEmail = 'admin@samanthasappy.com' } = req.body;
+      const cleanAdminEmail = adminEmail.trim().toLowerCase();
+      const supabaseAdmin = getSupabaseAdmin();
+
+      const deletedUsers: any[] = [];
+      const failedUsers: any[] = [];
+
+      // 1. Fetch all users from Supabase Auth
+      const { data: listData, error: listErr } = await supabaseAdmin.auth.admin.listUsers();
+      if (listErr) {
+        console.warn('List users error in cleanup:', listErr.message);
+      }
+
+      const allAuthUsers = listData?.users || [];
+      const nonAdminUsers = allAuthUsers.filter((u: any) => u.email?.toLowerCase() !== cleanAdminEmail);
+
+      // 2. Delete each non-admin user from Supabase Auth
+      for (const u of nonAdminUsers) {
+        try {
+          const { error: delErr } = await supabaseAdmin.auth.admin.deleteUser(u.id);
+          if (!delErr) {
+            deletedUsers.push({ id: u.id, email: u.email });
+          } else {
+            failedUsers.push({ id: u.id, email: u.email, error: delErr.message });
+          }
+        } catch (delEx: any) {
+          failedUsers.push({ id: u.id, email: u.email, error: delEx?.message });
+        }
+      }
+
+      // 3. Delete non-admin profiles & staff from DB
+      await supabaseAdmin.from('profiles').delete().neq('email', cleanAdminEmail);
+      await supabaseAdmin.from('staff').delete().neq('email', cleanAdminEmail);
+
+      // 4. Try RPC function cleanup
+      try {
+        await supabaseAdmin.rpc('cleanup_non_admin_auth_users', { admin_email: cleanAdminEmail });
+      } catch {
+        // Safe to ignore if RPC not created
+      }
+
+      // 5. Clean up server in-memory list
+      const retainedUsers = serverUsersList.filter(u => u.email?.toLowerCase() === cleanAdminEmail);
+      serverUsersList.length = 0;
+      serverUsersList.push(...retainedUsers);
+
+      const retainedStaff = serverStaffList.filter(s => s.email?.toLowerCase() === cleanAdminEmail);
+      serverStaffList.length = 0;
+      serverStaffList.push(...retainedStaff);
+
+      res.status(200).json({
+        success: true,
+        message: `Successfully purged ${deletedUsers.length} non-admin user account(s) from Supabase Auth.`,
+        deletedCount: deletedUsers.length,
+        deletedUsers,
+        failedUsers,
+      });
+    } catch (err: any) {
+      console.error('Error in /api/functions/cleanup-non-admin-users:', err);
+      res.status(500).json({ error: err?.message || 'Failed to cleanup non-admin users.' });
+    }
+  });
+
   // ============================================================================
   // VITE MIDDLEWARE / STATIC ASSETS (SINGLE ENTRY POINT)
   // ============================================================================
