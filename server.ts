@@ -109,14 +109,59 @@ async function startServer() {
   // API ROUTES (PRIVILEGED SERVER OPERATIONS - SECRETS KEPT SERVER-SIDE)
   // ============================================================================
 
+  // In-memory server-side registry as resilient fallback
+  const serverStaffList: any[] = [];
+  const serverUsersList: any[] = [];
+  const serverResidentsList: any[] = [];
+
   app.get('/api/health', (req, res) => {
     res.json({
       status: 'ok',
       service: 'Samantha Sappy Care Operations & Notification Engine',
       timestamp: new Date().toISOString(),
       emailConfigured: Boolean(process.env.RESEND_API_KEY),
-      serviceRoleConfigured: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      staffCount: serverStaffList.length,
+      usersCount: serverUsersList.length,
     });
+  });
+
+  // REST API routes for multi-device sync fallback
+  app.get('/api/users', (req, res) => {
+    res.json(serverUsersList);
+  });
+
+  app.post('/api/users', (req, res) => {
+    const user = req.body;
+    if (user && user.email) {
+      const idx = serverUsersList.findIndex(u => u.email?.toLowerCase() === user.email.toLowerCase());
+      if (idx >= 0) {
+        serverUsersList[idx] = { ...serverUsersList[idx], ...user };
+      } else {
+        serverUsersList.push(user);
+      }
+      res.json({ success: true, user });
+    } else {
+      res.status(400).json({ error: 'Valid user object with email required' });
+    }
+  });
+
+  app.get('/api/staff', (req, res) => {
+    res.json(serverStaffList);
+  });
+
+  app.post('/api/staff', (req, res) => {
+    const staff = req.body;
+    if (staff && staff.email) {
+      const idx = serverStaffList.findIndex(s => s.email?.toLowerCase() === staff.email.toLowerCase());
+      if (idx >= 0) {
+        serverStaffList[idx] = { ...serverStaffList[idx], ...staff };
+      } else {
+        serverStaffList.push(staff);
+      }
+      res.json({ success: true, staff });
+    } else {
+      res.status(400).json({ error: 'Valid staff object with email required' });
+    }
   });
 
   // 1. Register Staff & Dispatch Welcome Email
@@ -147,6 +192,40 @@ async function startServer() {
 
       let effectiveUserId = '';
       let setupPasswordUrl: string | undefined;
+
+      // Save to server fallback cache
+      const serverStaffObj = {
+        id: `stf_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        name,
+        email: cleanEmail,
+        phone: phone || '+234 706 933 2193',
+        role: 'Staff',
+        position,
+        shift,
+        qualification,
+        assignedResidentsCount: 0,
+        avatar: avatar || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80',
+        references,
+        joinDate: new Date().toISOString().split('T')[0],
+      };
+      const serverUserObj = {
+        id: serverStaffObj.id,
+        name,
+        email: cleanEmail,
+        phone: phone || '+234 706 933 2193',
+        role: 'Staff',
+        position,
+        avatar: serverStaffObj.avatar,
+        password: tempPassword || '@staff123',
+      };
+
+      const existingStaffIdx = serverStaffList.findIndex(s => s.email?.toLowerCase() === cleanEmail);
+      if (existingStaffIdx >= 0) serverStaffList[existingStaffIdx] = serverStaffObj;
+      else serverStaffList.push(serverStaffObj);
+
+      const existingUserIdx = serverUsersList.findIndex(u => u.email?.toLowerCase() === cleanEmail);
+      if (existingUserIdx >= 0) serverUsersList[existingUserIdx] = serverUserObj;
+      else serverUsersList.push(serverUserObj);
 
       // Create Supabase Auth user securely using Admin API
       try {

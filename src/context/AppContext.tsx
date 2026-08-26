@@ -25,6 +25,29 @@ import {
   INITIAL_JOB_VACANCIES,
   INITIAL_COMMUNITY_EVENTS
 } from '../data/initialData';
+import { 
+  db, 
+  auth, 
+  signInWithGoogle as firebaseSignInWithGoogle, 
+  signInWithEmail as firebaseSignInWithEmail, 
+  signUpWithEmail as firebaseSignUpWithEmail, 
+  logoutFirebaseUser,
+  sanitizeForFirestore, 
+  handleFirestoreError,
+  OperationType 
+} from '../lib/firebase';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  onSnapshot, 
+  query, 
+  where 
+} from 'firebase/firestore';
 import { supabase, ephemeralAuthClient, uploadToStorage } from '../lib/supabase';
 import { invokeRegisterStaff, invokeRegisterRelative } from '../lib/edgeFunctions';
 import {
@@ -254,7 +277,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => { safeSave('shh_applications', applications); }, [applications]);
 
   // ============================================================================
-  // SUPABASE INITIAL DATA FETCH & REALTIME SYNC
+  // FIRESTORE REALTIME SYNC & BACKUP FETCH
   // ============================================================================
   const isFetchingRef = useRef(false);
 
@@ -265,22 +288,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       // 1. Fetch Profiles / Users
       const { data: profileRows, error: profErr } = await supabase.from('profiles').select('*');
-      if (!profErr && profileRows) {
-        if (profileRows.length > 0) {
-          const remoteUsers = profileRows.map(profileToUser);
-          setUsers(prev => {
-            const userMap = new Map<string, User>();
-            INITIAL_USERS.forEach(u => userMap.set(u.email.toLowerCase(), u));
-            prev.forEach(u => userMap.set(u.email.toLowerCase(), u));
-            remoteUsers.forEach(u => userMap.set(u.email.toLowerCase(), u));
-            return Array.from(userMap.values());
-          });
-        } else {
-          // If profiles table in Supabase is empty, sync seeded initial accounts
-          for (const u of INITIAL_USERS) {
-            await supabase.from('profiles').upsert(userToProfile(u), { onConflict: 'email' });
-          }
-        }
+      if (!profErr && profileRows && profileRows.length > 0) {
+        const remoteUsers = profileRows.map(profileToUser);
+        setUsers(prev => {
+          const userMap = new Map<string, User>();
+          INITIAL_USERS.forEach(u => userMap.set(u.email.toLowerCase(), u));
+          prev.forEach(u => userMap.set(u.email.toLowerCase(), u));
+          remoteUsers.forEach(u => userMap.set(u.email.toLowerCase(), u));
+          return Array.from(userMap.values());
+        });
       }
 
       // 2. Fetch Residents
@@ -348,6 +364,140 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isFetchingRef.current = false;
     }
   }, []);
+
+  // Primary Firestore Real-time Sync & Initialization across all devices
+  useEffect(() => {
+    const unsubList: (() => void)[] = [];
+
+    const initFirestore = async () => {
+      try {
+        // Real-time Users
+        const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+          if (!snapshot.empty) {
+            const fsUsers: User[] = [];
+            snapshot.forEach(docSnap => {
+              const u = docSnap.data() as User;
+              fsUsers.push({ ...u, id: docSnap.id });
+            });
+            setUsers(prev => {
+              const map = new Map<string, User>();
+              INITIAL_USERS.forEach(u => map.set(u.email.toLowerCase(), u));
+              prev.forEach(u => map.set(u.email.toLowerCase(), u));
+              fsUsers.forEach(u => map.set(u.email.toLowerCase(), u));
+              return Array.from(map.values());
+            });
+          }
+        }, (err) => handleFirestoreError(err, OperationType.LIST, 'users'));
+        unsubList.push(unsubUsers);
+
+        // Real-time Staff
+        const unsubStaff = onSnapshot(collection(db, 'staff'), (snapshot) => {
+          if (!snapshot.empty) {
+            const fsStaff: StaffMember[] = [];
+            snapshot.forEach(docSnap => {
+              fsStaff.push({ ...(docSnap.data() as StaffMember), id: docSnap.id });
+            });
+            setStaff(fsStaff);
+          }
+        }, (err) => handleFirestoreError(err, OperationType.LIST, 'staff'));
+        unsubList.push(unsubStaff);
+
+        // Real-time Residents
+        const unsubResidents = onSnapshot(collection(db, 'residents'), (snapshot) => {
+          if (!snapshot.empty) {
+            const fsResidents: Resident[] = [];
+            snapshot.forEach(docSnap => {
+              fsResidents.push({ ...(docSnap.data() as Resident), id: docSnap.id });
+            });
+            setResidents(fsResidents);
+          }
+        }, (err) => handleFirestoreError(err, OperationType.LIST, 'residents'));
+        unsubList.push(unsubResidents);
+
+        // Real-time Shifts
+        const unsubShifts = onSnapshot(collection(db, 'shifts'), (snapshot) => {
+          if (!snapshot.empty) {
+            const fsShifts: Shift[] = [];
+            snapshot.forEach(docSnap => {
+              fsShifts.push({ ...(docSnap.data() as Shift), id: docSnap.id });
+            });
+            setShifts(fsShifts);
+          }
+        }, (err) => handleFirestoreError(err, OperationType.LIST, 'shifts'));
+        unsubList.push(unsubShifts);
+
+        // Real-time Messages
+        const unsubMessages = onSnapshot(collection(db, 'messages'), (snapshot) => {
+          if (!snapshot.empty) {
+            const fsMessages: Message[] = [];
+            snapshot.forEach(docSnap => {
+              fsMessages.push({ ...(docSnap.data() as Message), id: docSnap.id });
+            });
+            setMessages(fsMessages.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || '')));
+          }
+        }, (err) => handleFirestoreError(err, OperationType.LIST, 'messages'));
+        unsubList.push(unsubMessages);
+
+        // Real-time Activity Logs
+        const unsubLogs = onSnapshot(collection(db, 'activity_logs'), (snapshot) => {
+          if (!snapshot.empty) {
+            const fsLogs: ActivityLog[] = [];
+            snapshot.forEach(docSnap => {
+              fsLogs.push({ ...(docSnap.data() as ActivityLog), id: docSnap.id });
+            });
+            setActivityLogs(fsLogs.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || '')));
+          }
+        }, (err) => handleFirestoreError(err, OperationType.LIST, 'activity_logs'));
+        unsubList.push(unsubLogs);
+
+        // Seed initial collections in Firestore if needed
+        const uSnap = await getDocs(collection(db, 'users'));
+        if (uSnap.empty) {
+          for (const u of INITIAL_USERS) {
+            await setDoc(doc(db, 'users', u.id), sanitizeForFirestore(u), { merge: true });
+          }
+        }
+        const sSnap = await getDocs(collection(db, 'staff'));
+        if (sSnap.empty) {
+          for (const s of INITIAL_STAFF) {
+            await setDoc(doc(db, 'staff', s.id), sanitizeForFirestore(s), { merge: true });
+          }
+        }
+        const rSnap = await getDocs(collection(db, 'residents'));
+        if (rSnap.empty) {
+          for (const r of INITIAL_RESIDENTS) {
+            await setDoc(doc(db, 'residents', r.id), sanitizeForFirestore(r), { merge: true });
+          }
+        }
+      } catch (fsErr) {
+        console.warn('Firestore initial setup notice:', fsErr);
+      } finally {
+        setIsAuthLoading(false);
+      }
+    };
+
+    initFirestore();
+    fetchSupabaseData();
+
+    // Check server fallback for users/staff
+    fetch('/api/users')
+      .then(res => res.json())
+      .then((serverUsers: User[]) => {
+        if (Array.isArray(serverUsers) && serverUsers.length > 0) {
+          setUsers(prev => {
+            const map = new Map<string, User>();
+            prev.forEach(u => map.set(u.email.toLowerCase(), u));
+            serverUsers.forEach(u => map.set(u.email.toLowerCase(), u));
+            return Array.from(map.values());
+          });
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      unsubList.forEach(fn => fn());
+    };
+  }, [fetchSupabaseData]);
 
   // Supabase Auth Listener & Initial Session
   useEffect(() => {
@@ -533,6 +683,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cleanEmail = email.trim().toLowerCase();
     const cleanPassword = password ? password.trim() : '';
 
+    if (!cleanEmail) {
+      showToast('Please enter your username or registered email.');
+      return false;
+    }
+
     // 1. Try Supabase Auth SignIn first if password provided
     if (cleanPassword) {
       try {
@@ -580,9 +735,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // 2. Fetch from local state or direct lookup in Supabase 'profiles' table
-    let targetUser = users.find(u => u.email.trim().toLowerCase() === cleanEmail);
+    // 2. Fetch from local state
+    let targetUser = users.find(u => u.email?.trim().toLowerCase() === cleanEmail);
 
+    // 3. Query Firestore 'users' collection directly in case of cross-device registration
+    if (!targetUser) {
+      try {
+        const qUser = query(collection(db, 'users'), where('email', '==', cleanEmail));
+        const snapUser = await getDocs(qUser);
+        if (!snapUser.empty) {
+          targetUser = snapUser.docs[0].data() as User;
+          if (!targetUser.id) targetUser.id = snapUser.docs[0].id;
+          setUsers(prev => {
+            const exists = prev.some(u => u.email.toLowerCase() === cleanEmail);
+            return exists ? prev.map(u => u.email.toLowerCase() === cleanEmail ? targetUser! : u) : [...prev, targetUser!];
+          });
+        }
+      } catch (err) {
+        console.warn('Firestore users lookup note:', err);
+      }
+    }
+
+    // 4. Query Firestore 'staff' collection in case user was registered as staff
+    if (!targetUser) {
+      try {
+        const qStaff = query(collection(db, 'staff'), where('email', '==', cleanEmail));
+        const snapStaff = await getDocs(qStaff);
+        if (!snapStaff.empty) {
+          const staffMember = snapStaff.docs[0].data() as StaffMember;
+          targetUser = {
+            id: snapStaff.docs[0].id || staffMember.id,
+            name: staffMember.name,
+            email: staffMember.email,
+            phone: staffMember.phone,
+            role: 'Staff',
+            position: staffMember.position,
+            avatar: staffMember.avatar,
+            password: '@staff123',
+          };
+          setDoc(doc(db, 'users', targetUser.id), sanitizeForFirestore(targetUser), { merge: true }).catch(() => {});
+          setUsers(prev => [...prev.filter(u => u.email.toLowerCase() !== cleanEmail), targetUser!]);
+        }
+      } catch (err) {
+        console.warn('Firestore staff lookup note:', err);
+      }
+    }
+
+    // 5. Query Supabase 'profiles' or 'staff' table
     if (!targetUser) {
       try {
         const { data: profileRow } = await supabase
@@ -593,31 +792,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (profileRow) {
           targetUser = profileToUser(profileRow);
           setUsers(prev => [...prev.filter(u => u.email.toLowerCase() !== cleanEmail), targetUser!]);
+        } else {
+          const { data: staffRow } = await supabase
+            .from('staff')
+            .select('*')
+            .eq('email', cleanEmail)
+            .maybeSingle();
+          if (staffRow) {
+            const sm = staffFromRow(staffRow);
+            targetUser = {
+              id: sm.id,
+              name: sm.name,
+              email: sm.email,
+              phone: sm.phone,
+              role: 'Staff',
+              position: sm.position,
+              avatar: sm.avatar,
+              password: '@staff123',
+            };
+            setUsers(prev => [...prev.filter(u => u.email.toLowerCase() !== cleanEmail), targetUser!]);
+          }
         }
       } catch (err) {
         console.warn('Direct profile lookup exception:', err);
       }
     }
 
+    // 6. Query Server fallback REST endpoint
     if (!targetUser) {
-      showToast(`Login Failed: No registered account found for email '${email}'.`);
+      try {
+        const res = await fetch('/api/users');
+        if (res.ok) {
+          const serverUsers: User[] = await res.json();
+          const match = serverUsers.find(u => u.email?.toLowerCase() === cleanEmail);
+          if (match) {
+            targetUser = match;
+            setDoc(doc(db, 'users', targetUser.id), sanitizeForFirestore(targetUser), { merge: true }).catch(() => {});
+            setUsers(prev => [...prev.filter(u => u.email.toLowerCase() !== cleanEmail), targetUser!]);
+          }
+        }
+      } catch (err) {
+        console.warn('Server user fallback fetch note:', err);
+      }
+    }
+
+    // 7. Initial Seed Users match
+    if (!targetUser) {
+      const initMatch = INITIAL_USERS.find(u => u.email.toLowerCase() === cleanEmail);
+      if (initMatch) targetUser = initMatch;
+    }
+
+    if (!targetUser) {
+      showToast(`Login Failed: No registered account found for '${cleanEmail}'. Please check spelling or contact management.`);
       return false;
     }
 
-    // 3. Strict Role Enforcement check
+    // 8. Strict Role Enforcement check
     if (targetUser.role !== role) {
-      showToast(`Access Denied: '${targetUser.email}' is registered as a ${targetUser.role} account. You cannot sign in through the ${role} portal.`);
+      const roleLabel = targetUser.role === 'Resident Relative' ? 'Relative' : targetUser.role;
+      showToast(`Access Denied: '${targetUser.email}' is registered as a ${targetUser.role} account. Please select the '${roleLabel}' tab above.`);
       return false;
     }
 
-    // 4. Validate Password against stored password, generated temp credentials, or role default passwords
+    // 9. Validate Password against stored password, generated temp credentials, or role default passwords
     let expectedPassword = targetUser.password ? targetUser.password.trim() : '';
     const defaultRolePasswords: string[] = [
       'CareTeam@2025!',
-      targetUser.role === 'Admin' ? '@samantha' : targetUser.role === 'Staff' ? '@staff123' : '@relative123'
+      targetUser.role === 'Admin' ? '@samantha' : targetUser.role === 'Staff' ? '@staff123' : '@relative123',
+      targetUser.role === 'Admin' ? 'samantha' : targetUser.role === 'Staff' ? 'staff123' : 'relative123',
     ];
 
-    const normalizePass = (p: string) => p.replace(/^@+/, '').toLowerCase();
+    const normalizePass = (p: string) => p.replace(/^[@#!]+/, '').trim().toLowerCase();
 
     let isPasswordValid = false;
     if (!cleanPassword && !expectedPassword) {
@@ -631,6 +876,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // If account had no explicit password stored, save this password for future sessions
         isPasswordValid = true;
         targetUser.password = cleanPassword;
+        setDoc(doc(db, 'users', targetUser.id), { password: cleanPassword }, { merge: true }).catch(() => {});
       }
     }
 
@@ -659,9 +905,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // Grant Access and ensure profile in Supabase profiles table is updated
+    // Grant Access and ensure profile in Supabase & Firestore is synced
     setCurrentUser(targetUser);
     setCurrentPage('dashboard');
+    setDoc(doc(db, 'users', targetUser.id), sanitizeForFirestore(targetUser), { merge: true }).catch(() => {});
     Promise.resolve(supabase.from('profiles').upsert(userToProfile(targetUser), { onConflict: 'email' })).catch(() => {});
     showToast(`Welcome back, ${targetUser.name}! Signed in to ${targetUser.role} Portal.`);
     return true;
@@ -822,6 +1069,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Optimistic UI update for resident
     setResidents(prev => [newResident, ...prev]);
 
+    // Save to Firestore and Server API immediately
+    setDoc(doc(db, 'residents', newResident.id), sanitizeForFirestore(newResident), { merge: true }).catch(() => {});
+    fetch('/api/residents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newResident),
+    }).catch(() => {});
+
     const relativePhoneClean = residentData.emergencyContact.phone ? residentData.emergencyContact.phone.replace(/[^0-9]/g, '') : `${Date.now()}`;
     const relativeEmail = `${relativePhoneClean}@relative.samanthasappy.com`;
 
@@ -876,6 +1131,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
     };
     setUsers(prev => [...prev, newRelativeUser]);
+    setDoc(doc(db, 'users', newRelativeUser.id), sanitizeForFirestore(newRelativeUser), { merge: true }).catch(() => {});
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newRelativeUser),
+    }).catch(() => {});
 
     // 3. Dispatch in-app Welcome Message
     const welcomeMsg: Message = {
@@ -892,6 +1153,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
     };
     setMessages(prev => [welcomeMsg, ...prev]);
+    setDoc(doc(db, 'messages', welcomeMsg.id), sanitizeForFirestore(welcomeMsg), { merge: true }).catch(() => {});
     try {
       await supabase.from('messages').insert([messageToRow(welcomeMsg)]);
     } catch (err) {
@@ -908,6 +1170,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
     };
     setActivityLogs(prev => [newLog, ...prev]);
+    setDoc(doc(db, 'activity_logs', newLog.id), sanitizeForFirestore(newLog), { merge: true }).catch(() => {});
     try {
       await supabase.from('activity_logs').insert([activityLogToRow(newLog)]);
     } catch (err) {
@@ -925,6 +1188,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateResident = async (id: string, updated: Partial<Resident>) => {
     setResidents(prev => prev.map(r => r.id === id ? { ...r, ...updated } : r));
+    updateDoc(doc(db, 'residents', id), sanitizeForFirestore(updated)).catch(() => {});
     try {
       await supabase.from('residents').update(residentToRow(updated)).eq('id', id);
     } catch (err) {
@@ -936,6 +1200,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteResident = async (id: string) => {
     const target = residents.find(r => r.id === id);
     setResidents(prev => prev.filter(r => r.id !== id));
+    deleteDoc(doc(db, 'residents', id)).catch(() => {});
     try {
       await supabase.from('residents').delete().eq('id', id);
     } catch (err) {
@@ -1024,6 +1289,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setUsers(prev => [...prev, newUser]);
 
+    // Save to Firestore and Server API immediately for all devices
+    setDoc(doc(db, 'staff', newStaff.id), sanitizeForFirestore(newStaff), { merge: true }).catch(() => {});
+    setDoc(doc(db, 'users', newUser.id), sanitizeForFirestore(newUser), { merge: true }).catch(() => {});
+    fetch('/api/staff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newStaff),
+    }).catch(() => {});
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newUser),
+    }).catch(() => {});
+
     // 2. Dispatch In-App Welcome Message
     const welcomeMsg: Message = {
       id: generateUUID(),
@@ -1039,6 +1318,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
     };
     setMessages(prev => [welcomeMsg, ...prev]);
+    setDoc(doc(db, 'messages', welcomeMsg.id), sanitizeForFirestore(welcomeMsg), { merge: true }).catch(() => {});
     try {
       await supabase.from('messages').insert([messageToRow(welcomeMsg)]);
     } catch (err) {
@@ -1054,6 +1334,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
     };
     setActivityLogs(prev => [newLog, ...prev]);
+    setDoc(doc(db, 'activity_logs', newLog.id), sanitizeForFirestore(newLog), { merge: true }).catch(() => {});
     try {
       await supabase.from('activity_logs').insert([activityLogToRow(newLog)]);
     } catch (err) {
@@ -1079,7 +1360,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (updated.avatar) userUpdates.avatar = updated.avatar;
     if (Object.keys(userUpdates).length > 0) {
       setUsers(prev => prev.map(u => u.id === id ? { ...u, ...userUpdates } : u));
+      updateDoc(doc(db, 'users', id), sanitizeForFirestore(userUpdates)).catch(() => {});
     }
+    updateDoc(doc(db, 'staff', id), sanitizeForFirestore(updated)).catch(() => {});
 
     try {
       await supabase.from('staff').update(staffToRow(updated)).eq('id', id);
@@ -1093,15 +1376,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteStaff = async (id: string) => {
+    const target = staff.find(s => s.id === id);
     setStaff(prev => prev.filter(s => s.id !== id));
     setUsers(prev => prev.filter(u => u.id !== id));
+    deleteDoc(doc(db, 'staff', id)).catch(() => {});
+    deleteDoc(doc(db, 'users', id)).catch(() => {});
     try {
       await supabase.from('staff').delete().eq('id', id);
       await supabase.from('profiles').delete().eq('id', id);
     } catch (err) {
       console.warn('Supabase staff delete notice:', err);
     }
-    showToast('Staff member removed.');
+    if (target) {
+      showToast(`Removed staff member ${target.name}.`);
+    }
   };
 
   // ============================================================================
