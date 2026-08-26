@@ -13,6 +13,7 @@ import { EditShiftModal } from '../../components/modals/EditShiftModal';
 import { ViewShiftsModal } from '../../components/modals/ViewShiftsModal';
 import { ComposeMessageModal } from '../../components/modals/ComposeMessageModal';
 import { ShareEventModal } from '../../components/modals/ShareEventModal';
+import { EditProfilePhotoModal } from '../../components/modals/EditProfilePhotoModal';
 import { CareCategory, UserRole, StaffMember, Resident, Shift, CommunityEvent } from '../../types';
 import { 
   Users, 
@@ -55,7 +56,8 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
-  FileText
+  FileText,
+  Camera
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
@@ -70,10 +72,13 @@ export const AdminDashboard: React.FC = () => {
     deleteApplication,
     activityLogs, 
     events,
+    updateEvent,
     deleteEvent,
     jobs,
+    updateJob,
     deleteJob,
     galleryItems,
+    updateGalleryItem,
     deleteGalleryItem,
     deleteResident, 
     deleteStaff, 
@@ -97,6 +102,7 @@ export const AdminDashboard: React.FC = () => {
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
   const [isAddGalleryMediaOpen, setIsAddGalleryMediaOpen] = useState(false);
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [createdCredentials, setCreatedCredentials] = useState<CredentialsData | null>(null);
   const [selectedResidentModal, setSelectedResidentModal] = useState<any>(null);
   const [selectedStaffModal, setSelectedStaffModal] = useState<StaffMember | null>(null);
@@ -246,14 +252,32 @@ export const AdminDashboard: React.FC = () => {
           
           {/* Admin User Header Badge */}
           <div className="p-4 bg-slate-800/90 rounded-2xl border border-slate-700/80 flex items-center gap-3">
-            <img
-              src={adminAvatar}
-              alt={currentUser.name}
-              referrerPolicy="no-referrer"
-              className="w-11 h-11 rounded-full object-cover border-2 border-sky-500 shadow-md shrink-0"
-            />
-            <div className="overflow-hidden">
-              <div className="font-bold text-white text-sm truncate">{currentUser.name}</div>
+            <div 
+              className="relative group cursor-pointer shrink-0" 
+              onClick={() => setIsEditProfileOpen(true)} 
+              title="Click to edit profile photo"
+            >
+              <img
+                src={adminAvatar}
+                alt={currentUser.name}
+                referrerPolicy="no-referrer"
+                className="w-11 h-11 rounded-full object-cover border-2 border-sky-500 shadow-md shrink-0 group-hover:opacity-80 transition-opacity"
+              />
+              <div className="absolute inset-0 bg-slate-900/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
+                <Camera className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="overflow-hidden flex-1">
+              <div className="flex items-center justify-between">
+                <div className="font-bold text-white text-sm truncate">{currentUser.name}</div>
+                <button
+                  onClick={() => setIsEditProfileOpen(true)}
+                  className="text-slate-400 hover:text-white p-0.5 rounded transition-colors cursor-pointer"
+                  title="Edit Profile Photo"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                </button>
+              </div>
               <div className="text-[11px] font-semibold text-purple-400 bg-purple-950/60 border border-purple-800 px-2 py-0.5 rounded-md inline-block mt-0.5">
                 Role: {currentUser.role}
               </div>
@@ -437,16 +461,35 @@ export const AdminDashboard: React.FC = () => {
         {/* Top Greeting Header */}
         <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-4 sm:gap-5">
-            <img
-              src={adminAvatar}
-              alt={currentUser.name}
-              referrerPolicy="no-referrer"
-              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-purple-500/40 shadow-md shrink-0 ring-4 ring-purple-50"
-            />
+            <div 
+              className="relative group cursor-pointer shrink-0"
+              onClick={() => setIsEditProfileOpen(true)}
+              title="Click to change your profile image"
+            >
+              <img
+                src={adminAvatar}
+                alt={currentUser.name}
+                referrerPolicy="no-referrer"
+                className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-purple-500/40 shadow-md ring-4 ring-purple-50 group-hover:opacity-90 transition-opacity"
+              />
+              <div className="absolute inset-0 bg-slate-900/50 rounded-2xl flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
+                <Camera className="w-5 h-5 mb-0.5" />
+                <span className="text-[9px] font-bold">Edit</span>
+              </div>
+            </div>
             <div className="space-y-1">
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                Welcome, {currentUser.name}
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                  Welcome, {currentUser.name}
+                </h1>
+                <button
+                  onClick={() => setIsEditProfileOpen(true)}
+                  className="p-1.5 text-slate-400 hover:text-sky-700 hover:bg-sky-50 rounded-lg transition-colors cursor-pointer"
+                  title="Edit Profile & Photo"
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-900 border border-purple-200">
                   <ShieldCheck className="w-3.5 h-3.5 text-purple-700" />
@@ -461,6 +504,12 @@ export const AdminDashboard: React.FC = () => {
 
           {/* Quick Action Trigger Bar & Clickable Inbox Notification */}
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setIsEditProfileOpen(true)}
+              className="bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Camera className="w-3.5 h-3.5 text-purple-600" /> Edit Photo
+            </button>
             <button
               onClick={() => setActiveTab('messages')}
               className="relative flex items-center gap-2 px-3.5 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200/90 rounded-xl font-bold text-xs shadow-2xs transition-all cursor-pointer group"
@@ -2226,6 +2275,13 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Edit Profile Photo & Info Modal */}
+      <EditProfilePhotoModal
+        isOpen={isEditProfileOpen}
+        onClose={() => setIsEditProfileOpen(false)}
+        targetUser={currentUser}
+      />
 
     </div>
   );

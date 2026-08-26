@@ -49,7 +49,7 @@ import {
   where 
 } from 'firebase/firestore';
 import { supabase, ephemeralAuthClient, uploadToStorage } from '../lib/supabase';
-import { invokeRegisterStaff, invokeRegisterRelative } from '../lib/edgeFunctions';
+import { invokeRegisterStaff, invokeRegisterRelative, invokeSubmitApplication } from '../lib/edgeFunctions';
 import {
   profileToUser,
   userToProfile,
@@ -104,6 +104,7 @@ interface AppContextType {
   loginWithGoogle: (role: UserRole) => Promise<boolean>;
   switchDemoRole: (role: UserRole) => void;
   logout: () => void;
+  updateUserProfile: (userId: string, updates: Partial<User>) => Promise<boolean>;
   
   residents: Resident[];
   addResident: (resident: Omit<Resident, 'id' | 'admissionDate'>) => Promise<{ resident: Resident; relativeUser: User; tempPassword: string }>;
@@ -131,15 +132,18 @@ interface AppContextType {
   
   events: CommunityEvent[];
   addEvent: (event: Omit<CommunityEvent, 'id'>) => Promise<void>;
+  updateEvent: (id: string, updated: Partial<CommunityEvent>) => Promise<void>;
   deleteEvent: (id: string) => Promise<void>;
 
   jobs: JobVacancy[];
   addJob: (job: Omit<JobVacancy, 'id'>) => Promise<void>;
+  updateJob: (id: string, updated: Partial<JobVacancy>) => Promise<void>;
   deleteJob: (id: string) => Promise<void>;
 
   galleryItems: GalleryItem[];
   addGalleryItem: (item: Omit<GalleryItem, 'id'>) => Promise<void>;
   addMultipleGalleryItems: (items: Omit<GalleryItem, 'id'>[]) => Promise<void>;
+  updateGalleryItem: (id: string, updated: Partial<GalleryItem>) => Promise<void>;
   deleteGalleryItem: (id: string) => Promise<void>;
 
   applications: ApplicationSubmission[];
@@ -719,7 +723,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           if (profile) {
             const userProfile = profileToUser(profile);
-            if (userProfile.role !== role) {
+            const normUserProfileRole = userProfile.role === 'Resident Relative' || userProfile.role.toLowerCase().includes('relat') ? 'Resident Relative' : userProfile.role === 'Staff' || userProfile.role.toLowerCase().includes('staff') || userProfile.role.toLowerCase().includes('caregiver') ? 'Staff' : 'Admin';
+            const normSelectedRole = role === 'Resident Relative' || role.toLowerCase().includes('relat') ? 'Resident Relative' : role === 'Staff' || role.toLowerCase().includes('staff') || role.toLowerCase().includes('caregiver') ? 'Staff' : 'Admin';
+            
+            if (normUserProfileRole !== normSelectedRole) {
               await supabase.auth.signOut();
               showToast(`Access Denied: Account role '${userProfile.role}' cannot log in via the ${role} portal.`);
               return false;
@@ -778,6 +785,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       } catch (err) {
         console.warn('Firestore staff lookup note:', err);
+      }
+    }
+
+    // 4b. Query Firestore 'residents' collection in case user is relative
+    if (!targetUser) {
+      try {
+        const qRes = query(collection(db, 'residents'), where('relativeEmail', '==', cleanEmail));
+        const snapRes = await getDocs(qRes);
+        if (!snapRes.empty) {
+          const resData = snapRes.docs[0].data() as any;
+          targetUser = {
+            id: `usr_rel_${snapRes.docs[0].id}`,
+            name: resData.relativeName || resData.emergencyContact?.name || `Relative of ${resData.fullName}`,
+            email: cleanEmail,
+            phone: resData.relativePhone || resData.emergencyContact?.phone || '',
+            role: 'Resident Relative',
+            relationship: resData.relativeRelationship || resData.emergencyContact?.relationship || 'Next of Kin',
+            residentLinkedId: snapRes.docs[0].id,
+            password: '@relative123',
+            avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+          };
+          setDoc(doc(db, 'users', targetUser.id), sanitizeForFirestore(targetUser), { merge: true }).catch(() => {});
+          setUsers(prev => [...prev.filter(u => u.email.toLowerCase() !== cleanEmail), targetUser!]);
+        }
+      } catch (err) {
+        console.warn('Firestore residents lookup note:', err);
       }
     }
 
@@ -847,8 +880,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // 8. Strict Role Enforcement check
-    if (targetUser.role !== role) {
+    // 8. Strict Role Enforcement check with resilient normalization
+    const normTargetRole = targetUser.role === 'Resident Relative' || targetUser.role.toLowerCase().includes('relat') ? 'Resident Relative' : targetUser.role === 'Staff' || targetUser.role.toLowerCase().includes('staff') || targetUser.role.toLowerCase().includes('caregiver') ? 'Staff' : 'Admin';
+    const normSelectedRole = role === 'Resident Relative' || role.toLowerCase().includes('relat') ? 'Resident Relative' : role === 'Staff' || role.toLowerCase().includes('staff') || role.toLowerCase().includes('caregiver') ? 'Staff' : 'Admin';
+
+    if (normTargetRole !== normSelectedRole) {
       const roleLabel = targetUser.role === 'Resident Relative' ? 'Relative' : targetUser.role;
       showToast(`Access Denied: '${targetUser.email}' is registered as a ${targetUser.role} account. Please select the '${roleLabel}' tab above.`);
       return false;
@@ -1032,6 +1068,111 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // ============================================================================
+  // USER & PROFILE MANAGEMENT (EDITABLE PHOTO & SUPABASE PROFILES SYNC)
+  // ============================================================================
+
+  const updateUserProfile = async (userId: string, updates: Partial<User>): Promise<boolean> => {
+    let finalAvatar = updates.avatar;
+    if (updates.avatar?.startsWith('data:')) {
+      const { url } = await uploadToStorage('avatars', 'profiles', updates.avatar, `${userId}_avatar.jpg`);
+      if (url) finalAvatar = url;
+    }
+
+    const sanitizedUpdates: Partial<User> = {
+      ...updates,
+      avatar: finalAvatar,
+    };
+
+    // 1. Update State
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...sanitizedUpdates } : u));
+    if (currentUser?.id === userId) {
+      const updatedCurrent: User = { ...currentUser, ...sanitizedUpdates };
+      setCurrentUser(updatedCurrent);
+      localStorage.setItem('shh_current_user', JSON.stringify(updatedCurrent));
+    }
+
+    // 2. If staff member, sync with staff list
+    setStaff(prev => prev.map(s => {
+      if (s.id === userId || s.email.toLowerCase() === (sanitizedUpdates.email || currentUser?.email || '').toLowerCase()) {
+        return {
+          ...s,
+          name: sanitizedUpdates.name || s.name,
+          avatar: finalAvatar || s.avatar,
+          phone: sanitizedUpdates.phone || s.phone,
+          position: sanitizedUpdates.position || s.position,
+        };
+      }
+      return s;
+    }));
+
+    // 3. Update Firestore
+    setDoc(doc(db, 'users', userId), sanitizeForFirestore(sanitizedUpdates), { merge: true }).catch(() => {});
+    if (currentUser?.role === 'Staff' || updates.role === 'Staff') {
+      setDoc(doc(db, 'staff', userId), sanitizeForFirestore({
+        name: sanitizedUpdates.name,
+        avatar: finalAvatar,
+        phone: sanitizedUpdates.phone,
+        position: sanitizedUpdates.position,
+      }), { merge: true }).catch(() => {});
+    }
+
+    // 4. Update Supabase Database Profiles & Staff Tables
+    try {
+      const existingUser = users.find(u => u.id === userId) || currentUser;
+      const mergedUser: User = {
+        id: userId,
+        name: sanitizedUpdates.name || existingUser?.name || 'User',
+        email: sanitizedUpdates.email || existingUser?.email || '',
+        phone: sanitizedUpdates.phone || existingUser?.phone || '',
+        role: sanitizedUpdates.role || existingUser?.role || 'Staff',
+        avatar: finalAvatar || existingUser?.avatar,
+        position: sanitizedUpdates.position || existingUser?.position,
+        relationship: sanitizedUpdates.relationship || existingUser?.relationship,
+        residentLinkedId: sanitizedUpdates.residentLinkedId || existingUser?.residentLinkedId,
+      };
+
+      await supabase.from('profiles').upsert([userToProfile(mergedUser)], { onConflict: 'email' });
+
+      if (mergedUser.role === 'Staff') {
+        await supabase.from('staff').update({
+          name: mergedUser.name,
+          avatar: finalAvatar,
+          phone: mergedUser.phone,
+          position: mergedUser.position,
+          updated_at: new Date().toISOString(),
+        }).match({ email: mergedUser.email.toLowerCase().trim() });
+      }
+    } catch (err) {
+      console.warn('Supabase profile update note:', err);
+    }
+
+    // 5. Update Server REST API
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: userId, ...sanitizedUpdates }),
+    }).catch(() => {});
+
+    // 6. Register Activity Log
+    const newLog: ActivityLog = {
+      id: generateUUID(),
+      title: 'Profile Updated',
+      description: `User profile for ${sanitizedUpdates.name || currentUser?.name || userId} (${currentUser?.role || 'User'}) was updated.`,
+      category: 'General',
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'User',
+    };
+    setActivityLogs(prev => [newLog, ...prev]);
+    try {
+      await supabase.from('activity_logs').insert([activityLogToRow(newLog)]);
+    } catch (err) {
+      console.warn('Supabase log insert notice:', err);
+    }
+
+    return true;
+  };
+
+  // ============================================================================
   // RESIDENTS MANAGEMENT (SECURE EDGE FUNCTION & WELCOME EMAIL)
   // ============================================================================
 
@@ -1138,7 +1279,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       body: JSON.stringify(newRelativeUser),
     }).catch(() => {});
 
-    // 3. Dispatch in-app Welcome Message
+    // 3. Dispatch in-app Welcome Message to Relative
     const welcomeMsg: Message = {
       id: generateUUID(),
       senderId: currentUser?.id || 'usr-admin-1',
@@ -1152,10 +1293,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isRead: false,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
     };
-    setMessages(prev => [welcomeMsg, ...prev]);
+
+    // 3b. Dispatch Dashboard Inbox Notification to Admin
+    const adminUsers = users.filter(u => u.role === 'Admin');
+    const adminTargets = adminUsers.length > 0 ? adminUsers : [{ id: 'usr-admin-1', name: 'Managing Director & Admin', role: 'Admin' as UserRole }];
+    const adminResidentNotifications: Message[] = adminTargets.map(admin => ({
+      id: generateUUID(),
+      senderId: 'usr-system',
+      senderName: 'Admissions System',
+      senderRole: 'Admin',
+      receiverId: admin.id,
+      receiverName: admin.name,
+      receiverRole: 'Admin',
+      subject: `🏡 New Resident Registered: ${newResident.fullName} (${newResident.careCategory})`,
+      content: `A new resident has been registered and their family portal account is activated.\n\nRESIDENT & RELATIVE DETAILS:\n• Resident Name: ${newResident.fullName}\n• Care Category: ${newResident.careCategory}\n• Room / Suite: ${newResident.roomNumber}\n• Next of Kin / Relative: ${newRelativeUser.name} (${newRelativeUser.relationship || 'Next of Kin'})\n• Relative Email: ${newRelativeUser.email}\n• Relative Phone: ${newRelativeUser.phone}\n\nAutomated onboarding confirmation email dispatched to: ${newRelativeUser.email}\nAdmin notification email dispatched to: admin@samanthasappy.com`,
+      isRead: false,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
+    }));
+
+    setMessages(prev => [welcomeMsg, ...adminResidentNotifications, ...prev]);
     setDoc(doc(db, 'messages', welcomeMsg.id), sanitizeForFirestore(welcomeMsg), { merge: true }).catch(() => {});
+    adminResidentNotifications.forEach(m => {
+      setDoc(doc(db, 'messages', m.id), sanitizeForFirestore(m), { merge: true }).catch(() => {});
+    });
     try {
-      await supabase.from('messages').insert([messageToRow(welcomeMsg)]);
+      await supabase.from('messages').insert([messageToRow(welcomeMsg), ...adminResidentNotifications.map(messageToRow)]);
     } catch (err) {
       console.warn('Supabase message insert notice:', err);
     }
@@ -1303,7 +1465,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       body: JSON.stringify(newUser),
     }).catch(() => {});
 
-    // 2. Dispatch In-App Welcome Message
+    // 2. Dispatch In-App Welcome Message to Staff Member
     const welcomeMsg: Message = {
       id: generateUUID(),
       senderId: currentUser?.id || 'usr-admin-1',
@@ -1317,10 +1479,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isRead: false,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
     };
-    setMessages(prev => [welcomeMsg, ...prev]);
+
+    // 2b. Dispatch Dashboard Inbox Notification to Admin
+    const adminUsers = users.filter(u => u.role === 'Admin');
+    const adminTargets = adminUsers.length > 0 ? adminUsers : [{ id: 'usr-admin-1', name: 'Managing Director & Admin', role: 'Admin' as UserRole }];
+    const adminStaffNotifications: Message[] = adminTargets.map(admin => ({
+      id: generateUUID(),
+      senderId: 'usr-system',
+      senderName: 'Staff Onboarding System',
+      senderRole: 'Admin',
+      receiverId: admin.id,
+      receiverName: admin.name,
+      receiverRole: 'Admin',
+      subject: `🔔 New Staff Registered: ${newStaff.name} (${newStaff.position})`,
+      content: `A new staff member has been registered and provisioned in the care management system.\n\nSTAFF DETAILS:\n• Full Name: ${newStaff.name}\n• Position / Role: ${newStaff.position}\n• Registered Email: ${cleanEmail}\n• Phone Number: ${newStaff.phone}\n• Qualification: ${newStaff.qualification || 'N/A'}\n• Assigned Shift: ${newStaff.shift || 'N/A'}\n\nAutomated onboarding confirmation email dispatched to: ${cleanEmail}\nAdmin notification email dispatched to: admin@samanthasappy.com`,
+      isRead: false,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
+    }));
+
+    setMessages(prev => [welcomeMsg, ...adminStaffNotifications, ...prev]);
     setDoc(doc(db, 'messages', welcomeMsg.id), sanitizeForFirestore(welcomeMsg), { merge: true }).catch(() => {});
+    adminStaffNotifications.forEach(m => {
+      setDoc(doc(db, 'messages', m.id), sanitizeForFirestore(m), { merge: true }).catch(() => {});
+    });
     try {
-      await supabase.from('messages').insert([messageToRow(welcomeMsg)]);
+      await supabase.from('messages').insert([messageToRow(welcomeMsg), ...adminStaffNotifications.map(messageToRow)]);
     } catch (err) {
       console.warn('Supabase message insert notice:', err);
     }
@@ -1611,6 +1794,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(`Event "${eventData.title}" posted successfully.`);
   };
 
+  const updateEvent = async (id: string, updated: Partial<CommunityEvent>) => {
+    let imageUrl = updated.imageUrl;
+    if (updated.imageUrl?.startsWith('data:')) {
+      const { url } = await uploadToStorage('public-media', 'events', updated.imageUrl, `${id}_event.jpg`);
+      if (url) imageUrl = url;
+    }
+    const cleanUpdated = { ...updated, imageUrl };
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, ...cleanUpdated } : e));
+    try {
+      await supabase.from('community_events').update(eventToRow(cleanUpdated)).eq('id', id);
+    } catch (err) {
+      console.warn('Supabase event update notice:', err);
+    }
+    showToast('Event updated.');
+  };
+
   const deleteEvent = async (id: string) => {
     const target = events.find(e => e.id === id);
     setEvents(prev => prev.filter(e => e.id !== id));
@@ -1663,6 +1862,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     showToast(`Job opening for "${jobData.title}" posted successfully.`);
+  };
+
+  const updateJob = async (id: string, updated: Partial<JobVacancy>) => {
+    setJobs(prev => prev.map(j => j.id === id ? { ...j, ...updated } : j));
+    try {
+      await supabase.from('job_vacancies').update(jobToRow(updated)).eq('id', id);
+    } catch (err) {
+      console.warn('Supabase job update notice:', err);
+    }
+    showToast('Job vacancy updated.');
   };
 
   const deleteJob = async (id: string) => {
@@ -1789,6 +1998,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(`Successfully added ${itemsData.length} items to gallery.`);
   };
 
+  const updateGalleryItem = async (id: string, updated: Partial<GalleryItem>) => {
+    let imageUrl = updated.imageUrl;
+    let videoUrl = updated.videoUrl;
+
+    if (imageUrl?.startsWith('data:')) {
+      const { url } = await uploadToStorage('public-media', 'gallery', imageUrl, `${id}_img.jpg`);
+      if (url) imageUrl = url;
+    }
+
+    if (videoUrl?.startsWith('data:')) {
+      const { url } = await uploadToStorage('public-media', 'gallery-videos', videoUrl, `${id}_video.mp4`);
+      if (url) videoUrl = url;
+    }
+
+    const cleanUpdated = { ...updated, imageUrl, videoUrl };
+    setGalleryItems(prev => prev.map(g => g.id === id ? { ...g, ...cleanUpdated } : g));
+
+    try {
+      await supabase.from('gallery_items').update(galleryToRow(cleanUpdated)).eq('id', id);
+    } catch (err) {
+      console.warn('Supabase gallery item update notice:', err);
+    }
+    showToast('Gallery item updated.');
+  };
+
   const deleteGalleryItem = async (id: string) => {
     const target = galleryItems.find(g => g.id === id);
     setGalleryItems(prev => prev.filter(g => g.id !== id));
@@ -1901,37 +2135,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Supabase admin messages insert notice:', err);
     }
 
-    // Dispatch automated Email Notification to admin@samanthasappy.com
+    // Dispatch automated Email Notification and Receipt Confirmation via Resend API
     try {
-      const emailPayload = {
-        _subject: `[Samantha Sappy Care Home] New ${appTitle}: ${appData.fullName}`,
-        _template: 'table',
-        _captcha: 'false',
-        "Application Type": appTitle,
-        "Applicant Full Name": appData.fullName,
-        "Applicant Email": appData.email,
-        "Applicant Phone Number": appData.phone,
-        "Position / Care Category": appData.positionOrCategory,
-        "Sponsor / Next of Kin": appData.sponsorName || 'N/A',
-        "Experience / Medical Notes": appData.notesOrStatement || 'N/A',
-        "Guarantors & References": refsFormatted || 'None specified',
-        "Applicant Photo Attached": photoUrl ? 'Yes (Uploaded to Secure Storage)' : 'None',
-        "Payment Receipt Attached": receiptUrl ? `Yes - ${appData.receiptName || 'Proof Attached'}` : 'None',
-        "Submitted At": createdAt,
-        "Admin Portal Link": window.location.origin,
-        "Notification Route": "Dispatched to admin@samanthasappy.com and Admin Dashboard Inbox"
-      };
-
-      fetch('https://formsubmit.co/ajax/admin@samanthasappy.com', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(emailPayload),
-      }).catch(mailErr => console.warn('Email dispatch warning (gracefully bypassed):', mailErr));
-    } catch (emailErr) {
-      console.warn('Email notification notice:', emailErr);
+      invokeSubmitApplication({
+        applicantName: appData.fullName,
+        email: appData.email,
+        phone: appData.phone,
+        type: appData.type,
+        position: appData.positionOrCategory,
+        careCategory: appData.positionOrCategory,
+        notes: appData.notesOrStatement,
+        paymentReceipt: !!receiptUrl,
+        receiptName: appData.receiptName,
+        sponsorName: appData.sponsorName,
+        references: processedReferences,
+      }).catch(e => console.warn('Submit application edge function notice:', e));
+    } catch (e) {
+      console.warn('Application email notice:', e);
     }
 
     // Register Activity Log
@@ -2006,6 +2226,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       loginWithGoogle,
       switchDemoRole,
       logout,
+      updateUserProfile,
       residents,
       addResident,
       updateResident,
@@ -2027,13 +2248,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bookConsultation,
       events,
       addEvent,
+      updateEvent,
       deleteEvent,
       jobs,
       addJob,
+      updateJob,
       deleteJob,
       galleryItems,
       addGalleryItem,
       addMultipleGalleryItems,
+      updateGalleryItem,
       deleteGalleryItem,
       applications,
       submitApplication,

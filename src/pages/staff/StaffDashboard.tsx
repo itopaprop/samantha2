@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ComposeMessageModal } from '../../components/modals/ComposeMessageModal';
+import { EditProfilePhotoModal } from '../../components/modals/EditProfilePhotoModal';
 import { 
   UserCheck, 
   Users, 
@@ -16,7 +17,9 @@ import {
   Heart,
   FileText,
   Paperclip,
-  Download
+  Download,
+  Camera,
+  Edit3
 } from 'lucide-react';
 
 export const StaffDashboard: React.FC = () => {
@@ -34,6 +37,7 @@ export const StaffDashboard: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'residents' | 'shifts' | 'messages' | 'profile'>('residents');
   const [isComposeOpen, setIsComposeOpen] = useState(false);
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [careLogNote, setCareLogNote] = useState('');
   const [selectedResidentForLog, setSelectedResidentForLog] = useState<string | null>(null);
 
@@ -75,14 +79,32 @@ export const StaffDashboard: React.FC = () => {
           
           {/* Staff User Header Badge */}
           <div className="p-4 bg-slate-800/90 rounded-2xl border border-slate-700/80 flex items-center gap-3">
-            <img
-              src={staffAvatar}
-              alt={currentUser.name}
-              referrerPolicy="no-referrer"
-              className="w-11 h-11 rounded-full object-cover border-2 border-emerald-500 shadow-md shrink-0"
-            />
-            <div className="overflow-hidden">
-              <div className="font-bold text-white text-sm truncate">{currentUser.name}</div>
+            <div 
+              className="relative group cursor-pointer shrink-0" 
+              onClick={() => setIsEditProfileOpen(true)} 
+              title="Click to edit profile photo"
+            >
+              <img
+                src={staffAvatar}
+                alt={currentUser.name}
+                referrerPolicy="no-referrer"
+                className="w-11 h-11 rounded-full object-cover border-2 border-emerald-500 shadow-md shrink-0 group-hover:opacity-80 transition-opacity"
+              />
+              <div className="absolute inset-0 bg-slate-900/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
+                <Camera className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="overflow-hidden flex-1">
+              <div className="flex items-center justify-between">
+                <div className="font-bold text-white text-sm truncate">{currentUser.name}</div>
+                <button
+                  onClick={() => setIsEditProfileOpen(true)}
+                  className="text-slate-400 hover:text-white p-0.5 rounded transition-colors cursor-pointer"
+                  title="Edit Profile Photo"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                </button>
+              </div>
               <div className="text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded-md inline-block mt-0.5">
                 Role: Staff
               </div>
@@ -467,24 +489,53 @@ export const StaffDashboard: React.FC = () => {
         {/* TAB 4: My Profile */}
         {activeTab === 'profile' && (
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-6">
-            <div className="border-b border-slate-100 pb-4 flex justify-between items-center">
-              <h2 className="text-xl font-bold text-slate-900">Staff Profile & Credentials</h2>
-              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
-                Verified Health Care Specialist
-              </span>
+            <div className="border-b border-slate-100 pb-4 flex flex-wrap justify-between items-center gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Staff Profile & Credentials</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Manage your personal details and editable profile photo.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsEditProfileOpen(true)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-3.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Camera className="w-4 h-4" /> Change Profile Photo
+                </button>
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+                  Verified Health Care Specialist
+                </span>
+              </div>
             </div>
 
             <div className="flex flex-col md:flex-row items-start md:items-center gap-6 p-6 bg-slate-50 rounded-2xl border border-slate-200">
-              <img
-                src={staffAvatar}
-                alt={currentUser.name}
-                referrerPolicy="no-referrer"
-                className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover border-4 border-white shadow-lg shrink-0"
-              />
+              <div 
+                className="relative group cursor-pointer shrink-0"
+                onClick={() => setIsEditProfileOpen(true)}
+                title="Click to change your photo"
+              >
+                <img
+                  src={staffAvatar}
+                  alt={currentUser.name}
+                  referrerPolicy="no-referrer"
+                  className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover border-4 border-white shadow-lg shrink-0 group-hover:opacity-90 transition-opacity"
+                />
+                <div className="absolute inset-0 bg-slate-900/60 rounded-2xl flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
+                  <Camera className="w-6 h-6 mb-1" />
+                  <span className="text-[10px] font-bold">Edit Photo</span>
+                </div>
+              </div>
               <div className="space-y-3 flex-1">
-                <div>
-                  <h3 className="text-2xl font-extrabold text-slate-900">{currentUser.name}</h3>
-                  <p className="text-sm font-bold text-sky-700">{staffPosition}</p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-2xl font-extrabold text-slate-900">{currentUser.name}</h3>
+                    <p className="text-sm font-bold text-sky-700">{staffPosition}</p>
+                  </div>
+                  <button
+                    onClick={() => setIsEditProfileOpen(true)}
+                    className="text-xs font-bold text-slate-700 hover:text-emerald-700 bg-white hover:bg-slate-100 border border-slate-300 px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" /> Edit Info
+                  </button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-600 pt-3 border-t border-slate-200">
                   <div><strong>Email Address:</strong> {currentUser.email}</div>
@@ -504,6 +555,12 @@ export const StaffDashboard: React.FC = () => {
       <ComposeMessageModal
         isOpen={isComposeOpen}
         onClose={() => setIsComposeOpen(false)}
+      />
+
+      <EditProfilePhotoModal
+        isOpen={isEditProfileOpen}
+        onClose={() => setIsEditProfileOpen(false)}
+        targetUser={currentUser}
       />
 
     </div>

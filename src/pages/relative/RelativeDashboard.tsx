@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ComposeMessageModal } from '../../components/modals/ComposeMessageModal';
+import { EditProfilePhotoModal } from '../../components/modals/EditProfilePhotoModal';
 import { 
   Heart, 
   Users, 
@@ -17,7 +18,9 @@ import {
   Pill,
   Sparkles,
   Paperclip,
-  Download
+  Download,
+  Camera,
+  Edit3
 } from 'lucide-react';
 
 export const RelativeDashboard: React.FC = () => {
@@ -31,6 +34,7 @@ export const RelativeDashboard: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'resident' | 'messages' | 'profile'>('resident');
   const [isComposeOpen, setIsComposeOpen] = useState(false);
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
 
   if (!currentUser) return null;
 
@@ -52,14 +56,32 @@ export const RelativeDashboard: React.FC = () => {
           
           {/* Relative User Header Badge */}
           <div className="p-4 bg-slate-800/90 rounded-2xl border border-slate-700/80 flex items-center gap-3">
-            <img
-              src={currentUser.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80'}
-              alt={currentUser.name}
-              referrerPolicy="no-referrer"
-              className="w-11 h-11 rounded-full object-cover border-2 border-amber-500 shadow-md shrink-0"
-            />
-            <div className="overflow-hidden">
-              <div className="font-bold text-white text-sm truncate">{currentUser.name}</div>
+            <div 
+              className="relative group cursor-pointer shrink-0" 
+              onClick={() => setIsEditProfileOpen(true)} 
+              title="Click to edit profile photo"
+            >
+              <img
+                src={currentUser.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80'}
+                alt={currentUser.name}
+                referrerPolicy="no-referrer"
+                className="w-11 h-11 rounded-full object-cover border-2 border-amber-500 shadow-md shrink-0 group-hover:opacity-80 transition-opacity"
+              />
+              <div className="absolute inset-0 bg-slate-900/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
+                <Camera className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="overflow-hidden flex-1">
+              <div className="flex items-center justify-between">
+                <div className="font-bold text-white text-sm truncate">{currentUser.name}</div>
+                <button
+                  onClick={() => setIsEditProfileOpen(true)}
+                  className="text-slate-400 hover:text-white p-0.5 rounded transition-colors cursor-pointer"
+                  title="Edit Profile Photo"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                </button>
+              </div>
               <div className="text-[11px] font-semibold text-amber-400 bg-amber-950/60 border border-amber-800 px-2 py-0.5 rounded-md inline-block mt-0.5">
                 Role: Resident Relative
               </div>
@@ -362,24 +384,53 @@ export const RelativeDashboard: React.FC = () => {
         {/* My Profile Tab */}
         {activeTab === 'profile' && (
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-6">
-            <div className="border-b border-slate-100 pb-4 flex justify-between items-center">
-              <h2 className="text-xl font-bold text-slate-900">Resident Relative Profile</h2>
-              <span className="text-xs font-bold text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
-                Authorized Family Member
-              </span>
+            <div className="border-b border-slate-100 pb-4 flex flex-wrap justify-between items-center gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Resident Relative Profile</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Manage your family member contact details and profile image.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsEditProfileOpen(true)}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-2 px-3.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Camera className="w-4 h-4" /> Change Profile Photo
+                </button>
+                <span className="text-xs font-bold text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                  Authorized Family Member
+                </span>
+              </div>
             </div>
 
             <div className="flex flex-col md:flex-row items-start md:items-center gap-6 p-6 bg-slate-50 rounded-2xl border border-slate-200">
-              <img
-                src={currentUser.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80'}
-                alt={currentUser.name}
-                referrerPolicy="no-referrer"
-                className="w-24 h-24 rounded-2xl object-cover border-4 border-white shadow-md shrink-0"
-              />
+              <div 
+                className="relative group cursor-pointer shrink-0"
+                onClick={() => setIsEditProfileOpen(true)}
+                title="Click to change your photo"
+              >
+                <img
+                  src={currentUser.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80'}
+                  alt={currentUser.name}
+                  referrerPolicy="no-referrer"
+                  className="w-24 h-24 rounded-2xl object-cover border-4 border-white shadow-md shrink-0 group-hover:opacity-90 transition-opacity"
+                />
+                <div className="absolute inset-0 bg-slate-900/60 rounded-2xl flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
+                  <Camera className="w-6 h-6 mb-1" />
+                  <span className="text-[10px] font-bold">Edit Photo</span>
+                </div>
+              </div>
               <div className="space-y-3 flex-1">
-                <div>
-                  <h3 className="text-2xl font-extrabold text-slate-900">{currentUser.name}</h3>
-                  <p className="text-xs font-bold text-amber-700">{currentUser.relationship || 'Primary Family Contact'}</p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-2xl font-extrabold text-slate-900">{currentUser.name}</h3>
+                    <p className="text-xs font-bold text-amber-700">{currentUser.relationship || 'Primary Family Contact'}</p>
+                  </div>
+                  <button
+                    onClick={() => setIsEditProfileOpen(true)}
+                    className="text-xs font-bold text-slate-700 hover:text-amber-700 bg-white hover:bg-slate-100 border border-slate-300 px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" /> Edit Info
+                  </button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-600 pt-2 border-t border-slate-200">
                   <div><strong>Email:</strong> {currentUser.email}</div>
@@ -397,6 +448,12 @@ export const RelativeDashboard: React.FC = () => {
       <ComposeMessageModal
         isOpen={isComposeOpen}
         onClose={() => setIsComposeOpen(false)}
+      />
+
+      <EditProfilePhotoModal
+        isOpen={isEditProfileOpen}
+        onClose={() => setIsEditProfileOpen(false)}
+        targetUser={currentUser}
       />
 
     </div>

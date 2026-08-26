@@ -148,7 +148,7 @@ export const Navbar: React.FC = () => {
               </div>
               <div className="text-[10px] sm:text-[11px] font-medium text-slate-500 mt-0.5 tracking-wide flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-                {isRoofingPage ? 'Professional Roofing Solutions' : 'Elderly Care & Child Care Management'}
+                {isRoofingPage ? 'Professional Roofing Solutions' : 'Live when you can leave'}
               </div>
             </div>
           </div>

@@ -6,7 +6,7 @@ export const WelcomePopupModal: React.FC = () => {
   const { setIsApplyModalOpen } = useApp();
   const [isOpen, setIsOpen] = useState(true);
   const [timeLeft, setTimeLeft] = useState(30);
-  const [imgSrc, setImgSrc] = useState('https://lh3.googleusercontent.com/d/1dzrdjvIpe3evuFYA7f7OQ2y4a5TZENZm');
+  const [imgSrc, setImgSrc] = useState('https://lh3.googleusercontent.com/d/189NX343YzFHjtrIGZg4zzPmUdkaOBgDs');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -90,9 +90,9 @@ export const WelcomePopupModal: React.FC = () => {
               referrerPolicy="no-referrer"
               onError={() => {
                 if (imgSrc.includes('lh3.googleusercontent.com')) {
-                  setImgSrc('https://drive.google.com/uc?export=view&id=1dzrdjvIpe3evuFYA7f7OQ2y4a5TZENZm');
+                  setImgSrc('https://drive.google.com/uc?export=view&id=189NX343YzFHjtrIGZg4zzPmUdkaOBgDs');
                 } else if (imgSrc.includes('uc?export=view')) {
-                  setImgSrc('https://drive.google.com/thumbnail?id=1dzrdjvIpe3evuFYA7f7OQ2y4a5TZENZm&sz=w2000');
+                  setImgSrc('https://drive.google.com/thumbnail?id=189NX343YzFHjtrIGZg4zzPmUdkaOBgDs&sz=w2000');
                 }
               }}
               className="w-full h-auto max-h-[80vh] sm:max-h-[85vh] object-contain mx-auto rounded-lg transition-transform duration-300 group-hover:scale-[1.01]"

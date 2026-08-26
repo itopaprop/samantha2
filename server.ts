@@ -2,7 +2,14 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { generateStaffWelcomeEmail, generateRelativeWelcomeEmail } from './src/server/emailService';
+import { 
+  generateStaffWelcomeEmail, 
+  generateAdminNewStaffNotificationEmail,
+  generateRelativeWelcomeEmail,
+  generateAdminNewResidentNotificationEmail,
+  generateApplicantReceiptConfirmationEmail,
+  generateAdminNewApplicationNotificationEmail
+} from './src/server/emailService';
 
 // Lazy initialized Supabase Admin Client (Privileged operations with Service Role Key)
 let supabaseAdminClient: SupabaseClient | null = null;
@@ -21,6 +28,8 @@ function getSupabaseAdmin(): SupabaseClient {
   }
   return supabaseAdminClient;
 }
+
+const ADMIN_NOTIFICATION_EMAIL = process.env.ADMIN_EMAIL || 'admin@samanthasappy.com';
 
 // Helper to send transactional emails via Resend or HTTP fallback
 async function dispatchEmail(params: {
@@ -330,9 +339,27 @@ async function startServer() {
         text: emailContent.text,
       });
 
+      // Dispatch Admin Notification Email
+      const adminEmailContent = generateAdminNewStaffNotificationEmail({
+        staffName: name,
+        email: cleanEmail,
+        phone: phone || '+234 706 933 2193',
+        position,
+        qualification,
+        shift,
+        facilityName: 'Samantha Sappy Care Home',
+      });
+
+      dispatchEmail({
+        to: ADMIN_NOTIFICATION_EMAIL,
+        subject: adminEmailContent.subject,
+        html: adminEmailContent.html,
+        text: adminEmailContent.text,
+      }).catch(e => console.warn('Admin new staff email notice:', e));
+
       res.status(200).json({
         success: true,
-        message: `Staff member ${name} registered successfully. Welcome email sent to ${cleanEmail}.`,
+        message: `Staff member ${name} registered successfully. Confirmation email sent to ${cleanEmail} and Admin notification dispatched.`,
         user: {
           id: effectiveUserId,
           name,
@@ -488,9 +515,28 @@ async function startServer() {
         text: emailContent.text,
       });
 
+      // Dispatch Admin Notification Email for New Resident Admission
+      const adminEmailContent = generateAdminNewResidentNotificationEmail({
+        residentName: resident.fullName,
+        careCategory: resident.careCategory || 'Assisted Living',
+        roomNumber: resident.roomNumber,
+        relativeName: relative.name,
+        relationship: relative.relationship || 'Next of Kin',
+        relativePhone: relative.phone || '+234 706 933 2193',
+        relativeEmail: relativeEmail,
+        facilityName: 'Samantha Sappy Care Home',
+      });
+
+      dispatchEmail({
+        to: ADMIN_NOTIFICATION_EMAIL,
+        subject: adminEmailContent.subject,
+        html: adminEmailContent.html,
+        text: adminEmailContent.text,
+      }).catch(e => console.warn('Admin new resident email notice:', e));
+
       res.status(200).json({
         success: true,
-        message: `Resident ${resident.fullName} and Relative account registered successfully. Welcome email sent to ${relativeEmail}.`,
+        message: `Resident ${resident.fullName} and Relative account registered successfully. Confirmation email sent to ${relativeEmail} and Admin notified.`,
         resident: {
           id: residentId,
           fullName: resident.fullName,
@@ -514,7 +560,77 @@ async function startServer() {
     }
   });
 
-  // 3. Send Transactional Email Endpoint
+  // 3. Application Submission Endpoint (Receipt confirmation to applicant + Admin Alert)
+  app.post('/api/functions/submit-application', async (req, res) => {
+    try {
+      const { application, appUrl } = req.body;
+      if (!application || !application.email || !application.applicantName) {
+        res.status(400).json({ error: 'Application with applicantName and email is required.' });
+        return;
+      }
+
+      const applicantEmail = application.email.trim().toLowerCase();
+      const isCaregiver = application.type === 'caregiver';
+      const positionOrCategory = application.position || application.careCategory || (isCaregiver ? 'Caregiver Staff' : 'Assisted Living');
+
+      // 1. Generate & Dispatch Receipt Confirmation Email to Applicant
+      const applicantReceiptEmail = generateApplicantReceiptConfirmationEmail({
+        applicantName: application.applicantName,
+        email: applicantEmail,
+        phone: application.phone || '',
+        appType: isCaregiver ? 'caregiver' : 'resident',
+        positionOrCategory,
+        notes: application.experience || application.notes || application.medicalHistory,
+        hasReceipt: !!(application.paymentReceipt || application.receiptName),
+        receiptName: application.receiptName || (application.paymentReceipt ? 'Payment Receipt Slip' : undefined),
+        sponsorName: application.sponsorName || application.relativeName,
+        facilityName: 'Samantha Sappy Care Home',
+      });
+
+      const applicantEmailResult = await dispatchEmail({
+        to: applicantEmail,
+        subject: applicantReceiptEmail.subject,
+        html: applicantReceiptEmail.html,
+        text: applicantReceiptEmail.text,
+      });
+
+      // 2. Generate & Dispatch Admin Notification Email
+      const adminAppNotification = generateAdminNewApplicationNotificationEmail({
+        applicantName: application.applicantName,
+        email: applicantEmail,
+        phone: application.phone || '',
+        appType: isCaregiver ? 'caregiver' : 'resident',
+        positionOrCategory,
+        notes: application.experience || application.notes || application.medicalHistory,
+        hasReceipt: !!(application.paymentReceipt || application.receiptName),
+        receiptName: application.receiptName || (application.paymentReceipt ? 'Payment Receipt Slip' : undefined),
+        sponsorName: application.sponsorName || application.relativeName,
+        referencesCount: Array.isArray(application.references) ? application.references.length : (application.guarantorCount || 0),
+        facilityName: 'Samantha Sappy Care Home',
+      });
+
+      const adminEmailResult = await dispatchEmail({
+        to: ADMIN_NOTIFICATION_EMAIL,
+        subject: adminAppNotification.subject,
+        html: adminAppNotification.html,
+        text: adminAppNotification.text,
+      });
+
+      res.status(200).json({
+        success: true,
+        message: `Application submitted successfully. Receipt confirmation sent to ${applicantEmail}, and Admin notified.`,
+        applicantEmailSent: applicantEmailResult.sent,
+        applicantEmailProvider: applicantEmailResult.provider,
+        adminEmailSent: adminEmailResult.sent,
+        adminEmailProvider: adminEmailResult.provider,
+      });
+    } catch (err: any) {
+      console.error('Error in /api/functions/submit-application:', err);
+      res.status(500).json({ error: err?.message || 'Server error while submitting application.' });
+    }
+  });
+
+  // 4. Send Transactional Email Endpoint
   app.post('/api/functions/send-email', async (req, res) => {
     try {
       const { to, subject, html, text, from } = req.body;

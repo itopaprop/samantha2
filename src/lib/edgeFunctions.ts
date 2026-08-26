@@ -172,3 +172,37 @@ export async function invokeSendEmail(params: {
     return { success: false, error: err?.message || 'Network error sending email' };
   }
 }
+
+/**
+ * Invoke Application Submission Edge Function & Email Receipt Confirmation + Admin Notification
+ */
+export async function invokeSubmitApplication(application: any): Promise<EdgeFunctionResult> {
+  const appUrl = window.location.origin;
+  const fullPayload = { application, appUrl };
+
+  try {
+    const res = await fetch('/api/functions/submit-application', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fullPayload),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    } else {
+      const errJson = await res.json().catch(() => ({}));
+      return {
+        success: false,
+        error: errJson.error || `Server responded with status ${res.status}`,
+      };
+    }
+  } catch (apiErr: any) {
+    console.warn('Submit application API error:', apiErr);
+    return {
+      success: false,
+      error: apiErr?.message || 'Failed to dispatch application notifications.',
+    };
+  }
+}
+
