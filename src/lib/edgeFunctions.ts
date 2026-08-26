@@ -237,6 +237,46 @@ export async function invokeListAuthUsers(): Promise<{ success: boolean; users: 
 }
 
 /**
+ * Delete a specific staff member from Supabase Auth & Database tables
+ */
+export async function invokeDeleteStaff(params: { staffId?: string; email?: string; name?: string }): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch('/api/functions/delete-staff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+    const err = await res.json().catch(() => ({}));
+    return { success: false, error: err.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Network error deleting staff' };
+  }
+}
+
+/**
+ * Delete a specific resident & linked relative from Supabase Auth & Database tables
+ */
+export async function invokeDeleteResident(params: { residentId?: string; residentName?: string; relativeEmail?: string }): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch('/api/functions/delete-resident', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+    const err = await res.json().catch(() => ({}));
+    return { success: false, error: err.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Network error deleting resident' };
+  }
+}
+
+/**
  * Delete a specific user from Supabase Auth & Database tables
  */
 export async function invokeDeleteUser(params: { userId?: string; email?: string }): Promise<{ success: boolean; message?: string; error?: string }> {

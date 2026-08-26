@@ -689,7 +689,189 @@ async function startServer() {
     }
   });
 
-  // 6. Delete specific user account from Supabase Auth & Database Tables
+  // 6. Delete specific staff member from Supabase Auth & Database Tables
+  app.post('/api/functions/delete-staff', async (req, res) => {
+    try {
+      const { staffId, email, name } = req.body;
+      const cleanEmail = email ? email.trim().toLowerCase() : '';
+      const cleanName = name ? name.trim().toLowerCase() : '';
+      const supabaseAdmin = getSupabaseAdmin();
+
+      // Guard: do not delete primary admin
+      if (cleanEmail === 'admin@samanthasappy.com' || cleanEmail === 'admin@carepulse.com') {
+        res.status(403).json({ error: 'Cannot delete the primary administrator account.' });
+        return;
+      }
+
+      const deletedAuthIds: string[] = [];
+
+      // 1. Find all matching users in Supabase Auth (auth.users)
+      try {
+        const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+        const matchingAuthUsers = (listData?.users || []).filter((u: any) => {
+          const uEmail = u.email?.toLowerCase();
+          const uName = (u.user_metadata?.name || '').toLowerCase();
+          if (uEmail === 'admin@samanthasappy.com') return false;
+          if (staffId && u.id === staffId) return true;
+          if (cleanEmail && uEmail === cleanEmail) return true;
+          if (cleanName && uName === cleanName) return true;
+          return false;
+        });
+
+        for (const u of matchingAuthUsers) {
+          try {
+            await supabaseAdmin.auth.admin.deleteUser(u.id);
+            deletedAuthIds.push(u.id);
+          } catch (err: any) {
+            console.warn(`Auth delete user error for ${u.id}:`, err?.message);
+          }
+        }
+      } catch (authErr: any) {
+        console.warn('Auth admin list/delete error in delete-staff:', authErr?.message);
+      }
+
+      // If specific staffId wasn't found in list, attempt direct delete
+      if (staffId && !deletedAuthIds.includes(staffId)) {
+        try {
+          await supabaseAdmin.auth.admin.deleteUser(staffId);
+          deletedAuthIds.push(staffId);
+        } catch {}
+      }
+
+      // 2. Delete from public.staff
+      if (staffId) {
+        await supabaseAdmin.from('staff').delete().or(`id.eq.${staffId},user_id.eq.${staffId}`);
+      }
+      if (cleanEmail) {
+        await supabaseAdmin.from('staff').delete().ilike('email', cleanEmail);
+      }
+
+      // 3. Delete from public.profiles
+      if (staffId) {
+        await supabaseAdmin.from('profiles').delete().eq('id', staffId);
+      }
+      if (cleanEmail) {
+        await supabaseAdmin.from('profiles').delete().ilike('email', cleanEmail);
+      }
+
+      // 4. Delete/Unlink shifts
+      if (staffId) {
+        await supabaseAdmin.from('shifts').delete().eq('staff_id', staffId);
+      }
+
+      // 5. Clean server in-memory list
+      if (staffId) {
+        const idx = serverStaffList.findIndex(s => s.id === staffId);
+        if (idx >= 0) serverStaffList.splice(idx, 1);
+        const uIdx = serverUsersList.findIndex(u => u.id === staffId);
+        if (uIdx >= 0) serverUsersList.splice(uIdx, 1);
+      }
+      if (cleanEmail) {
+        const idx = serverStaffList.findIndex(s => s.email?.toLowerCase() === cleanEmail);
+        if (idx >= 0) serverStaffList.splice(idx, 1);
+        const uIdx = serverUsersList.findIndex(u => u.email?.toLowerCase() === cleanEmail);
+        if (uIdx >= 0) serverUsersList.splice(uIdx, 1);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `Staff member removed from Supabase Auth and database.`,
+        deletedAuthIds,
+      });
+    } catch (err: any) {
+      console.error('Error in /api/functions/delete-staff:', err);
+      res.status(500).json({ error: err?.message || 'Failed to delete staff member.' });
+    }
+  });
+
+  // 7. Delete specific resident and linked relative from Supabase Auth & Database Tables
+  app.post('/api/functions/delete-resident', async (req, res) => {
+    try {
+      const { residentId, residentName, relativeEmail } = req.body;
+      const cleanRelativeEmail = relativeEmail ? relativeEmail.trim().toLowerCase() : '';
+      const cleanResidentName = residentName ? residentName.trim().toLowerCase() : '';
+      const supabaseAdmin = getSupabaseAdmin();
+
+      const deletedAuthIds: string[] = [];
+
+      // 1. Find and delete linked relative auth users from Supabase Auth
+      try {
+        const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+        const matchingAuthUsers = (listData?.users || []).filter((u: any) => {
+          const uEmail = u.email?.toLowerCase();
+          const uLinkedId = u.user_metadata?.residentLinkedId || u.user_metadata?.resident_id;
+          const uResName = (u.user_metadata?.residentName || '').toLowerCase();
+          if (uEmail === 'admin@samanthasappy.com') return false;
+          if (residentId && uLinkedId === residentId) return true;
+          if (cleanRelativeEmail && uEmail === cleanRelativeEmail) return true;
+          if (cleanResidentName && uResName === cleanResidentName) return true;
+          return false;
+        });
+
+        for (const u of matchingAuthUsers) {
+          try {
+            await supabaseAdmin.auth.admin.deleteUser(u.id);
+            deletedAuthIds.push(u.id);
+          } catch (err: any) {
+            console.warn(`Auth delete relative error for ${u.id}:`, err?.message);
+          }
+        }
+      } catch (authErr: any) {
+        console.warn('Auth admin list/delete error in delete-resident:', authErr?.message);
+      }
+
+      // 2. Delete from public.residents table
+      if (residentId) {
+        await supabaseAdmin.from('residents').delete().eq('id', residentId);
+      }
+
+      // 3. Delete from public.relatives table
+      if (residentId) {
+        await supabaseAdmin.from('relatives').delete().eq('resident_id', residentId);
+      }
+      if (cleanRelativeEmail) {
+        await supabaseAdmin.from('relatives').delete().ilike('email', cleanRelativeEmail);
+      }
+
+      // 4. Delete from public.profiles table
+      if (residentId) {
+        await supabaseAdmin.from('profiles').delete().eq('resident_linked_id', residentId);
+      }
+      if (cleanRelativeEmail) {
+        await supabaseAdmin.from('profiles').delete().ilike('email', cleanRelativeEmail);
+      }
+
+      // 5. Delete linked logs and vitals
+      if (residentId) {
+        await supabaseAdmin.from('care_logs').delete().eq('resident_id', residentId);
+        await supabaseAdmin.from('medication_logs').delete().eq('resident_id', residentId);
+        await supabaseAdmin.from('resident_vitals').delete().eq('resident_id', residentId);
+      }
+
+      // 6. Clean server in-memory list
+      if (residentId) {
+        const idx = serverResidentsList.findIndex(r => r.id === residentId);
+        if (idx >= 0) serverResidentsList.splice(idx, 1);
+        const uIdx = serverUsersList.findIndex(u => u.residentLinkedId === residentId);
+        if (uIdx >= 0) serverUsersList.splice(uIdx, 1);
+      }
+      if (cleanRelativeEmail) {
+        const uIdx = serverUsersList.findIndex(u => u.email?.toLowerCase() === cleanRelativeEmail);
+        if (uIdx >= 0) serverUsersList.splice(uIdx, 1);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `Resident and linked relative removed from Supabase Auth and database.`,
+        deletedAuthIds,
+      });
+    } catch (err: any) {
+      console.error('Error in /api/functions/delete-resident:', err);
+      res.status(500).json({ error: err?.message || 'Failed to delete resident.' });
+    }
+  });
+
+  // 8. Delete generic user account from Supabase Auth & Database Tables
   app.post('/api/functions/delete-user', async (req, res) => {
     try {
       const { userId, email } = req.body;
@@ -732,18 +914,6 @@ async function startServer() {
           authDeleteError = err?.message;
           console.warn('Auth admin delete exception:', err);
         }
-      }
-
-      // Try RPC fallback if available
-      try {
-        if (resolvedUserId) {
-          await supabaseAdmin.rpc('delete_user_by_admin', { target_user_id: resolvedUserId });
-        }
-        if (cleanEmail) {
-          await supabaseAdmin.rpc('delete_user_by_email', { target_email: cleanEmail });
-        }
-      } catch {
-        // RPC fallback optional
       }
 
       // 2. Delete from public.profiles table
@@ -795,6 +965,12 @@ async function startServer() {
       const cleanAdminEmail = adminEmail.trim().toLowerCase();
       const supabaseAdmin = getSupabaseAdmin();
 
+      const adminEmails = [
+        'admin@samanthasappy.com',
+        'itopaprop@gmail.com',
+        cleanAdminEmail
+      ].filter(Boolean);
+
       const deletedUsers: any[] = [];
       const failedUsers: any[] = [];
 
@@ -805,7 +981,7 @@ async function startServer() {
       }
 
       const allAuthUsers = listData?.users || [];
-      const nonAdminUsers = allAuthUsers.filter((u: any) => u.email?.toLowerCase() !== cleanAdminEmail);
+      const nonAdminUsers = allAuthUsers.filter((u: any) => !adminEmails.includes(u.email?.toLowerCase()));
 
       // 2. Delete each non-admin user from Supabase Auth
       for (const u of nonAdminUsers) {
@@ -822,8 +998,11 @@ async function startServer() {
       }
 
       // 3. Delete non-admin profiles & staff from DB
-      await supabaseAdmin.from('profiles').delete().neq('email', cleanAdminEmail);
-      await supabaseAdmin.from('staff').delete().neq('email', cleanAdminEmail);
+      for (const email of adminEmails) {
+        // preserve admins
+      }
+      await supabaseAdmin.from('profiles').delete().not('email', 'in', `(${adminEmails.map(e => `"${e}"`).join(',')})`);
+      await supabaseAdmin.from('staff').delete().not('email', 'in', `(${adminEmails.map(e => `"${e}"`).join(',')})`);
 
       // 4. Try RPC function cleanup
       try {
@@ -833,11 +1012,11 @@ async function startServer() {
       }
 
       // 5. Clean up server in-memory list
-      const retainedUsers = serverUsersList.filter(u => u.email?.toLowerCase() === cleanAdminEmail);
+      const retainedUsers = serverUsersList.filter(u => adminEmails.includes(u.email?.toLowerCase()));
       serverUsersList.length = 0;
       serverUsersList.push(...retainedUsers);
 
-      const retainedStaff = serverStaffList.filter(s => s.email?.toLowerCase() === cleanAdminEmail);
+      const retainedStaff = serverStaffList.filter(s => adminEmails.includes(s.email?.toLowerCase()));
       serverStaffList.length = 0;
       serverStaffList.push(...retainedStaff);
 

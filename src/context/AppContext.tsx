@@ -53,6 +53,8 @@ import {
   invokeRegisterStaff, 
   invokeRegisterRelative, 
   invokeSubmitApplication,
+  invokeDeleteStaff,
+  invokeDeleteResident,
   invokeDeleteUser,
   invokeCleanupNonAdminUsers,
   invokeListAuthUsers,
@@ -181,7 +183,24 @@ const generateTempPassword = (): string => {
   return `@${randomWord}${num}`;
 };
 
+const DEMO_CLEANUP_KEY = 'shh_demo_purge_v3';
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Clear any existing cached demo records from previous sessions
+  if (typeof window !== 'undefined' && localStorage.getItem(DEMO_CLEANUP_KEY) !== 'purged') {
+    try {
+      localStorage.removeItem('shh_residents');
+      localStorage.removeItem('shh_staff');
+      localStorage.removeItem('shh_shifts');
+      localStorage.removeItem('shh_messages');
+      localStorage.removeItem('shh_activity_logs');
+      localStorage.removeItem('shh_users');
+      localStorage.setItem(DEMO_CLEANUP_KEY, 'purged');
+    } catch {
+      // Ignore localStorage access restrictions
+    }
+  }
+
   const [currentPage, setCurrentPage] = useState<PageView>('home');
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
@@ -190,7 +209,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saved = localStorage.getItem('shh_users');
     if (!saved) return INITIAL_USERS;
     try {
-      return JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_USERS;
     } catch {
       return INITIAL_USERS;
     }
@@ -204,27 +224,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Database Collections
   const [residents, setResidents] = useState<Resident[]>(() => {
     const saved = localStorage.getItem('shh_residents');
-    return saved ? JSON.parse(saved) : INITIAL_RESIDENTS;
+    if (!saved) return INITIAL_RESIDENTS;
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed : INITIAL_RESIDENTS;
+    } catch {
+      return INITIAL_RESIDENTS;
+    }
   });
 
   const [staff, setStaff] = useState<StaffMember[]>(() => {
     const saved = localStorage.getItem('shh_staff');
-    return saved ? JSON.parse(saved) : INITIAL_STAFF;
+    if (!saved) return INITIAL_STAFF;
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed : INITIAL_STAFF;
+    } catch {
+      return INITIAL_STAFF;
+    }
   });
 
   const [shifts, setShifts] = useState<Shift[]>(() => {
     const saved = localStorage.getItem('shh_shifts');
-    return saved ? JSON.parse(saved) : INITIAL_SHIFTS;
+    if (!saved) return INITIAL_SHIFTS;
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed : INITIAL_SHIFTS;
+    } catch {
+      return INITIAL_SHIFTS;
+    }
   });
 
   const [messages, setMessages] = useState<Message[]>(() => {
     const saved = localStorage.getItem('shh_messages');
-    return saved ? JSON.parse(saved) : INITIAL_MESSAGES;
+    if (!saved) return INITIAL_MESSAGES;
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed : INITIAL_MESSAGES;
+    } catch {
+      return INITIAL_MESSAGES;
+    }
   });
 
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => {
     const saved = localStorage.getItem('shh_activity_logs');
-    return saved ? JSON.parse(saved) : INITIAL_ACTIVITY_LOGS;
+    if (!saved) return INITIAL_ACTIVITY_LOGS;
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed : INITIAL_ACTIVITY_LOGS;
+    } catch {
+      return INITIAL_ACTIVITY_LOGS;
+    }
   });
 
   const [consultationBookings, setConsultationBookings] = useState<ConsultationBooking[]>(() => {
@@ -1371,21 +1421,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteResident = async (id: string) => {
     const target = residents.find(r => r.id === id);
+    const linkedRelative = users.find(u => u.residentLinkedId === id || (target && u.name.toLowerCase().includes(target.fullName.toLowerCase())));
+    const relativeEmail = linkedRelative?.email || target?.emergencyContact?.email;
+
+    // 1. Instant optimistic update on Dashboard UI
     setResidents(prev => prev.filter(r => r.id !== id));
+    if (linkedRelative) {
+      setUsers(prev => prev.filter(u => u.id !== linkedRelative.id && (!relativeEmail || u.email.toLowerCase() !== relativeEmail.toLowerCase())));
+    }
+
+    // 2. Immediate Firestore deletion
     deleteDoc(doc(db, 'residents', id)).catch(() => {});
+    if (linkedRelative) {
+      deleteDoc(doc(db, 'users', linkedRelative.id)).catch(() => {});
+    }
+
+    // 3. Immediate Supabase Database deletion
     try {
       await supabase.from('residents').delete().eq('id', id);
+      await supabase.from('relatives').delete().eq('resident_id', id);
+      if (linkedRelative) {
+        await supabase.from('profiles').delete().eq('id', linkedRelative.id);
+      }
+      if (relativeEmail) {
+        await supabase.from('relatives').delete().ilike('email', relativeEmail);
+        await supabase.from('profiles').delete().ilike('email', relativeEmail);
+      }
     } catch (err) {
       console.warn('Supabase resident delete notice:', err);
     }
 
-    // Clean up any linked relative user from local state, firestore, and Supabase Auth
-    const linkedRelative = users.find(u => u.residentLinkedId === id);
-    if (linkedRelative) {
-      setUsers(prev => prev.filter(u => u.id !== linkedRelative.id));
-      deleteDoc(doc(db, 'users', linkedRelative.id)).catch(() => {});
-      invokeDeleteUser({ userId: linkedRelative.id, email: linkedRelative.email }).catch(() => {});
-    }
+    // 4. Immediate Supabase Auth credentials purge (removes from auth.users)
+    invokeDeleteResident({
+      residentId: id,
+      residentName: target?.fullName,
+      relativeEmail: relativeEmail,
+    }).catch(err => console.warn('Supabase auth resident deletion warning:', err));
 
     if (target) {
       showToast(`Removed resident ${target.fullName}.`);
@@ -1582,15 +1653,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetUser = users.find(u => u.id === id || (target?.email && u.email.toLowerCase() === target.email.toLowerCase()));
     const targetEmail = target?.email || targetUser?.email;
 
+    // 1. Instant optimistic update on Dashboard UI
     setStaff(prev => prev.filter(s => s.id !== id && (!targetEmail || s.email.toLowerCase() !== targetEmail.toLowerCase())));
     setUsers(prev => prev.filter(u => u.id !== id && (!targetEmail || u.email.toLowerCase() !== targetEmail.toLowerCase())));
     
+    // 2. Immediate Firestore deletion
     deleteDoc(doc(db, 'staff', id)).catch(() => {});
     deleteDoc(doc(db, 'users', id)).catch(() => {});
     
-    // Automatically purge user from Supabase Auth (auth.users) & DB tables
-    invokeDeleteUser({ userId: id, email: targetEmail }).catch(() => {});
-
+    // 3. Immediate Supabase Database deletion
     try {
       await supabase.from('staff').delete().eq('id', id);
       await supabase.from('profiles').delete().eq('id', id);
@@ -1601,8 +1672,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       console.warn('Supabase staff delete notice:', err);
     }
+
+    // 4. Automatically purge user credentials from Supabase Auth (auth.users)
+    invokeDeleteStaff({
+      staffId: id,
+      email: targetEmail,
+      name: target?.name,
+    }).catch(err => console.warn('Supabase auth staff deletion warning:', err));
+
     if (target) {
-      showToast(`Removed staff member ${target.name} from directory and Supabase Auth.`);
+      showToast(`Removed staff member ${target.name}.`);
     }
   };
 

@@ -16,12 +16,6 @@ import { ShareEventModal } from '../../components/modals/ShareEventModal';
 import { EditProfilePhotoModal } from '../../components/modals/EditProfilePhotoModal';
 import { CareCategory, UserRole, StaffMember, Resident, Shift, CommunityEvent } from '../../types';
 import { 
-  invokeListAuthUsers, 
-  invokeDeleteUser, 
-  invokeCleanupNonAdminUsers, 
-  AuthUserInfo 
-} from '../../lib/edgeFunctions';
-import { 
   Users, 
   UserCheck, 
   UserPlus, 
@@ -64,12 +58,7 @@ import {
   RotateCcw,
   FileText,
   Camera,
-  Database,
-  RefreshCw,
-  AlertTriangle,
-  Key,
-  ShieldAlert,
-  UserX
+  AlertTriangle
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
@@ -95,51 +84,15 @@ export const AdminDashboard: React.FC = () => {
     deleteResident, 
     deleteStaff, 
     deleteShift, 
-    deleteUserAccount,
-    purgeAllNonAdminUsers,
     markMessageAsRead,
     showToast,
     logout 
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'residents' | 'staff' | 'shifts' | 'messages' | 'events' | 'jobs' | 'gallery' | 'users' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'residents' | 'staff' | 'shifts' | 'messages' | 'events' | 'jobs' | 'gallery' | 'settings'>('overview');
   const [messagingTab, setMessagingTab] = useState<'inbox' | 'sent' | 'applications'>('inbox');
   const [deletingItem, setDeletingItem] = useState<{ type: 'message' | 'application'; id: string; title: string } | null>(null);
 
-  // Supabase Auth Management State
-  const [authUsersList, setAuthUsersList] = useState<AuthUserInfo[]>([]);
-  const [isLoadingAuthUsers, setIsLoadingAuthUsers] = useState(false);
-  const [isPurgingUsers, setIsPurgingUsers] = useState(false);
-  const [deletingAuthUserId, setDeletingAuthUserId] = useState<string | null>(null);
-  const [showPurgeConfirmModal, setShowPurgeConfirmModal] = useState(false);
-  const [deleteTargetUser, setDeleteTargetUser] = useState<AuthUserInfo | null>(null);
-  const [authUserSearchQuery, setAuthUserSearchQuery] = useState('');
-
-  const loadAuthUsers = async () => {
-    setIsLoadingAuthUsers(true);
-    try {
-      const res = await invokeListAuthUsers();
-      if (res.success && res.users) {
-        setAuthUsersList(res.users);
-      }
-    } catch (err) {
-      console.warn('Failed to load auth users:', err);
-    } finally {
-      setIsLoadingAuthUsers(false);
-    }
-  };
-
-  // Automatically refresh auth list when opening the users tab or on mount
-  React.useEffect(() => {
-    loadAuthUsers();
-  }, []);
-
-  React.useEffect(() => {
-    if (activeTab === 'users') {
-      loadAuthUsers();
-    }
-  }, [activeTab]);
-  
   // Modals state
   const [isAddResidentOpen, setIsAddResidentOpen] = useState(false);
   const [residentCategoryPreset, setResidentCategoryPreset] = useState<CareCategory | undefined>();
@@ -388,25 +341,6 @@ export const AdminDashboard: React.FC = () => {
                   <span className="text-[10px] bg-slate-800 text-teal-400 px-2 py-0.5 rounded-full border border-slate-700 font-extrabold">
                     {totalStaff}
                   </span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab('users')}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                    activeTab === 'users'
-                      ? 'bg-sky-700 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <Database className="w-4 h-4 text-purple-400" />
-                    <span>Supabase Auth & Users</span>
-                  </div>
-                  {authUsersList.length > 0 && (
-                    <span className="text-[10px] bg-purple-950/80 text-purple-300 px-2 py-0.5 rounded-full border border-purple-800 font-extrabold">
-                      {authUsersList.length}
-                    </span>
-                  )}
                 </button>
               </div>
             </div>
@@ -1655,228 +1589,6 @@ export const AdminDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 9: SUPABASE AUTH & USERS MANAGEMENT */}
-        {activeTab === 'users' && (
-          <div className="space-y-6">
-            
-            {/* Header Card */}
-            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs">
-              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                <div className="space-y-1">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-50 text-purple-700 text-xs font-bold border border-purple-200 mb-1">
-                    <Database className="w-3.5 h-3.5" /> Supabase Admin & Auth Synchronization
-                  </div>
-                  <h2 className="text-2xl font-bold text-slate-900">Supabase Auth User Accounts</h2>
-                  <p className="text-xs text-slate-500 max-w-2xl">
-                    Live inspection of authentication records in Supabase (<code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-mono text-[11px]">auth.users</code>). Deleting accounts here immediately purges credentials, login sessions, and linked records.
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <button
-                    onClick={loadAuthUsers}
-                    disabled={isLoadingAuthUsers}
-                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-2.5 px-4 rounded-xl transition-all flex items-center gap-2 cursor-pointer border border-slate-200 disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingAuthUsers ? 'animate-spin text-sky-600' : ''}`} />
-                    <span>{isLoadingAuthUsers ? 'Refreshing...' : 'Refresh Auth Accounts'}</span>
-                  </button>
-
-                  <button
-                    onClick={() => setShowPurgeConfirmModal(true)}
-                    disabled={isPurgingUsers || authUsersList.filter(u => u.email?.toLowerCase() !== 'admin@samanthasappy.com' && u.email?.toLowerCase() !== 'admin@carepulse.com' && (u.user_metadata?.role || '').toLowerCase() !== 'admin').length === 0}
-                    className="bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
-                    title="Purge all non-admin accounts from Supabase Auth"
-                  >
-                    <ShieldAlert className="w-3.5 h-3.5" />
-                    <span>Purge All Non-Admin Accounts</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Status Overview Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-6 border-t border-slate-100 mt-6">
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Auth Records</div>
-                  <div className="text-2xl font-black text-slate-900 mt-1">{authUsersList.length}</div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">In Supabase auth.users</div>
-                </div>
-
-                <div className="p-4 bg-purple-50/70 rounded-2xl border border-purple-100">
-                  <div className="text-[10px] font-bold text-purple-700 uppercase tracking-wider">Admin Accounts</div>
-                  <div className="text-2xl font-black text-purple-900 mt-1">
-                    {authUsersList.filter(u => (u.user_metadata?.role || '').toLowerCase() === 'admin' || u.email?.toLowerCase().includes('admin')).length}
-                  </div>
-                  <div className="text-[11px] text-purple-600 mt-0.5">Protected from purge</div>
-                </div>
-
-                <div className="p-4 bg-teal-50/70 rounded-2xl border border-teal-100">
-                  <div className="text-[10px] font-bold text-teal-700 uppercase tracking-wider">Staff / Caregivers</div>
-                  <div className="text-2xl font-black text-teal-900 mt-1">
-                    {authUsersList.filter(u => (u.user_metadata?.role || '').toLowerCase() === 'staff').length}
-                  </div>
-                  <div className="text-[11px] text-teal-600 mt-0.5">Care specialist accounts</div>
-                </div>
-
-                <div className="p-4 bg-sky-50/70 rounded-2xl border border-sky-100">
-                  <div className="text-[10px] font-bold text-sky-700 uppercase tracking-wider">Residents / Relatives</div>
-                  <div className="text-2xl font-black text-sky-900 mt-1">
-                    {authUsersList.filter(u => {
-                      const r = (u.user_metadata?.role || '').toLowerCase();
-                      return r === 'resident' || r === 'relative' || (r !== 'admin' && r !== 'staff');
-                    }).length}
-                  </div>
-                  <div className="text-[11px] text-sky-600 mt-0.5">Family & resident logins</div>
-                </div>
-              </div>
-            </div>
-
-            {/* User List Table */}
-            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-4">
-              
-              {/* Search Bar */}
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <div className="relative w-full sm:w-80">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    placeholder="Search by name, email, role, or ID..."
-                    value={authUserSearchQuery}
-                    onChange={(e) => setAuthUserSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
-                  />
-                </div>
-                <div className="text-xs text-slate-500 font-medium">
-                  Showing {authUsersList.filter(u => {
-                    if (!authUserSearchQuery) return true;
-                    const q = authUserSearchQuery.toLowerCase();
-                    return (
-                      u.email?.toLowerCase().includes(q) ||
-                      (u.user_metadata?.name || '').toLowerCase().includes(q) ||
-                      (u.user_metadata?.role || '').toLowerCase().includes(q) ||
-                      u.id.toLowerCase().includes(q)
-                    );
-                  }).length} of {authUsersList.length} accounts
-                </div>
-              </div>
-
-              {/* Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200/80 bg-slate-50/70 text-slate-500 text-[11px] uppercase tracking-wider font-bold">
-                      <th className="py-3 px-4 rounded-l-xl">User Profile</th>
-                      <th className="py-3 px-4">Email Address</th>
-                      <th className="py-3 px-4">Assigned Role</th>
-                      <th className="py-3 px-4">Supabase Auth ID</th>
-                      <th className="py-3 px-4">Registered Date</th>
-                      <th className="py-3 px-4">Last Sign In</th>
-                      <th className="py-3 px-4 text-right rounded-r-xl">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {isLoadingAuthUsers ? (
-                      <tr>
-                        <td colSpan={7} className="py-12 text-center text-slate-400">
-                          <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-purple-600" />
-                          <span>Fetching active accounts from Supabase Auth...</span>
-                        </td>
-                      </tr>
-                    ) : authUsersList.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="py-12 text-center text-slate-400">
-                          <Database className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                          <p className="font-semibold text-slate-600">No authentication records returned from Supabase.</p>
-                          <p className="text-[11px] mt-1">Click "Refresh Auth Accounts" above to re-query the Supabase Auth server.</p>
-                        </td>
-                      </tr>
-                    ) : (
-                      authUsersList
-                        .filter(u => {
-                          if (!authUserSearchQuery) return true;
-                          const q = authUserSearchQuery.toLowerCase();
-                          return (
-                            u.email?.toLowerCase().includes(q) ||
-                            (u.user_metadata?.name || '').toLowerCase().includes(q) ||
-                            (u.user_metadata?.role || '').toLowerCase().includes(q) ||
-                            u.id.toLowerCase().includes(q)
-                          );
-                        })
-                        .map((u) => {
-                          const role = u.user_metadata?.role || (u.email?.toLowerCase().includes('admin') ? 'Admin' : 'User');
-                          const isAdmin = role.toLowerCase() === 'admin' || u.email?.toLowerCase() === 'admin@samanthasappy.com' || u.email?.toLowerCase() === 'admin@carepulse.com';
-                          const userName = u.user_metadata?.name || u.email?.split('@')[0] || 'User';
-
-                          return (
-                            <tr key={u.id} className="hover:bg-slate-50/70 transition-colors">
-                              <td className="py-3.5 px-4">
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white shrink-0 ${
-                                    isAdmin ? 'bg-purple-700' : role === 'Staff' ? 'bg-teal-600' : 'bg-sky-600'
-                                  }`}>
-                                    {userName.charAt(0).toUpperCase()}
-                                  </div>
-                                  <div>
-                                    <div className="font-bold text-slate-900">{userName}</div>
-                                    {u.user_metadata?.category && (
-                                      <div className="text-[10px] text-slate-400">{u.user_metadata.category}</div>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="py-3.5 px-4 font-mono text-[11px] text-slate-700">
-                                {u.email}
-                              </td>
-                              <td className="py-3.5 px-4">
-                                <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full border ${
-                                  isAdmin
-                                    ? 'bg-purple-100 text-purple-800 border-purple-200'
-                                    : role === 'Staff'
-                                    ? 'bg-teal-100 text-teal-800 border-teal-200'
-                                    : 'bg-sky-100 text-sky-800 border-sky-200'
-                                }`}>
-                                  {isAdmin && <ShieldCheck className="w-3 h-3 text-purple-700" />}
-                                  {role}
-                                </span>
-                              </td>
-                              <td className="py-3.5 px-4 font-mono text-[10px] text-slate-400 max-w-[150px] truncate" title={u.id}>
-                                {u.id}
-                              </td>
-                              <td className="py-3.5 px-4 text-[11px] text-slate-500">
-                                {u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}
-                              </td>
-                              <td className="py-3.5 px-4 text-[11px] text-slate-500">
-                                {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : 'Never'}
-                              </td>
-                              <td className="py-3.5 px-4 text-right">
-                                {isAdmin ? (
-                                  <span className="text-[10px] font-bold text-slate-400 italic bg-slate-100 px-2.5 py-1 rounded-lg">
-                                    Protected Admin
-                                  </span>
-                                ) : (
-                                  <button
-                                    onClick={() => setDeleteTargetUser(u)}
-                                    disabled={deletingAuthUserId === u.id}
-                                    className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 border border-rose-200 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px] font-bold"
-                                    title="Delete this user permanently from Supabase Auth & Database"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                    <span>Delete</span>
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-          </div>
-        )}
-
       </main>
 
       {/* Modals */}
@@ -2559,148 +2271,6 @@ export const AdminDashboard: React.FC = () => {
               >
                 <Trash2 className="w-4 h-4" />
                 Delete Permanently
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Single Supabase Auth User Confirmation Modal */}
-      {deleteTargetUser && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150"
-          onClick={() => setDeleteTargetUser(null)}
-        >
-          <div
-            className="max-w-md w-full bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
-                <UserX className="w-6 h-6" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-extrabold text-slate-900">Delete User from Supabase Auth</h3>
-                <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                  Are you sure you want to permanently delete this user from Supabase Auth and database tables?
-                </p>
-              </div>
-            </div>
-
-            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 text-xs space-y-1.5 font-mono">
-              <div><span className="text-slate-400 font-sans">Name:</span> <strong className="text-slate-800 font-sans">{deleteTargetUser.user_metadata?.name || 'N/A'}</strong></div>
-              <div><span className="text-slate-400 font-sans">Email:</span> <strong className="text-slate-800">{deleteTargetUser.email}</strong></div>
-              <div><span className="text-slate-400 font-sans">Role:</span> <strong className="text-slate-800 font-sans">{deleteTargetUser.user_metadata?.role || 'User'}</strong></div>
-              <div className="text-[10px] text-slate-400 truncate">ID: {deleteTargetUser.id}</div>
-            </div>
-
-            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <span>This will immediately invalidate all active login tokens and permanently erase their Supabase Auth account.</span>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setDeleteTargetUser(null)}
-                className="w-full sm:w-auto px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deletingAuthUserId === deleteTargetUser.id}
-                onClick={async () => {
-                  const target = deleteTargetUser;
-                  setDeletingAuthUserId(target.id);
-                  try {
-                    await deleteUserAccount(target.id, target.email);
-                    showToast(`User ${target.email} deleted permanently from Supabase.`);
-                    setDeleteTargetUser(null);
-                    await loadAuthUsers();
-                  } catch (err: any) {
-                    showToast(`Deletion failed: ${err.message || 'Error occurred'}`);
-                  } finally {
-                    setDeletingAuthUserId(null);
-                  }
-                }}
-                className="w-full sm:w-auto px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
-              >
-                <Trash2 className="w-4 h-4" />
-                {deletingAuthUserId === deleteTargetUser.id ? 'Deleting...' : 'Delete Permanently'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Purge All Non-Admin Users Confirmation Modal */}
-      {showPurgeConfirmModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in duration-150"
-          onClick={() => setShowPurgeConfirmModal(false)}
-        >
-          <div
-            className="max-w-lg w-full bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
-                <ShieldAlert className="w-6 h-6" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-extrabold text-slate-900">Purge All Non-Admin Accounts</h3>
-                <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                  This will securely delete <strong>ALL</strong> non-admin user accounts from Supabase Auth (<code className="font-mono text-purple-700">auth.users</code>) and application records.
-                </p>
-              </div>
-            </div>
-
-            <div className="p-4 bg-rose-50 rounded-2xl border border-rose-200 space-y-2 text-xs text-rose-900">
-              <div className="font-bold flex items-center gap-1.5 text-rose-800">
-                <AlertTriangle className="w-4 h-4 text-rose-600" />
-                <span>What will happen:</span>
-              </div>
-              <ul className="list-disc list-inside space-y-1 text-rose-800">
-                <li>All caregivers, staff, and resident/relative auth accounts will be removed.</li>
-                <li>The primary Admin account (<code className="font-mono">{currentUser.email}</code>) will be preserved safely.</li>
-                <li>Supabase Auth will be completely cleaned of obsolete test accounts.</li>
-              </ul>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowPurgeConfirmModal(false)}
-                disabled={isPurgingUsers}
-                className="w-full sm:w-auto px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isPurgingUsers}
-                onClick={async () => {
-                  setIsPurgingUsers(true);
-                  try {
-                    const res = await purgeAllNonAdminUsers();
-                    if (res.success) {
-                      showToast(`Cleaned up ${res.deletedCount || 0} non-admin user accounts from Supabase Auth!`);
-                      setShowPurgeConfirmModal(false);
-                      await loadAuthUsers();
-                    } else {
-                      showToast(res.error || 'Failed to purge users.');
-                    }
-                  } catch (err: any) {
-                    showToast(`Purge failed: ${err.message || 'Error occurred'}`);
-                  } finally {
-                    setIsPurgingUsers(false);
-                  }
-                }}
-                className="w-full sm:w-auto px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
-              >
-                <Trash2 className="w-4 h-4" />
-                {isPurgingUsers ? 'Purging All Non-Admin Users...' : 'Yes, Purge All Non-Admin Accounts'}
               </button>
             </div>
           </div>
