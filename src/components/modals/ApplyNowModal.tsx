@@ -235,7 +235,7 @@ export const ApplyNowModal: React.FC = () => {
                   </div>
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-full text-xs font-semibold">
                     <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Email Sent to admin@samanthasappy.com</span>
+                    <span>Email Sent to samanthasappy@gmail.com</span>
                   </div>
                 </div>
               </div>

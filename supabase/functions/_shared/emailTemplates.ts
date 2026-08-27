@@ -120,7 +120,7 @@ export function generateStaffWelcomeEmail(data: StaffEmailData): { subject: stri
                 ${facility} Administration
               </p>
               <p style="margin: 0; color: #94a3b8; font-size: 11px;">
-                Contact: admin@samanthasappy.com | Emergency Helpline: +234 706 933 2193
+                Contact: samanthasappy@gmail.com | Emergency Helpline: +234 706 933 2193
               </p>
             </td>
           </tr>
@@ -150,7 +150,7 @@ Your staff authentication account has been successfully provisioned. You can now
 
 Best regards,
 ${facility} Administration
-admin@samanthasappy.com
+samanthasappy@gmail.com
 `;
 
   return { subject, html, text };
@@ -270,7 +270,7 @@ export function generateRelativeWelcomeEmail(data: RelativeEmailData): { subject
                 ${facility} - Family Relations Team
               </p>
               <p style="margin: 0; color: #94a3b8; font-size: 11px;">
-                Contact: admin@samanthasappy.com | Family Care Line: +234 706 933 2193
+                Contact: samanthasappy@gmail.com | Family Care Line: +234 706 933 2193
               </p>
             </td>
           </tr>
@@ -304,7 +304,7 @@ We never send permanent passwords via email. Please use the secure password setu
 
 Warm regards,
 ${facility} Administration
-admin@samanthasappy.com
+samanthasappy@gmail.com
 `;
 
   return { subject, html, text };

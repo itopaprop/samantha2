@@ -139,7 +139,7 @@ export const Footer: React.FC = () => {
               </li>
               <li className="flex items-center gap-2.5">
                 <Mail className="w-4 h-4 text-sky-400 shrink-0" />
-                <span>care@samanthasappy.com</span>
+                <span>samanthasappy@gmail.com</span>
               </li>
               <li className="flex items-center gap-2.5">
                 <Clock className="w-4 h-4 text-sky-400 shrink-0" />

@@ -717,7 +717,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             // Determine accurate role based on known admin accounts or metadata
             const localMatch = INITIAL_USERS.find(u => (u?.email || '').toLowerCase() === userEmail);
             const meta = session.user.user_metadata || {};
-            const isAdmin = userEmail.includes('admin') || userEmail === 'director@samanthasappy.com' || userEmail === 'itopaprop@gmail.com';
+            const isAdmin = userEmail.includes('admin') || userEmail === 'samanthasappy@gmail.com' || userEmail === 'admin@samanthasappy.com' || userEmail === 'itopaprop@gmail.com';
             const role: UserRole = (meta.role as UserRole) || localMatch?.role || (isAdmin ? 'Admin' : 'Staff');
             
             const fallbackUser: User = {
@@ -779,7 +779,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } else {
           const localMatch = INITIAL_USERS.find(u => (u?.email || '').toLowerCase() === userEmail);
           const meta = session.user.user_metadata || {};
-          const isAdmin = userEmail.includes('admin') || userEmail === 'director@samanthasappy.com' || userEmail === 'itopaprop@gmail.com';
+          const isAdmin = userEmail.includes('admin') || userEmail === 'samanthasappy@gmail.com' || userEmail === 'admin@samanthasappy.com' || userEmail === 'itopaprop@gmail.com';
           const role: UserRole = (meta.role as UserRole) || localMatch?.role || (isAdmin ? 'Admin' : 'Staff');
           
           const fallbackUser: User = {
@@ -1484,7 +1484,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       receiverName: admin.name,
       receiverRole: 'Admin' as UserRole,
       subject: `🏡 New Resident Registered: ${newResident.fullName} (${newResident.careCategory})`,
-      content: `A new resident has been registered and their family portal account is activated.\n\nRESIDENT & RELATIVE DETAILS:\n• Resident Name: ${newResident.fullName}\n• Care Category: ${newResident.careCategory}\n• Room / Suite: ${newResident.roomNumber}\n• Next of Kin / Relative: ${newRelativeUser.name} (${newRelativeUser.relationship || 'Next of Kin'})\n• Relative Email: ${newRelativeUser.email}\n• Relative Phone: ${newRelativeUser.phone}\n\nAutomated onboarding confirmation email dispatched to: ${newRelativeUser.email}\nAdmin notification email dispatched to: admin@samanthasappy.com`,
+      content: `A new resident has been registered and their family portal account is activated.\n\nRESIDENT & RELATIVE DETAILS:\n• Resident Name: ${newResident.fullName}\n• Care Category: ${newResident.careCategory}\n• Room / Suite: ${newResident.roomNumber}\n• Next of Kin / Relative: ${newRelativeUser.name} (${newRelativeUser.relationship || 'Next of Kin'})\n• Relative Email: ${newRelativeUser.email}\n• Relative Phone: ${newRelativeUser.phone}\n\nAutomated onboarding confirmation email dispatched to: ${newRelativeUser.email}\nAdmin notification email dispatched to: samanthasappy@gmail.com`,
       isRead: false,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
     }));
@@ -1700,7 +1700,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       receiverName: admin.name,
       receiverRole: 'Admin' as UserRole,
       subject: `🔔 New Staff Registered: ${newStaff.name} (${newStaff.position})`,
-      content: `A new staff member has been registered and provisioned in the care management system.\n\nSTAFF DETAILS:\n• Full Name: ${newStaff.name}\n• Position / Role: ${newStaff.position}\n• Registered Email: ${cleanEmail}\n• Phone Number: ${newStaff.phone}\n• Qualification: ${newStaff.qualification || 'N/A'}\n• Assigned Shift: ${newStaff.shift || 'N/A'}\n\nAutomated onboarding confirmation email dispatched to: ${cleanEmail}\nAdmin notification email dispatched to: admin@samanthasappy.com`,
+      content: `A new staff member has been registered and provisioned in the care management system.\n\nSTAFF DETAILS:\n• Full Name: ${newStaff.name}\n• Position / Role: ${newStaff.position}\n• Registered Email: ${cleanEmail}\n• Phone Number: ${newStaff.phone}\n• Qualification: ${newStaff.qualification || 'N/A'}\n• Assigned Shift: ${newStaff.shift || 'N/A'}\n\nAutomated onboarding confirmation email dispatched to: ${cleanEmail}\nAdmin notification email dispatched to: samanthasappy@gmail.com`,
       isRead: false,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
     }));
@@ -1805,7 +1805,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteUserAccount = async (userId: string, email?: string): Promise<boolean> => {
     const cleanEmail = email?.trim().toLowerCase();
-    if (cleanEmail === 'admin@samanthasappy.com') {
+    if (cleanEmail === 'samanthasappy@gmail.com' || cleanEmail === 'admin@samanthasappy.com' || cleanEmail === 'itopaprop@gmail.com') {
       showToast('Cannot delete the primary administrator account.');
       return false;
     }
@@ -1838,10 +1838,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const purgeAllNonAdminUsers = async (): Promise<{ success: boolean; deletedCount: number }> => {
-    setUsers(prev => prev.filter(u => u.role === 'Admin' || (u?.email && ((u.email || '').toLowerCase() === 'admin@samanthasappy.com' || (u.email || '').toLowerCase() === 'itopaprop@gmail.com'))));
-    setStaff(prev => prev.filter(s => s.role === 'Admin' || (s?.email && ((s.email || '').toLowerCase() === 'admin@samanthasappy.com' || (s.email || '').toLowerCase() === 'itopaprop@gmail.com'))));
+    setUsers(prev => prev.filter(u => u.role === 'Admin' || (u?.email && ((u.email || '').toLowerCase() === 'samanthasappy@gmail.com' || (u.email || '').toLowerCase() === 'admin@samanthasappy.com' || (u.email || '').toLowerCase() === 'itopaprop@gmail.com'))));
+    setStaff(prev => prev.filter(s => s.role === 'Admin' || (s?.email && ((s.email || '').toLowerCase() === 'samanthasappy@gmail.com' || (s.email || '').toLowerCase() === 'admin@samanthasappy.com' || (s.email || '').toLowerCase() === 'itopaprop@gmail.com'))));
 
-    const result = await invokeCleanupNonAdminUsers('admin@samanthasappy.com');
+    const result = await invokeCleanupNonAdminUsers('samanthasappy@gmail.com');
     if (result.success) {
       showToast(`Purged ${result.deletedCount || 0} non-admin user account(s) from Supabase Auth.`);
       return { success: true, deletedCount: result.deletedCount || 0 };
@@ -2438,7 +2438,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const adminUsers = users.filter(u => u.role === 'Admin');
     const adminTargets = adminUsers.length > 0 
       ? adminUsers 
-      : [{ id: 'usr-admin-1', name: 'Managing Director & Admin', email: 'admin@samanthasappy.com', role: 'Admin' as UserRole }];
+      : [{ id: 'usr-admin-1', name: 'Managing Director & Admin', email: 'samanthasappy@gmail.com', role: 'Admin' as UserRole }];
 
     const refsFormatted = processedReferences
       .map((r, idx) => `• Reference ${idx + 1}: ${r.name || 'N/A'} (${r.relationship || 'N/A'})\n  Phone: ${r.phone || 'N/A'} | Email: ${r.email || 'N/A'}${r.photoUrl ? ' | [Document Photo Attached]' : ''}`)
@@ -2455,7 +2455,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       receiverName: admin.name,
       receiverRole: 'Admin' as UserRole,
       subject: `📥 NEW CARE APPLICATION: ${appData.fullName} (${appData.type === 'caregiver' ? 'Caregiver Applicant' : 'Resident Admission Request'})`,
-      content: `A new ${appTitle} has been submitted through the web portal.\n\nAPPLICANT FULL DETAILS:\n• Full Name: ${appData.fullName}\n• Email: ${appData.email}\n• Phone: ${appData.phone}\n• Care Category / Position: ${appData.positionOrCategory}\n${appData.sponsorName ? `• Sponsor / Next of Kin: ${appData.sponsorName}\n` : ''}${appData.notesOrStatement ? `• Medical / Qualification Notes: ${appData.notesOrStatement}\n` : ''}${photoUrl ? '• Applicant Photo: Attached\n' : ''}${receiptUrl ? `• Payment Receipt: Attached (${appData.receiptName || 'Bank Transfer Proof'})\n` : ''}\n\nATTACHED REFERENCES & GUARANTOR DOCUMENTS:\n${refsFormatted || 'None attached'}\n\nNotification dispatched to: admin@samanthasappy.com\nSubmitted on: ${createdAt}`,
+      content: `A new ${appTitle} has been submitted through the web portal.\n\nAPPLICANT FULL DETAILS:\n• Full Name: ${appData.fullName}\n• Email: ${appData.email}\n• Phone: ${appData.phone}\n• Care Category / Position: ${appData.positionOrCategory}\n${appData.sponsorName ? `• Sponsor / Next of Kin: ${appData.sponsorName}\n` : ''}${appData.notesOrStatement ? `• Medical / Qualification Notes: ${appData.notesOrStatement}\n` : ''}${photoUrl ? '• Applicant Photo: Attached\n' : ''}${receiptUrl ? `• Payment Receipt: Attached (${appData.receiptName || 'Bank Transfer Proof'})\n` : ''}\n\nATTACHED REFERENCES & GUARANTOR DOCUMENTS:\n${refsFormatted || 'None attached'}\n\nNotification dispatched to: samanthasappy@gmail.com\nSubmitted on: ${createdAt}`,
       attachmentUrl: receiptUrl || photoUrl || processedReferences[0]?.photoUrl,
       attachmentName: receiptUrl ? (appData.receiptName || `${appData.fullName.replace(/\s+/g, '_')}_Payment_Receipt.jpg`) : (photoUrl ? `${appData.fullName.replace(/\s+/g, '_')}_ID.jpg` : undefined),
       applicantPhotoUrl: photoUrl,

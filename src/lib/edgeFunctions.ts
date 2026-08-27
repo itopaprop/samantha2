@@ -299,7 +299,7 @@ export async function invokeDeleteUser(params: { userId?: string; email?: string
 /**
  * Cleanup / Purge ALL non-admin users from Supabase Auth and Database
  */
-export async function invokeCleanupNonAdminUsers(adminEmail: string = 'admin@samanthasappy.com'): Promise<{ success: boolean; message?: string; deletedCount?: number; error?: string }> {
+export async function invokeCleanupNonAdminUsers(adminEmail: string = 'samanthasappy@gmail.com'): Promise<{ success: boolean; message?: string; deletedCount?: number; error?: string }> {
   try {
     const res = await fetch('/api/functions/cleanup-non-admin-users', {
       method: 'POST',

@@ -29,7 +29,7 @@ function getSupabaseAdmin(): SupabaseClient {
   return supabaseAdminClient;
 }
 
-const ADMIN_NOTIFICATION_EMAIL = process.env.ADMIN_EMAIL || 'admin@samanthasappy.com';
+const ADMIN_NOTIFICATION_EMAIL = process.env.ADMIN_EMAIL || 'samanthasappy@gmail.com';
 
 // Helper to send transactional emails via Resend or HTTP fallback
 async function dispatchEmail(params: {
@@ -674,7 +674,7 @@ async function startServer() {
           phone: u.user_metadata?.phone || profile?.phone || staff?.phone || '',
           avatar: u.user_metadata?.avatar || profile?.avatar || staff?.avatar || '',
           providers: u.app_metadata?.providers || ['email'],
-          isAdmin: emailLower === 'admin@samanthasappy.com' || profile?.role === 'Admin',
+          isAdmin: emailLower === 'samanthasappy@gmail.com' || emailLower === 'admin@samanthasappy.com' || emailLower === 'itopaprop@gmail.com' || profile?.role === 'Admin',
         };
       });
 
@@ -698,7 +698,7 @@ async function startServer() {
       const supabaseAdmin = getSupabaseAdmin();
 
       // Guard: do not delete primary admin
-      if (cleanEmail === 'admin@samanthasappy.com' || cleanEmail === 'admin@carepulse.com') {
+      if (cleanEmail === 'samanthasappy@gmail.com' || cleanEmail === 'admin@samanthasappy.com' || cleanEmail === 'itopaprop@gmail.com' || cleanEmail === 'admin@carepulse.com') {
         res.status(403).json({ error: 'Cannot delete the primary administrator account.' });
         return;
       }
@@ -711,7 +711,7 @@ async function startServer() {
         const matchingAuthUsers = (listData?.users || []).filter((u: any) => {
           const uEmail = u.email?.toLowerCase();
           const uName = (u.user_metadata?.name || '').toLowerCase();
-          if (uEmail === 'admin@samanthasappy.com') return false;
+          if (uEmail === 'samanthasappy@gmail.com' || uEmail === 'admin@samanthasappy.com' || uEmail === 'itopaprop@gmail.com') return false;
           if (staffId && u.id === staffId) return true;
           if (cleanEmail && uEmail === cleanEmail) return true;
           if (cleanName && uName === cleanName) return true;
@@ -801,7 +801,7 @@ async function startServer() {
           const uEmail = u.email?.toLowerCase();
           const uLinkedId = u.user_metadata?.residentLinkedId || u.user_metadata?.resident_id;
           const uResName = (u.user_metadata?.residentName || '').toLowerCase();
-          if (uEmail === 'admin@samanthasappy.com') return false;
+          if (uEmail === 'samanthasappy@gmail.com' || uEmail === 'admin@samanthasappy.com' || uEmail === 'itopaprop@gmail.com') return false;
           if (residentId && uLinkedId === residentId) return true;
           if (cleanRelativeEmail && uEmail === cleanRelativeEmail) return true;
           if (cleanResidentName && uResName === cleanResidentName) return true;
@@ -885,7 +885,7 @@ async function startServer() {
       let resolvedUserId = userId;
 
       // Prevent deleting primary admin account
-      if (cleanEmail === 'admin@samanthasappy.com') {
+      if (cleanEmail === 'samanthasappy@gmail.com' || cleanEmail === 'admin@samanthasappy.com' || cleanEmail === 'itopaprop@gmail.com') {
         res.status(403).json({ error: 'Cannot delete the primary administrator account.' });
         return;
       }
@@ -961,12 +961,12 @@ async function startServer() {
   // 7. Cleanup / Purge ALL non-admin users from Supabase Auth & Database
   app.post('/api/functions/cleanup-non-admin-users', async (req, res) => {
     try {
-      const { adminEmail = 'admin@samanthasappy.com' } = req.body;
+      const { adminEmail = 'samanthasappy@gmail.com' } = req.body;
       const cleanAdminEmail = adminEmail.trim().toLowerCase();
       const supabaseAdmin = getSupabaseAdmin();
 
       const adminEmails = [
-        'admin@samanthasappy.com',
+        'samanthasappy@gmail.com',
         'itopaprop@gmail.com',
         cleanAdminEmail
       ].filter(Boolean);

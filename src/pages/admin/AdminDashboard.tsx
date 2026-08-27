@@ -2312,7 +2312,7 @@ export const AdminDashboard: React.FC = () => {
               <div className="space-y-1">
                 <h3 className="text-lg font-extrabold text-slate-900">Purge All Demo Records?</h3>
                 <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                  This will immediately remove all placeholder/demo residents (e.g. Margaret Thatcher, Winston Churchill) and demo caregivers from your database, cache, and cloud storage. Real administrator accounts (<strong className="text-slate-900">admin@samanthasappy.com</strong> & <strong className="text-slate-900">itopaprop@gmail.com</strong>) will remain intact.
+                  This will immediately remove all placeholder/demo residents (e.g. Margaret Thatcher, Winston Churchill) and demo caregivers from your database, cache, and cloud storage. Real administrator accounts (<strong className="text-slate-900">samanthasappy@gmail.com</strong> & <strong className="text-slate-900">itopaprop@gmail.com</strong>) will remain intact.
                 </p>
               </div>
             </div>

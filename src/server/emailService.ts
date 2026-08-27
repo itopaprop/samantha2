@@ -120,7 +120,7 @@ export function generateStaffWelcomeEmail(data: StaffEmailData): { subject: stri
                 ${facility} Administration
               </p>
               <p style="margin: 0; color: #94a3b8; font-size: 11px;">
-                Contact: admin@samanthasappy.com | Emergency Helpline: +234 706 933 2193
+                Contact: samanthasappy@gmail.com | Emergency Helpline: +234 706 933 2193
               </p>
             </td>
           </tr>
@@ -150,7 +150,7 @@ Your staff authentication account has been successfully provisioned. You can now
 
 Best regards,
 ${facility} Administration
-admin@samanthasappy.com
+samanthasappy@gmail.com
 `;
 
   return { subject, html, text };
@@ -270,7 +270,7 @@ export function generateRelativeWelcomeEmail(data: RelativeEmailData): { subject
                 ${facility} - Family Relations Team
               </p>
               <p style="margin: 0; color: #94a3b8; font-size: 11px;">
-                Contact: admin@samanthasappy.com | Family Care Line: +234 706 933 2193
+                Contact: samanthasappy@gmail.com | Family Care Line: +234 706 933 2193
               </p>
             </td>
           </tr>
@@ -304,7 +304,7 @@ We never send permanent passwords via email. Please use the secure password setu
 
 Warm regards,
 ${facility} Administration
-admin@samanthasappy.com
+samanthasappy@gmail.com
 `;
 
   return { subject, html, text };
@@ -648,7 +648,7 @@ export function generateApplicantReceiptConfirmationEmail(data: {
               </div>
 
               <p style="margin: 0; color: #64748b; font-size: 12px;">
-                If you have any questions or need to make adjustments to your application, please reach out to us at <strong>admin@samanthasappy.com</strong> or call <strong>+234 706 933 2193</strong>.
+                If you have any questions or need to make adjustments to your application, please reach out to us at <strong>samanthasappy@gmail.com</strong> or call <strong>+234 706 933 2193</strong>.
               </p>
             </td>
           </tr>
@@ -658,7 +658,7 @@ export function generateApplicantReceiptConfirmationEmail(data: {
                 ${facility}
               </p>
               <p style="margin: 0; color: #94a3b8; font-size: 11px;">
-                admin@samanthasappy.com | +234 706 933 2193
+                samanthasappy@gmail.com | +234 706 933 2193
               </p>
             </td>
           </tr>
@@ -688,7 +688,7 @@ Our team will review your submission and contact you within 24-48 hours.
 
 Best regards,
 ${facility} Admissions & Recruitment Team
-admin@samanthasappy.com | +234 706 933 2193
+samanthasappy@gmail.com | +234 706 933 2193
 `;
 
   return { subject, html, text };
