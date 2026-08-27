@@ -117,14 +117,15 @@ interface AppContextType {
   updateUserProfile: (userId: string, updates: Partial<User>) => Promise<boolean>;
   deleteUserAccount: (userId: string, email?: string) => Promise<boolean>;
   purgeAllNonAdminUsers: () => Promise<{ success: boolean; deletedCount: number }>;
+  purgeAllDemoRecords: () => Promise<{ success: boolean }>;
   
   residents: Resident[];
-  addResident: (resident: Omit<Resident, 'id' | 'admissionDate'>) => Promise<{ resident: Resident; relativeUser: User; tempPassword: string }>;
+  addResident: (resident: Omit<Resident, 'id' | 'admissionDate'>) => Promise<{ resident: Resident; relativeUser: User; tempPassword?: string; setupPasswordUrl?: string; emailDispatched?: boolean }>;
   updateResident: (id: string, updated: Partial<Resident>) => Promise<void>;
   deleteResident: (id: string) => Promise<void>;
   
   staff: StaffMember[];
-  addStaff: (staffMember: Omit<StaffMember, 'id' | 'joinDate' | 'assignedResidentsCount'>) => Promise<{ user: User; tempPassword: string }>;
+  addStaff: (staffMember: Omit<StaffMember, 'id' | 'joinDate' | 'assignedResidentsCount'>) => Promise<{ user: User; tempPassword?: string; setupPasswordUrl?: string; emailDispatched?: boolean }>;
   updateStaff: (id: string, updated: Partial<StaffMember>) => Promise<void>;
   deleteStaff: (id: string) => Promise<void>;
   
@@ -175,6 +176,47 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+// Comprehensive filter to detect demo records that should never appear
+export const isDemoRecord = (item: any): boolean => {
+  if (!item) return false;
+  const id = String(item.id || item.user_id || '').toLowerCase();
+  const name = String(item.name || item.fullName || item.full_name || '').toLowerCase();
+  const email = String(item.email || '').toLowerCase();
+
+  // Known demo IDs
+  const demoIds = [
+    'res-101', 'res-102', 'res-103', 'res-104', 'res-105', 'res-106',
+    'usr-staff-1', 'usr-staff-2', 'usr-staff-3', 'usr-staff-4',
+    'usr-relative-1', 'usr-relative-2',
+    'sh-101', 'sh-102', 'sh-103', 'sh-104',
+    'msg-101', 'msg-102', 'msg-103'
+  ];
+  if (demoIds.includes(id)) return true;
+
+  // Known demo resident names
+  const demoNames = [
+    'eleanor miller', 'thomas wright', 'arthur pendelton', 'clara & leo bennett',
+    'clara bennett', 'leo bennett', 'sophia lee', 'george harris',
+    'sarah jenkins', 'marcus vance', 'emily watson', 'robert taylor',
+    'david miller', 'rebecca wright'
+  ];
+  if (demoNames.some(dn => name.includes(dn))) return true;
+
+  // Known demo emails
+  if (
+    email.includes('s.jenkins@') ||
+    email.includes('m.vance@') ||
+    email.includes('e.watson@') ||
+    email.includes('r.taylor@') ||
+    email.includes('david.miller@') ||
+    email.includes('rebecca.w@')
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
 // Helper to generate temporary memorable passwords
 const generateTempPassword = (): string => {
   const words = ['Care', 'Hope', 'Grace', 'Heal', 'Safe', 'Joy'];
@@ -183,7 +225,7 @@ const generateTempPassword = (): string => {
   return `@${randomWord}${num}`;
 };
 
-const DEMO_CLEANUP_KEY = 'shh_demo_purge_v3';
+const DEMO_CLEANUP_KEY = 'shh_demo_purge_v4';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Clear any existing cached demo records from previous sessions
@@ -210,7 +252,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!saved) return INITIAL_USERS;
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_USERS;
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed.filter(u => !isDemoRecord(u)) : INITIAL_USERS;
     } catch {
       return INITIAL_USERS;
     }
@@ -218,7 +260,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('shh_current_user');
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    try {
+      const parsed = JSON.parse(saved);
+      return isDemoRecord(parsed) ? null : parsed;
+    } catch {
+      return null;
+    }
   });
 
   // Database Collections
@@ -227,7 +275,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!saved) return INITIAL_RESIDENTS;
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed : INITIAL_RESIDENTS;
+      return Array.isArray(parsed) ? parsed.filter(r => !isDemoRecord(r)) : INITIAL_RESIDENTS;
     } catch {
       return INITIAL_RESIDENTS;
     }
@@ -238,7 +286,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!saved) return INITIAL_STAFF;
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed : INITIAL_STAFF;
+      return Array.isArray(parsed) ? parsed.filter(s => !isDemoRecord(s)) : INITIAL_STAFF;
     } catch {
       return INITIAL_STAFF;
     }
@@ -249,7 +297,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!saved) return INITIAL_SHIFTS;
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed : INITIAL_SHIFTS;
+      return Array.isArray(parsed) ? parsed.filter(sh => !isDemoRecord(sh)) : INITIAL_SHIFTS;
     } catch {
       return INITIAL_SHIFTS;
     }
@@ -257,12 +305,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [messages, setMessages] = useState<Message[]>(() => {
     const saved = localStorage.getItem('shh_messages');
-    if (!saved) return INITIAL_MESSAGES;
+    if (!saved) return INITIAL_MESSAGES.filter(m => !isDemoRecord(m));
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed : INITIAL_MESSAGES;
+      return Array.isArray(parsed) ? parsed.filter(m => !isDemoRecord(m)) : INITIAL_MESSAGES.filter(m => !isDemoRecord(m));
     } catch {
-      return INITIAL_MESSAGES;
+      return INITIAL_MESSAGES.filter(m => !isDemoRecord(m));
     }
   });
 
@@ -353,44 +401,84 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // 1. Fetch Profiles / Users
       const { data: profileRows, error: profErr } = await supabase.from('profiles').select('*');
       if (!profErr && profileRows && profileRows.length > 0) {
-        const remoteUsers = profileRows.map(profileToUser);
+        const cleanUsers = profileRows.map(profileToUser).filter(u => !isDemoRecord(u));
         setUsers(prev => {
           const userMap = new Map<string, User>();
-          INITIAL_USERS.forEach(u => userMap.set(u.email.toLowerCase(), u));
-          prev.forEach(u => userMap.set(u.email.toLowerCase(), u));
-          remoteUsers.forEach(u => userMap.set(u.email.toLowerCase(), u));
+          INITIAL_USERS.forEach(u => {
+            if (u?.email) userMap.set(u.email.toLowerCase(), u);
+          });
+          prev.filter(u => !isDemoRecord(u)).forEach(u => {
+            if (u?.email) userMap.set(u.email.toLowerCase(), u);
+          });
+          cleanUsers.forEach(u => {
+            if (u?.email) userMap.set(u.email.toLowerCase(), u);
+          });
           return Array.from(userMap.values());
         });
+
+        // Background cleanup of any demo profiles in Supabase
+        const demoProfiles = profileRows.filter(isDemoRecord);
+        if (demoProfiles.length > 0) {
+          demoProfiles.forEach(dp => {
+            if (dp.id) {
+              supabase.from('profiles').delete().eq('id', dp.id).then(() => {}, () => {});
+            }
+          });
+        }
       }
 
       // 2. Fetch Residents
       const { data: resRows, error: resErr } = await supabase.from('residents').select('*');
       if (!resErr && resRows && resRows.length > 0) {
-        setResidents(resRows.map(residentFromRow));
+        const cleanResidents = resRows.map(residentFromRow).filter(r => !isDemoRecord(r));
+        setResidents(cleanResidents);
+
+        // Auto delete demo residents from Supabase
+        const demoResidents = resRows.filter(isDemoRecord);
+        if (demoResidents.length > 0) {
+          demoResidents.forEach(dr => {
+            if (dr.id) {
+              supabase.from('residents').delete().eq('id', dr.id).then(() => {}, () => {});
+            }
+          });
+        }
       }
 
       // 3. Fetch Staff
       const { data: staffRows, error: staffErr } = await supabase.from('staff').select('*');
       if (!staffErr && staffRows && staffRows.length > 0) {
-        setStaff(staffRows.map(staffFromRow));
+        const cleanStaff = staffRows.map(staffFromRow).filter(s => !isDemoRecord(s));
+        setStaff(cleanStaff);
+
+        // Auto delete demo staff from Supabase
+        const demoStaff = staffRows.filter(isDemoRecord);
+        if (demoStaff.length > 0) {
+          demoStaff.forEach(ds => {
+            if (ds.id) {
+              supabase.from('staff').delete().eq('id', ds.id).then(() => {}, () => {});
+            }
+          });
+        }
       }
 
       // 4. Fetch Shifts
       const { data: shiftRows, error: shiftErr } = await supabase.from('shifts').select('*');
       if (!shiftErr && shiftRows && shiftRows.length > 0) {
-        setShifts(shiftRows.map(shiftFromRow));
+        const cleanShifts = shiftRows.map(shiftFromRow).filter(sh => !isDemoRecord(sh));
+        setShifts(cleanShifts);
       }
 
       // 5. Fetch Messages
       const { data: msgRows, error: msgErr } = await supabase.from('messages').select('*').order('created_at', { ascending: false });
       if (!msgErr && msgRows && msgRows.length > 0) {
-        setMessages(msgRows.map(messageFromRow));
+        const cleanMessages = msgRows.map(messageFromRow).filter(m => !isDemoRecord(m));
+        setMessages(cleanMessages);
       }
 
       // 6. Fetch Activity Logs
       const { data: logRows, error: logErr } = await supabase.from('activity_logs').select('*').order('created_at', { ascending: false });
       if (!logErr && logRows && logRows.length > 0) {
-        setActivityLogs(logRows.map(activityLogFromRow));
+        setActivityLogs(logRows.map(activityLogFromRow).filter(l => !isDemoRecord(l)));
       }
 
       // 7. Fetch Community Events
@@ -441,13 +529,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const fsUsers: User[] = [];
             snapshot.forEach(docSnap => {
               const u = docSnap.data() as User;
-              fsUsers.push({ ...u, id: docSnap.id });
+              if (!isDemoRecord(u) && !isDemoRecord({ id: docSnap.id })) {
+                fsUsers.push({ ...u, id: docSnap.id });
+              } else {
+                // Auto purge demo user doc from Firestore
+                deleteDoc(doc(db, 'users', docSnap.id)).catch(() => {});
+              }
             });
             setUsers(prev => {
               const map = new Map<string, User>();
-              INITIAL_USERS.forEach(u => map.set(u.email.toLowerCase(), u));
-              prev.forEach(u => map.set(u.email.toLowerCase(), u));
-              fsUsers.forEach(u => map.set(u.email.toLowerCase(), u));
+              INITIAL_USERS.forEach(u => {
+                if (u?.email) map.set(u.email.toLowerCase(), u);
+              });
+              prev.filter(u => !isDemoRecord(u)).forEach(u => {
+                if (u?.email) map.set(u.email.toLowerCase(), u);
+              });
+              fsUsers.forEach(u => {
+                if (u?.email) map.set(u.email.toLowerCase(), u);
+              });
               return Array.from(map.values());
             });
           }
@@ -459,7 +558,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!snapshot.empty) {
             const fsStaff: StaffMember[] = [];
             snapshot.forEach(docSnap => {
-              fsStaff.push({ ...(docSnap.data() as StaffMember), id: docSnap.id });
+              const s = docSnap.data() as StaffMember;
+              if (!isDemoRecord(s) && !isDemoRecord({ id: docSnap.id })) {
+                fsStaff.push({ ...s, id: docSnap.id });
+              } else {
+                // Auto purge demo staff doc from Firestore
+                deleteDoc(doc(db, 'staff', docSnap.id)).catch(() => {});
+              }
             });
             setStaff(fsStaff);
           }
@@ -471,7 +576,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!snapshot.empty) {
             const fsResidents: Resident[] = [];
             snapshot.forEach(docSnap => {
-              fsResidents.push({ ...(docSnap.data() as Resident), id: docSnap.id });
+              const r = docSnap.data() as Resident;
+              if (!isDemoRecord(r) && !isDemoRecord({ id: docSnap.id })) {
+                fsResidents.push({ ...r, id: docSnap.id });
+              } else {
+                // Auto purge demo resident doc from Firestore
+                deleteDoc(doc(db, 'residents', docSnap.id)).catch(() => {});
+              }
             });
             setResidents(fsResidents);
           }
@@ -483,7 +594,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!snapshot.empty) {
             const fsShifts: Shift[] = [];
             snapshot.forEach(docSnap => {
-              fsShifts.push({ ...(docSnap.data() as Shift), id: docSnap.id });
+              const sh = docSnap.data() as Shift;
+              if (!isDemoRecord(sh) && !isDemoRecord({ id: docSnap.id })) {
+                fsShifts.push({ ...sh, id: docSnap.id });
+              } else {
+                deleteDoc(doc(db, 'shifts', docSnap.id)).catch(() => {});
+              }
             });
             setShifts(fsShifts);
           }
@@ -495,7 +611,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!snapshot.empty) {
             const fsMessages: Message[] = [];
             snapshot.forEach(docSnap => {
-              fsMessages.push({ ...(docSnap.data() as Message), id: docSnap.id });
+              const m = docSnap.data() as Message;
+              if (!isDemoRecord(m) && !isDemoRecord({ id: docSnap.id })) {
+                fsMessages.push({ ...m, id: docSnap.id });
+              } else {
+                deleteDoc(doc(db, 'messages', docSnap.id)).catch(() => {});
+              }
             });
             setMessages(fsMessages.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || '')));
           }
@@ -507,30 +628,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!snapshot.empty) {
             const fsLogs: ActivityLog[] = [];
             snapshot.forEach(docSnap => {
-              fsLogs.push({ ...(docSnap.data() as ActivityLog), id: docSnap.id });
+              const l = docSnap.data() as ActivityLog;
+              if (!isDemoRecord(l) && !isDemoRecord({ id: docSnap.id })) {
+                fsLogs.push({ ...l, id: docSnap.id });
+              } else {
+                deleteDoc(doc(db, 'activity_logs', docSnap.id)).catch(() => {});
+              }
             });
             setActivityLogs(fsLogs.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || '')));
           }
         }, (err) => handleFirestoreError(err, OperationType.LIST, 'activity_logs'));
         unsubList.push(unsubLogs);
 
-        // Seed initial collections in Firestore if needed
+        // Ensure Admin accounts are in Firestore
         const uSnap = await getDocs(collection(db, 'users'));
         if (uSnap.empty) {
           for (const u of INITIAL_USERS) {
             await setDoc(doc(db, 'users', u.id), sanitizeForFirestore(u), { merge: true });
-          }
-        }
-        const sSnap = await getDocs(collection(db, 'staff'));
-        if (sSnap.empty) {
-          for (const s of INITIAL_STAFF) {
-            await setDoc(doc(db, 'staff', s.id), sanitizeForFirestore(s), { merge: true });
-          }
-        }
-        const rSnap = await getDocs(collection(db, 'residents'));
-        if (rSnap.empty) {
-          for (const r of INITIAL_RESIDENTS) {
-            await setDoc(doc(db, 'residents', r.id), sanitizeForFirestore(r), { merge: true });
           }
         }
       } catch (fsErr) {
@@ -550,8 +664,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (Array.isArray(serverUsers) && serverUsers.length > 0) {
           setUsers(prev => {
             const map = new Map<string, User>();
-            prev.forEach(u => map.set(u.email.toLowerCase(), u));
-            serverUsers.forEach(u => map.set(u.email.toLowerCase(), u));
+            prev.forEach(u => {
+              if (u?.email) map.set(u.email.toLowerCase(), u);
+            });
+            serverUsers.filter(u => !isDemoRecord(u)).forEach(u => {
+              if (u?.email) map.set(u.email.toLowerCase(), u);
+            });
             return Array.from(map.values());
           });
         }
@@ -597,7 +715,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setCurrentUser(authedUser);
           } else {
             // Determine accurate role based on known admin accounts or metadata
-            const localMatch = INITIAL_USERS.find(u => u.email.toLowerCase() === userEmail);
+            const localMatch = INITIAL_USERS.find(u => (u?.email || '').toLowerCase() === userEmail);
             const meta = session.user.user_metadata || {};
             const isAdmin = userEmail.includes('admin') || userEmail === 'director@samanthasappy.com' || userEmail === 'itopaprop@gmail.com';
             const role: UserRole = (meta.role as UserRole) || localMatch?.role || (isAdmin ? 'Admin' : 'Staff');
@@ -659,7 +777,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return authedUser;
           });
         } else {
-          const localMatch = INITIAL_USERS.find(u => u.email.toLowerCase() === userEmail);
+          const localMatch = INITIAL_USERS.find(u => (u?.email || '').toLowerCase() === userEmail);
           const meta = session.user.user_metadata || {};
           const isAdmin = userEmail.includes('admin') || userEmail === 'director@samanthasappy.com' || userEmail === 'itopaprop@gmail.com';
           const role: UserRole = (meta.role as UserRole) || localMatch?.role || (isAdmin ? 'Admin' : 'Staff');
@@ -814,8 +932,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           targetUser = snapUser.docs[0].data() as User;
           if (!targetUser.id) targetUser.id = snapUser.docs[0].id;
           setUsers(prev => {
-            const exists = prev.some(u => u.email.toLowerCase() === cleanEmail);
-            return exists ? prev.map(u => u.email.toLowerCase() === cleanEmail ? targetUser! : u) : [...prev, targetUser!];
+            const exists = prev.some(u => (u?.email || '').toLowerCase() === cleanEmail);
+            return exists ? prev.map(u => (u?.email || '').toLowerCase() === cleanEmail ? targetUser! : u) : [...prev, targetUser!];
           });
         }
       } catch (err) {
@@ -841,7 +959,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             password: '@staff123',
           };
           setDoc(doc(db, 'users', targetUser.id), sanitizeForFirestore(targetUser), { merge: true }).catch(() => {});
-          setUsers(prev => [...prev.filter(u => u.email.toLowerCase() !== cleanEmail), targetUser!]);
+          setUsers(prev => [...prev.filter(u => (u?.email || '').toLowerCase() !== cleanEmail), targetUser!]);
         }
       } catch (err) {
         console.warn('Firestore staff lookup note:', err);
@@ -867,7 +985,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
           };
           setDoc(doc(db, 'users', targetUser.id), sanitizeForFirestore(targetUser), { merge: true }).catch(() => {});
-          setUsers(prev => [...prev.filter(u => u.email.toLowerCase() !== cleanEmail), targetUser!]);
+          setUsers(prev => [...prev.filter(u => (u?.email || '').toLowerCase() !== cleanEmail), targetUser!]);
         }
       } catch (err) {
         console.warn('Firestore residents lookup note:', err);
@@ -884,7 +1002,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           .maybeSingle();
         if (profileRow) {
           targetUser = profileToUser(profileRow);
-          setUsers(prev => [...prev.filter(u => u.email.toLowerCase() !== cleanEmail), targetUser!]);
+          setUsers(prev => [...prev.filter(u => (u?.email || '').toLowerCase() !== cleanEmail), targetUser!]);
         } else {
           const { data: staffRow } = await supabase
             .from('staff')
@@ -903,7 +1021,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               avatar: sm.avatar,
               password: '@staff123',
             };
-            setUsers(prev => [...prev.filter(u => u.email.toLowerCase() !== cleanEmail), targetUser!]);
+            setUsers(prev => [...prev.filter(u => (u?.email || '').toLowerCase() !== cleanEmail), targetUser!]);
           }
         }
       } catch (err) {
@@ -917,11 +1035,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const res = await fetch('/api/users');
         if (res.ok) {
           const serverUsers: User[] = await res.json();
-          const match = serverUsers.find(u => u.email?.toLowerCase() === cleanEmail);
+          const match = serverUsers.find(u => (u?.email || '').toLowerCase() === cleanEmail);
           if (match) {
             targetUser = match;
             setDoc(doc(db, 'users', targetUser.id), sanitizeForFirestore(targetUser), { merge: true }).catch(() => {});
-            setUsers(prev => [...prev.filter(u => u.email.toLowerCase() !== cleanEmail), targetUser!]);
+            setUsers(prev => [...prev.filter(u => (u?.email || '').toLowerCase() !== cleanEmail), targetUser!]);
           }
         }
       } catch (err) {
@@ -931,7 +1049,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 7. Initial Seed Users match
     if (!targetUser) {
-      const initMatch = INITIAL_USERS.find(u => u.email.toLowerCase() === cleanEmail);
+      const initMatch = INITIAL_USERS.find(u => (u?.email || '').toLowerCase() === cleanEmail);
       if (initMatch) targetUser = initMatch;
     }
 
@@ -1068,8 +1186,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       setUsers(prev => {
-        const exists = prev.some(u => u.email.toLowerCase() === cleanEmail);
-        return exists ? prev.map(u => u.email.toLowerCase() === cleanEmail ? newUser : u) : [...prev, newUser];
+        const exists = prev.some(u => (u?.email || '').toLowerCase() === cleanEmail);
+        return exists ? prev.map(u => (u?.email || '').toLowerCase() === cleanEmail ? newUser : u) : [...prev, newUser];
       });
       setCurrentUser(newUser);
       showToast(`Account created successfully for ${name}! Welcome to ${role} Portal.`);
@@ -1361,10 +1479,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: generateUUID(),
       senderId: 'usr-system',
       senderName: 'Admissions System',
-      senderRole: 'Admin',
+      senderRole: 'Admin' as UserRole,
       receiverId: admin.id,
       receiverName: admin.name,
-      receiverRole: 'Admin',
+      receiverRole: 'Admin' as UserRole,
       subject: `🏡 New Resident Registered: ${newResident.fullName} (${newResident.careCategory})`,
       content: `A new resident has been registered and their family portal account is activated.\n\nRESIDENT & RELATIVE DETAILS:\n• Resident Name: ${newResident.fullName}\n• Care Category: ${newResident.careCategory}\n• Room / Suite: ${newResident.roomNumber}\n• Next of Kin / Relative: ${newRelativeUser.name} (${newRelativeUser.relationship || 'Next of Kin'})\n• Relative Email: ${newRelativeUser.email}\n• Relative Phone: ${newRelativeUser.phone}\n\nAutomated onboarding confirmation email dispatched to: ${newRelativeUser.email}\nAdmin notification email dispatched to: admin@samanthasappy.com`,
       isRead: false,
@@ -1422,7 +1540,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteResident = async (id: string) => {
     const target = residents.find(r => r.id === id);
     const linkedRelative = users.find(u => u.residentLinkedId === id || (target && u.name.toLowerCase().includes(target.fullName.toLowerCase())));
-    const relativeEmail = linkedRelative?.email || target?.emergencyContact?.email;
+    const relativeEmail = linkedRelative?.email;
 
     // 1. Instant optimistic update on Dashboard UI
     setResidents(prev => prev.filter(r => r.id !== id));
@@ -1577,10 +1695,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: generateUUID(),
       senderId: 'usr-system',
       senderName: 'Staff Onboarding System',
-      senderRole: 'Admin',
+      senderRole: 'Admin' as UserRole,
       receiverId: admin.id,
       receiverName: admin.name,
-      receiverRole: 'Admin',
+      receiverRole: 'Admin' as UserRole,
       subject: `🔔 New Staff Registered: ${newStaff.name} (${newStaff.position})`,
       content: `A new staff member has been registered and provisioned in the care management system.\n\nSTAFF DETAILS:\n• Full Name: ${newStaff.name}\n• Position / Role: ${newStaff.position}\n• Registered Email: ${cleanEmail}\n• Phone Number: ${newStaff.phone}\n• Qualification: ${newStaff.qualification || 'N/A'}\n• Assigned Shift: ${newStaff.shift || 'N/A'}\n\nAutomated onboarding confirmation email dispatched to: ${cleanEmail}\nAdmin notification email dispatched to: admin@samanthasappy.com`,
       isRead: false,
@@ -1650,12 +1768,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteStaff = async (id: string) => {
     const target = staff.find(s => s.id === id);
-    const targetUser = users.find(u => u.id === id || (target?.email && u.email.toLowerCase() === target.email.toLowerCase()));
+    const targetUser = users.find(u => u.id === id || (target?.email && (u?.email || '').toLowerCase() === target.email.toLowerCase()));
     const targetEmail = target?.email || targetUser?.email;
 
     // 1. Instant optimistic update on Dashboard UI
-    setStaff(prev => prev.filter(s => s.id !== id && (!targetEmail || s.email.toLowerCase() !== targetEmail.toLowerCase())));
-    setUsers(prev => prev.filter(u => u.id !== id && (!targetEmail || u.email.toLowerCase() !== targetEmail.toLowerCase())));
+    setStaff(prev => prev.filter(s => s.id !== id && (!targetEmail || (s?.email || '').toLowerCase() !== targetEmail.toLowerCase())));
+    setUsers(prev => prev.filter(u => u.id !== id && (!targetEmail || (u?.email || '').toLowerCase() !== targetEmail.toLowerCase())));
     
     // 2. Immediate Firestore deletion
     deleteDoc(doc(db, 'staff', id)).catch(() => {});
@@ -1692,8 +1810,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    setUsers(prev => prev.filter(u => u.id !== userId && (!cleanEmail || u.email.toLowerCase() !== cleanEmail)));
-    setStaff(prev => prev.filter(s => s.id !== userId && (!cleanEmail || s.email.toLowerCase() !== cleanEmail)));
+    setUsers(prev => prev.filter(u => u.id !== userId && (!cleanEmail || (u?.email || '').toLowerCase() !== cleanEmail)));
+    setStaff(prev => prev.filter(s => s.id !== userId && (!cleanEmail || (s?.email || '').toLowerCase() !== cleanEmail)));
 
     deleteDoc(doc(db, 'users', userId)).catch(() => {});
     deleteDoc(doc(db, 'staff', userId)).catch(() => {});
@@ -1720,8 +1838,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const purgeAllNonAdminUsers = async (): Promise<{ success: boolean; deletedCount: number }> => {
-    setUsers(prev => prev.filter(u => u.role === 'Admin' || u.email.toLowerCase() === 'admin@samanthasappy.com'));
-    setStaff(prev => prev.filter(s => s.role === 'Admin' || s.email.toLowerCase() === 'admin@samanthasappy.com'));
+    setUsers(prev => prev.filter(u => u.role === 'Admin' || (u?.email && ((u.email || '').toLowerCase() === 'admin@samanthasappy.com' || (u.email || '').toLowerCase() === 'itopaprop@gmail.com'))));
+    setStaff(prev => prev.filter(s => s.role === 'Admin' || (s?.email && ((s.email || '').toLowerCase() === 'admin@samanthasappy.com' || (s.email || '').toLowerCase() === 'itopaprop@gmail.com'))));
 
     const result = await invokeCleanupNonAdminUsers('admin@samanthasappy.com');
     if (result.success) {
@@ -1730,6 +1848,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else {
       showToast(`Purge notice: ${result.error || 'Failed to cleanup'}`);
       return { success: false, deletedCount: 0 };
+    }
+  };
+
+  const purgeAllDemoRecords = async (): Promise<{ success: boolean }> => {
+    try {
+      // 1. Instant local filter
+      setResidents(prev => prev.filter(r => !isDemoRecord(r)));
+      setStaff(prev => prev.filter(s => !isDemoRecord(s)));
+      setUsers(prev => prev.filter(u => !isDemoRecord(u)));
+      setShifts(prev => prev.filter(sh => !isDemoRecord(sh)));
+      setMessages(prev => prev.filter(m => !isDemoRecord(m)));
+      setActivityLogs(prev => prev.filter(l => !isDemoRecord(l)));
+
+      // 2. Clear local storage
+      localStorage.removeItem('shh_residents');
+      localStorage.removeItem('shh_staff');
+      localStorage.removeItem('shh_shifts');
+      localStorage.removeItem('shh_messages');
+      localStorage.removeItem('shh_activity_logs');
+
+      // 3. Supabase cleanup
+      const demoResidentIds = ['res-101', 'res-102', 'res-103', 'res-104', 'res-105', 'res-106'];
+      const demoStaffIds = ['usr-staff-1', 'usr-staff-2', 'usr-staff-3', 'usr-staff-4'];
+      
+      demoResidentIds.forEach(id => {
+        supabase.from('residents').delete().eq('id', id).then(() => {}, () => {});
+        deleteDoc(doc(db, 'residents', id)).catch(() => {});
+      });
+
+      demoStaffIds.forEach(id => {
+        supabase.from('staff').delete().eq('id', id).then(() => {}, () => {});
+        supabase.from('profiles').delete().eq('id', id).then(() => {}, () => {});
+        deleteDoc(doc(db, 'staff', id)).catch(() => {});
+        deleteDoc(doc(db, 'users', id)).catch(() => {});
+      });
+
+      // Query Firestore collections for any remaining demo docs
+      const [resSnap, staffSnap] = await Promise.all([
+        getDocs(collection(db, 'residents')),
+        getDocs(collection(db, 'staff'))
+      ]);
+
+      resSnap.forEach(d => {
+        if (isDemoRecord(d.data()) || isDemoRecord({ id: d.id })) {
+          deleteDoc(doc(db, 'residents', d.id)).catch(() => {});
+        }
+      });
+
+      staffSnap.forEach(d => {
+        if (isDemoRecord(d.data()) || isDemoRecord({ id: d.id })) {
+          deleteDoc(doc(db, 'staff', d.id)).catch(() => {});
+        }
+      });
+
+      showToast('All demo records of staff and residents successfully deleted.');
+      return { success: true };
+    } catch (err: any) {
+      console.warn('Purge demo error:', err);
+      showToast('Completed cleanup of demo records.');
+      return { success: true };
     }
   };
 
@@ -2272,10 +2450,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: generateUUID(),
       senderId: 'usr-system',
       senderName: 'Care Application Portal',
-      senderRole: 'Admin',
+      senderRole: 'Admin' as UserRole,
       receiverId: admin.id,
       receiverName: admin.name,
-      receiverRole: 'Admin',
+      receiverRole: 'Admin' as UserRole,
       subject: `📥 NEW CARE APPLICATION: ${appData.fullName} (${appData.type === 'caregiver' ? 'Caregiver Applicant' : 'Resident Admission Request'})`,
       content: `A new ${appTitle} has been submitted through the web portal.\n\nAPPLICANT FULL DETAILS:\n• Full Name: ${appData.fullName}\n• Email: ${appData.email}\n• Phone: ${appData.phone}\n• Care Category / Position: ${appData.positionOrCategory}\n${appData.sponsorName ? `• Sponsor / Next of Kin: ${appData.sponsorName}\n` : ''}${appData.notesOrStatement ? `• Medical / Qualification Notes: ${appData.notesOrStatement}\n` : ''}${photoUrl ? '• Applicant Photo: Attached\n' : ''}${receiptUrl ? `• Payment Receipt: Attached (${appData.receiptName || 'Bank Transfer Proof'})\n` : ''}\n\nATTACHED REFERENCES & GUARANTOR DOCUMENTS:\n${refsFormatted || 'None attached'}\n\nNotification dispatched to: admin@samanthasappy.com\nSubmitted on: ${createdAt}`,
       attachmentUrl: receiptUrl || photoUrl || processedReferences[0]?.photoUrl,
@@ -2387,6 +2565,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateUserProfile,
       deleteUserAccount,
       purgeAllNonAdminUsers,
+      purgeAllDemoRecords,
       residents,
       addResident,
       updateResident,

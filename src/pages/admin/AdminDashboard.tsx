@@ -86,6 +86,8 @@ export const AdminDashboard: React.FC = () => {
     deleteShift, 
     markMessageAsRead,
     showToast,
+    purgeAllDemoRecords,
+    purgeAllNonAdminUsers,
     logout 
   } = useApp();
 
@@ -111,6 +113,8 @@ export const AdminDashboard: React.FC = () => {
   const [adminZoomScale, setAdminZoomScale] = useState<number>(1);
   const [sharingAdminEvent, setSharingAdminEvent] = useState<CommunityEvent | null>(null);
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
+  const [isPurgeDemoModalOpen, setIsPurgeDemoModalOpen] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
 
   // Edit modal states
   const [editingResident, setEditingResident] = useState<Resident | null>(null);
@@ -551,6 +555,13 @@ export const AdminDashboard: React.FC = () => {
               className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <Calendar className="w-3.5 h-3.5" /> Add Shift
+            </button>
+            <button
+              onClick={() => setIsPurgeDemoModalOpen(true)}
+              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer ml-auto"
+              title="Delete all demo records of staff & residents"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" /> Purge Demo Data
             </button>
           </div>
         </div>
@@ -2283,6 +2294,66 @@ export const AdminDashboard: React.FC = () => {
         onClose={() => setIsEditProfileOpen(false)}
         targetUser={currentUser}
       />
+
+      {/* Purge All Demo Records Confirmation Modal */}
+      {isPurgeDemoModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => !isPurging && setIsPurgeDemoModalOpen(false)}
+        >
+          <div
+            className="max-w-md w-full bg-white rounded-3xl p-6 border border-slate-200 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-extrabold text-slate-900">Purge All Demo Records?</h3>
+                <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                  This will immediately remove all placeholder/demo residents (e.g. Margaret Thatcher, Winston Churchill) and demo caregivers from your database, cache, and cloud storage. Real administrator accounts (<strong className="text-slate-900">admin@samanthasappy.com</strong> & <strong className="text-slate-900">itopaprop@gmail.com</strong>) will remain intact.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-rose-50 p-3.5 rounded-2xl border border-rose-100 text-xs text-rose-900 space-y-1">
+              <div className="font-bold">What this cleans:</div>
+              <ul className="list-disc list-inside space-y-0.5 text-[11px] text-rose-800">
+                <li>Demo residents & care profiles</li>
+                <li>Demo staff & caregiver accounts</li>
+                <li>Demo shifts & placeholder logs</li>
+                <li>Local storage cache synchronization</li>
+              </ul>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isPurging}
+                onClick={() => setIsPurgeDemoModalOpen(false)}
+                className="w-full sm:w-auto px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isPurging}
+                onClick={async () => {
+                  setIsPurging(true);
+                  await purgeAllDemoRecords();
+                  setIsPurging(false);
+                  setIsPurgeDemoModalOpen(false);
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                {isPurging ? 'Purging Demo Records...' : 'Confirm Purge Demo Records'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

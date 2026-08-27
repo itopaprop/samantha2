@@ -39,12 +39,17 @@ export const RelativeDashboard: React.FC = () => {
   if (!currentUser) return null;
 
   // Find linked resident(s) for this relative
-  const linkedResidents = residents.filter(r => 
-    r.id === currentUser.residentLinkedId || 
-    currentUser.relationship?.toLowerCase().includes(r.fullName.toLowerCase().split(' ')[1]?.toLowerCase() || 'xyz')
-  );
+  const linkedResidents = (residents || []).filter(r => {
+    if (!r) return false;
+    if (currentUser.residentLinkedId && r.id === currentUser.residentLinkedId) return true;
+    const residentLastName = (r.fullName || '').trim().split(' ').slice(-1)[0]?.toLowerCase();
+    if (residentLastName && currentUser.relationship && currentUser.relationship.toLowerCase().includes(residentLastName)) {
+      return true;
+    }
+    return false;
+  });
 
-  const relativeMessages = messages.filter(m => m.receiverId === currentUser.id || m.senderId === currentUser.id);
+  const relativeMessages = (messages || []).filter(m => m && (m.receiverId === currentUser.id || m.senderId === currentUser.id));
   const unreadRelativeMessagesCount = relativeMessages.filter(m => m.receiverId === currentUser.id && !m.isRead).length;
 
   return (

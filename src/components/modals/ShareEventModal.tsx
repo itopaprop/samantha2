@@ -65,13 +65,13 @@ export const ShareEventModal: React.FC<Props> = ({ isOpen, onClose, event }) => 
           text: `Join us for ${eventTitle} on ${eventDate} at ${event.location}`,
           url: currentUrl,
         });
-        showToast('Event shared successfully!', 'success');
+        showToast('Event shared successfully!');
         onClose();
       } catch (err) {
         // User closed or cancelled share
       }
     } else {
-      showToast('Native device sharing is not supported on this browser. Use WhatsApp or Copy Link below!', 'info');
+      showToast('Native device sharing is not supported on this browser. Use WhatsApp or Copy Link below!');
     }
   };
 
@@ -79,9 +79,9 @@ export const ShareEventModal: React.FC<Props> = ({ isOpen, onClose, event }) => 
   const handleDownloadImage = () => {
     if (event.imageUrl) {
       window.open(event.imageUrl, '_blank', 'noopener,noreferrer');
-      showToast('Opening flyer image in new tab for download!', 'success');
+      showToast('Opening flyer image in new tab for download!');
     } else {
-      showToast('No flyer image URL available for download.', 'error');
+      showToast('No flyer image URL available for download.');
     }
   };
 
@@ -90,10 +90,10 @@ export const ShareEventModal: React.FC<Props> = ({ isOpen, onClose, event }) => 
     try {
       await navigator.clipboard.writeText(currentUrl);
       setCopied(true);
-      showToast('Event link copied to clipboard!', 'success');
+      showToast('Event link copied to clipboard!');
       setTimeout(() => setCopied(false), 2500);
     } catch (err) {
-      showToast('Failed to copy link', 'error');
+      showToast('Failed to copy link');
     }
   };
 
