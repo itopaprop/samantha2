@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { AddResidentModal } from '../../components/modals/AddResidentModal';
 import { AddStaffModal } from '../../components/modals/AddStaffModal';
@@ -58,7 +58,8 @@ import {
   RotateCcw,
   FileText,
   Camera,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
@@ -88,12 +89,36 @@ export const AdminDashboard: React.FC = () => {
     showToast,
     purgeAllDemoRecords,
     purgeAllNonAdminUsers,
+    syncDatabase,
     logout 
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'residents' | 'staff' | 'shifts' | 'messages' | 'events' | 'jobs' | 'gallery' | 'settings'>('overview');
   const [messagingTab, setMessagingTab] = useState<'inbox' | 'sent' | 'applications'>('inbox');
   const [deletingItem, setDeletingItem] = useState<{ type: 'message' | 'application'; id: string; title: string } | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Auto-sync Supabase live Auth users & database tables on mount
+  useEffect(() => {
+    if (syncDatabase) {
+      syncDatabase().catch((e: any) => console.warn('Auto sync warning:', e));
+    }
+  }, [syncDatabase]);
+
+  const handleManualSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      if (syncDatabase) {
+        await syncDatabase();
+      }
+      showToast('Dashboard data synchronized with Supabase.');
+    } catch (err: any) {
+      showToast('Sync error: ' + (err?.message || 'Could not sync.'));
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Modals state
   const [isAddResidentOpen, setIsAddResidentOpen] = useState(false);
@@ -231,16 +256,23 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const filteredResidents = residents.filter(r => {
+    if (!r) return false;
     const matchesCategory = categoryFilter === 'All' || r.careCategory === categoryFilter;
-    const matchesSearch = r.fullName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          r.roomNumber.toLowerCase().includes(searchQuery.toLowerCase());
+    const name = String(r.fullName || (r as any).name || '').toLowerCase();
+    const room = String(r.roomNumber || '').toLowerCase();
+    const q = searchQuery.toLowerCase().trim();
+    const matchesSearch = !q || name.includes(q) || room.includes(q);
     return matchesCategory && matchesSearch;
   });
 
-  const filteredStaff = staff.filter(s => 
-    s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    s.position.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredStaff = staff.filter(s => {
+    if (!s) return false;
+    const name = String(s.name || '').toLowerCase();
+    const pos = String(s.position || '').toLowerCase();
+    const email = String(s.email || '').toLowerCase();
+    const q = searchQuery.toLowerCase().trim();
+    return !q || name.includes(q) || pos.includes(q) || email.includes(q);
+  });
 
   const inboxMessages = messages.filter(m => 
     m.receiverId === currentUser.id || 
@@ -509,6 +541,19 @@ export const AdminDashboard: React.FC = () => {
 
           {/* Quick Action Trigger Bar & Clickable Inbox Notification */}
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleManualSync}
+              disabled={isSyncing}
+              className={`border font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer ${
+                isSyncing 
+                  ? 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse' 
+                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+              }`}
+              title="Sync & Reconcile live users and data with Supabase"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? 'Syncing...' : 'Sync Supabase Data'}</span>
+            </button>
             <button
               onClick={() => setIsEditProfileOpen(true)}
               className="bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
@@ -820,55 +865,82 @@ export const AdminDashboard: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {filteredResidents.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-3 font-bold text-slate-900">
-                        {r.fullName}
-                        <div className="text-[10px] text-slate-400 font-normal">DOB: {r.dateOfBirth} ({r.gender})</div>
-                      </td>
-                      <td className="p-3 font-medium text-slate-700">
-                        <span className="bg-sky-50 text-sky-800 border border-sky-100 px-2 py-0.5 rounded-md text-[10px] font-bold">
-                          {r.careCategory}
-                        </span>
-                      </td>
-                      <td className="p-3 text-slate-600 font-medium">{r.roomNumber}</td>
-                      <td className="p-3 text-slate-700 font-medium">{r.assignedStaffName || 'Unassigned'}</td>
-                      <td className="p-3">
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                          r.healthStatus === 'Excellent' || r.healthStatus === 'Stable'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {r.healthStatus}
-                        </span>
-                      </td>
-                      <td className="p-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
+                  {filteredResidents.length > 0 ? (
+                    filteredResidents.map((r) => (
+                      <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-3 font-bold text-slate-900">
+                          {r.fullName}
+                          <div className="text-[10px] text-slate-400 font-normal">DOB: {r.dateOfBirth} ({r.gender})</div>
+                        </td>
+                        <td className="p-3 font-medium text-slate-700">
+                          <span className="bg-sky-50 text-sky-800 border border-sky-100 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                            {r.careCategory}
+                          </span>
+                        </td>
+                        <td className="p-3 text-slate-600 font-medium">{r.roomNumber}</td>
+                        <td className="p-3 text-slate-700 font-medium">{r.assignedStaffName || 'Unassigned'}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                            r.healthStatus === 'Excellent' || r.healthStatus === 'Stable'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {r.healthStatus}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => setSelectedResidentModal(r)}
+                              className="p-1.5 text-sky-700 hover:bg-sky-50 rounded-lg transition-colors cursor-pointer"
+                              title="View Details"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setEditingResident(r)}
+                              className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                              title="Edit Resident"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => deleteResident(r.id)}
+                              className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Remove Resident"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-slate-500">
+                        <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                        <p className="text-xs font-semibold text-slate-700">No resident records found.</p>
+                        <p className="text-[11px] text-slate-400 mt-1">If you have resident relative accounts registered in Supabase, click below to sync them.</p>
+                        <div className="mt-3 flex items-center justify-center gap-2">
                           <button
-                            onClick={() => setSelectedResidentModal(r)}
-                            className="p-1.5 text-sky-700 hover:bg-sky-50 rounded-lg transition-colors cursor-pointer"
-                            title="View Details"
+                            onClick={handleManualSync}
+                            disabled={isSyncing}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
                           >
-                            <Eye className="w-4 h-4" />
+                            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                            Sync Supabase Users
                           </button>
                           <button
-                            onClick={() => setEditingResident(r)}
-                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
-                            title="Edit Resident"
+                            onClick={() => setIsAddResidentOpen(true)}
+                            className="bg-sky-700 hover:bg-sky-800 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
                           >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => deleteResident(r.id)}
-                            className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                            title="Remove Resident"
-                          >
-                            <Trash2 className="w-4 h-4" />
+                            <UserPlus className="w-3.5 h-3.5" />
+                            Add Resident
                           </button>
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
@@ -905,43 +977,70 @@ export const AdminDashboard: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {filteredStaff.map((s) => (
-                    <tr key={s.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-3 font-bold text-slate-900 flex items-center gap-2.5">
-                        <img src={s.avatar} alt={s.name} className="w-8 h-8 rounded-full object-cover" />
-                        <span>{s.name}</span>
-                      </td>
-                      <td className="p-3 font-medium text-slate-700">{s.position}</td>
-                      <td className="p-3 text-slate-600">{s.shift}</td>
-                      <td className="p-3 font-bold text-sky-700">{s.assignedResidentsCount} Resident(s)</td>
-                      <td className="p-3 text-slate-500">{s.email}</td>
-                      <td className="p-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
+                  {filteredStaff.length > 0 ? (
+                    filteredStaff.map((s) => (
+                      <tr key={s.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-3 font-bold text-slate-900 flex items-center gap-2.5">
+                          <img src={s.avatar} alt={s.name} className="w-8 h-8 rounded-full object-cover" />
+                          <span>{s.name}</span>
+                        </td>
+                        <td className="p-3 font-medium text-slate-700">{s.position}</td>
+                        <td className="p-3 text-slate-600">{s.shift}</td>
+                        <td className="p-3 font-bold text-sky-700">{s.assignedResidentsCount} Resident(s)</td>
+                        <td className="p-3 text-slate-500">{s.email}</td>
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => setSelectedStaffModal(s)}
+                              className="p-1.5 text-sky-600 hover:bg-sky-50 rounded-lg transition-colors cursor-pointer"
+                              title="View Staff Details & Assigned Residents"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setEditingStaff(s)}
+                              className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                              title="Edit Staff Member"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => deleteStaff(s.id)}
+                              className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Remove Staff Member"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-slate-500">
+                        <UserCheck className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                        <p className="text-xs font-semibold text-slate-700">No staff members found.</p>
+                        <p className="text-[11px] text-slate-400 mt-1">If you have staff members registered in Supabase, click below to sync them.</p>
+                        <div className="mt-3 flex items-center justify-center gap-2">
                           <button
-                            onClick={() => setSelectedStaffModal(s)}
-                            className="p-1.5 text-sky-600 hover:bg-sky-50 rounded-lg transition-colors cursor-pointer"
-                            title="View Staff Details & Assigned Residents"
+                            onClick={handleManualSync}
+                            disabled={isSyncing}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
                           >
-                            <Eye className="w-4 h-4" />
+                            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                            Sync Supabase Users
                           </button>
                           <button
-                            onClick={() => setEditingStaff(s)}
-                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
-                            title="Edit Staff Member"
+                            onClick={() => setIsAddStaffOpen(true)}
+                            className="bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
                           >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => deleteStaff(s.id)}
-                            className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                            title="Remove Staff Member"
-                          >
-                            <Trash2 className="w-4 h-4" />
+                            <UserCheck className="w-3.5 h-3.5" />
+                            Add Staff
                           </button>
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>

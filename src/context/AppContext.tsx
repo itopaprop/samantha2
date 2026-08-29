@@ -172,6 +172,7 @@ interface AppContextType {
   setIsApplyModalOpen: (open: boolean) => void;
   selectedFacilityId: string | null;
   setSelectedFacilityId: (id: string | null) => void;
+  syncDatabase: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -398,7 +399,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     isFetchingRef.current = true;
 
     try {
-      // 1. Fetch Profiles / Users
+      // 0. Fetch master synced data from privileged backend API (reconciles Supabase Auth & DB tables)
+      try {
+        const syncRes = await fetch('/api/admin/synced-data');
+        if (syncRes.ok) {
+          const syncData = await syncRes.json();
+          if (syncData.success) {
+            if (Array.isArray(syncData.staff) && syncData.staff.length > 0) {
+              setStaff(syncData.staff.filter((s: any) => !isDemoRecord(s)));
+            }
+            if (Array.isArray(syncData.residents) && syncData.residents.length > 0) {
+              setResidents(syncData.residents.filter((r: any) => !isDemoRecord(r)));
+            }
+            if (Array.isArray(syncData.users) && syncData.users.length > 0) {
+              setUsers(prev => {
+                const userMap = new Map<string, User>();
+                INITIAL_USERS.forEach(u => {
+                  if (u?.email) userMap.set(u.email.toLowerCase(), u);
+                });
+                prev.filter(u => !isDemoRecord(u)).forEach(u => {
+                  if (u?.email) userMap.set(u.email.toLowerCase(), u);
+                });
+                syncData.users.filter((u: any) => !isDemoRecord(u)).forEach((u: User) => {
+                  if (u?.email) userMap.set(u.email.toLowerCase(), u);
+                });
+                return Array.from(userMap.values());
+              });
+            }
+            if (Array.isArray(syncData.shifts) && syncData.shifts.length > 0) {
+              setShifts(syncData.shifts.map(shiftFromRow).filter((sh: any) => !isDemoRecord(sh)));
+            }
+            if (Array.isArray(syncData.messages) && syncData.messages.length > 0) {
+              setMessages(syncData.messages.map(messageFromRow).filter((m: any) => !isDemoRecord(m)));
+            }
+            if (Array.isArray(syncData.activityLogs) && syncData.activityLogs.length > 0) {
+              setActivityLogs(syncData.activityLogs.map(activityLogFromRow).filter((l: any) => !isDemoRecord(l)));
+            }
+            if (Array.isArray(syncData.applications) && syncData.applications.length > 0) {
+              setApplications(syncData.applications.map(applicationFromRow));
+            }
+            if (Array.isArray(syncData.consultationBookings) && syncData.consultationBookings.length > 0) {
+              setConsultationBookings(syncData.consultationBookings.map(consultationFromRow));
+            }
+          }
+        }
+      } catch (syncErr) {
+        console.warn('Backend synced-data endpoint note:', syncErr);
+      }
+
+      // 1. Direct fetch Profiles / Users
       const { data: profileRows, error: profErr } = await supabase.from('profiles').select('*');
       if (!profErr && profileRows && profileRows.length > 0) {
         const cleanUsers = profileRows.map(profileToUser).filter(u => !isDemoRecord(u));
@@ -427,11 +476,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      // 2. Fetch Residents
+      // 2. Direct fetch Residents
       const { data: resRows, error: resErr } = await supabase.from('residents').select('*');
       if (!resErr && resRows && resRows.length > 0) {
         const cleanResidents = resRows.map(residentFromRow).filter(r => !isDemoRecord(r));
-        setResidents(cleanResidents);
+        if (cleanResidents.length > 0) {
+          setResidents(prev => {
+            const map = new Map<string, Resident>();
+            prev.filter(r => !isDemoRecord(r)).forEach(r => map.set(r.id, r));
+            cleanResidents.forEach(r => map.set(r.id, r));
+            return Array.from(map.values());
+          });
+        }
 
         // Auto delete demo residents from Supabase
         const demoResidents = resRows.filter(isDemoRecord);
@@ -444,11 +500,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      // 3. Fetch Staff
+      // 3. Direct fetch Staff
       const { data: staffRows, error: staffErr } = await supabase.from('staff').select('*');
       if (!staffErr && staffRows && staffRows.length > 0) {
         const cleanStaff = staffRows.map(staffFromRow).filter(s => !isDemoRecord(s));
-        setStaff(cleanStaff);
+        if (cleanStaff.length > 0) {
+          setStaff(prev => {
+            const map = new Map<string, StaffMember>();
+            prev.filter(s => !isDemoRecord(s)).forEach(s => map.set(s.email ? s.email.toLowerCase() : s.id, s));
+            cleanStaff.forEach(s => map.set(s.email ? s.email.toLowerCase() : s.id, s));
+            return Array.from(map.values());
+          });
+        }
 
         // Auto delete demo staff from Supabase
         const demoStaff = staffRows.filter(isDemoRecord);
@@ -2609,6 +2672,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsApplyModalOpen,
       selectedFacilityId,
       setSelectedFacilityId,
+      syncDatabase: fetchSupabaseData,
     }}>
       {children}
     </AppContext.Provider>
