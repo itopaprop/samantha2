@@ -16,7 +16,7 @@ export const seniorBoardNode: OrganogramNode = {
       id: 'ceo-01',
       title: 'Chief Executive Officer (CEO)',
       department: 'EXECUTIVE LEADERSHIP',
-      employeeName: 'Folashade Sanyaolu, LLB, QAA',
+      employeeName: 'Folasade Sanyaolu, LLB, QAA',
       description: 'Provides overall strategic vision, executive operational command, legal compliance, and international standard benchmarks.',
       colorType: 'purple-gradient',
       iconName: 'Briefcase',

@@ -1,26 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, Calendar, Upload, Sparkles } from 'lucide-react';
+import { CommunityEvent } from '../../types';
+import { X, Calendar, Upload, Sparkles, Clock, MapPin, Tag } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  event: CommunityEvent | null;
 }
 
-export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
-  const { addEvent } = useApp();
+export const EditEventModal: React.FC<Props> = ({ isOpen, onClose, event }) => {
+  const { updateEvent } = useApp();
 
   const [title, setTitle] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [time, setTime] = useState('14:00 - 17:00');
-  const [location, setLocation] = useState('Main Campus');
-  const [category, setCategory] = useState<any>('Community Celebration');
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  const [location, setLocation] = useState('');
+  const [category, setCategory] = useState<CommunityEvent['category']>('Community Celebration');
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [status, setStatus] = useState<'Upcoming' | 'Ongoing' | 'Completed'>('Upcoming');
-  const [organizer, setOrganizer] = useState('Samanthasappy Events Committee');
+  const [organizer, setOrganizer] = useState('');
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (event) {
+      setTitle(event.title || '');
+      setDate(event.date || '');
+      setTime(event.time || '14:00 - 17:00');
+      setLocation(event.location || 'Main Campus');
+      setCategory(event.category || 'Community Celebration');
+      setDescription(event.description || '');
+      setImageUrl(event.imageUrl || '');
+      setStatus(event.status || 'Upcoming');
+      setOrganizer(event.organizer || 'Samanthasappy Events Committee');
+    }
+  }, [event]);
+
+  if (!isOpen || !event) return null;
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -37,22 +53,18 @@ export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
     e.preventDefault();
     if (!title.trim() || !date) return;
 
-    addEvent({
+    updateEvent(event.id, {
       title: title.trim(),
       date,
       time: time.trim() || '14:00 - 17:00',
       location: location.trim() || 'Main Campus',
       category,
-      description: description.trim() || 'Join us for this community gathering.',
-      imageUrl: imageUrl || 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80',
+      description: description.trim(),
+      imageUrl: imageUrl.trim() || 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80',
       status,
       organizer: organizer.trim() || 'Samanthasappy Care Team',
     });
 
-    // Reset and close
-    setTitle('');
-    setDescription('');
-    setImageUrl('');
     onClose();
   };
 
@@ -67,8 +79,8 @@ export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <Calendar className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-extrabold tracking-tight">Post New Community Event</h2>
-              <p className="text-xs text-slate-400">Publish upcoming activities, workshops, or celebrations</p>
+              <h2 className="text-lg font-extrabold tracking-tight">Edit Event Details</h2>
+              <p className="text-xs text-slate-400">Update event information, schedule, or poster flyer</p>
             </div>
           </div>
           <button 
@@ -89,7 +101,7 @@ export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
             <input
               type="text"
               required
-              placeholder="e.g. Grandparents Summer Tea & Music Social"
+              placeholder="e.g. Annual Grandparents & Family Garden Celebration"
               value={title}
               onChange={e => setTitle(e.target.value)}
               className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none font-medium"
@@ -112,11 +124,11 @@ export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Time (e.g. 14:00 - 17:00)
+                Time (e.g. 14:00 - 17:30)
               </label>
               <input
                 type="text"
-                placeholder="14:00 - 17:00"
+                placeholder="14:00 - 17:30"
                 value={time}
                 onChange={e => setTime(e.target.value)}
                 className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none font-medium"
@@ -165,7 +177,7 @@ export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
               </label>
               <input
                 type="text"
-                placeholder="e.g. Main Campus Gardens"
+                placeholder="Main Campus Courtyard"
                 value={location}
                 onChange={e => setLocation(e.target.value)}
                 className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none font-medium"
@@ -188,7 +200,7 @@ export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-              Event Banner Image
+              Event Banner / Poster Image
             </label>
             <div className="space-y-2">
               <div className="flex items-center gap-2">
@@ -207,19 +219,19 @@ export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
                   accept="image/*"
                   onChange={handleImageUpload}
                   className="hidden"
-                  id="event-image-upload"
+                  id="edit-event-image-upload"
                 />
                 <label
-                  htmlFor="event-image-upload"
+                  htmlFor="edit-event-image-upload"
                   className="cursor-pointer flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-1.5 px-3 rounded-lg transition-colors shrink-0"
                 >
                   <Upload className="w-3.5 h-3.5" />
-                  <span>Upload Photo</span>
+                  <span>Replace Photo</span>
                 </label>
                 {imageUrl ? (
                   <div className="flex items-center gap-2 overflow-hidden">
                     <img src={imageUrl} alt="Preview" className="w-8 h-8 rounded-md object-cover border border-slate-200" />
-                    <span className="text-[11px] text-emerald-600 font-bold">Banner ready</span>
+                    <span className="text-[11px] text-emerald-600 font-bold">Image loaded</span>
                   </div>
                 ) : (
                   <span className="text-[11px] text-slate-500">Supports PNG, JPG, WebP</span>
@@ -247,7 +259,7 @@ export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+              className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -256,7 +268,7 @@ export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
               className="px-6 py-2.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-md transition-all flex items-center gap-2 cursor-pointer"
             >
               <Sparkles className="w-4 h-4" />
-              <span>Post Event Now</span>
+              <span>Save Changes</span>
             </button>
           </div>
 

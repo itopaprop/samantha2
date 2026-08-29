@@ -138,8 +138,73 @@ async function startServer() {
 
   // In-memory server-side registry as resilient fallback
   const serverStaffList: any[] = [];
-  const serverUsersList: any[] = [];
+  const serverUsersList: any[] = [
+    {
+      id: 'usr-admin-1',
+      name: 'Folasade Sanyaolu',
+      email: 'samanthasappy@gmail.com',
+      role: 'Admin',
+      position: 'Managing Director & Head of Care (LLB, QaAA)',
+      phone: '+2347069332193',
+      avatar: 'https://lh3.googleusercontent.com/d/1w6G7q5mbHmjWOhDMbYhVJEg6zda_Jw7X=s1600',
+    },
+    {
+      id: 'usr-admin-2',
+      name: 'Folasade Sanyaolu',
+      email: 'itopaprop@gmail.com',
+      role: 'Admin',
+      position: 'Managing Director & Administrator',
+      phone: '+2347069332193',
+      avatar: 'https://lh3.googleusercontent.com/d/1w6G7q5mbHmjWOhDMbYhVJEg6zda_Jw7X=s1600',
+    }
+  ];
   const serverResidentsList: any[] = [];
+
+  // One-time startup sync for admin name in Supabase
+  (async () => {
+    try {
+      const supabaseAdmin = getSupabaseAdmin();
+      // Update profiles with admin emails or old name variants
+      await supabaseAdmin
+        .from('profiles')
+        .update({
+          name: 'Folasade Sanyaolu',
+          position: 'Managing Director & Administrator',
+          role: 'Admin',
+          updated_at: new Date().toISOString()
+        })
+        .or('email.eq.samanthasappy@gmail.com,email.eq.itopaprop@gmail.com,role.eq.Admin,name.ilike.%Sonyaolu%,name.ilike.%Folashade%');
+
+      // Update Supabase auth users user_metadata
+      const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+      if (listData?.users) {
+        for (const u of listData.users) {
+          const em = (u.email || '').toLowerCase();
+          if (
+            em === 'samanthasappy@gmail.com' ||
+            em === 'itopaprop@gmail.com' ||
+            u.user_metadata?.role === 'Admin' ||
+            u.user_metadata?.name?.includes('Sonyaolu') ||
+            u.user_metadata?.name?.includes('Folashade')
+          ) {
+            await supabaseAdmin.auth.admin.updateUserById(u.id, {
+              user_metadata: { ...(u.user_metadata || {}), name: 'Folasade Sanyaolu', role: 'Admin' }
+            });
+          }
+        }
+      }
+      // Remove any leftover demo events from Supabase community_events
+      await supabaseAdmin
+        .from('community_events')
+        .delete()
+        .or('id.in.(evt-1,evt-2,evt-3),title.ilike.%Annual Grandparents%,title.ilike.%Dementia & Memory Care%,title.ilike.%Staff Health%');
+
+      console.log('Admin name synchronized and demo events purged in Supabase successfully.');
+    } catch (syncErr) {
+      console.warn('Supabase admin startup sync note:', syncErr);
+    }
+  })();
+  const serverEventsList: any[] = [];
 
   app.get('/api/health', (req, res) => {
     res.json({
@@ -149,10 +214,132 @@ async function startServer() {
       emailConfigured: Boolean(process.env.RESEND_API_KEY),
       staffCount: serverStaffList.length,
       usersCount: serverUsersList.length,
+      eventsCount: serverEventsList.length,
     });
   });
 
   // REST API routes for multi-device sync fallback
+  app.get('/api/events', async (req, res) => {
+    try {
+      const supabaseAdmin = getSupabaseAdmin();
+      const { data: dbEvents, error } = await supabaseAdmin.from('community_events').select('*');
+      if (!error && dbEvents && dbEvents.length > 0) {
+        const converted = dbEvents.map(e => ({
+          id: e.id,
+          title: e.title,
+          date: e.date,
+          time: e.time || undefined,
+          location: e.location || 'Main Campus',
+          description: e.description || '',
+          category: e.category || 'Community Celebration',
+          imageUrl: e.image_url || undefined,
+          status: e.status || 'Upcoming',
+          organizer: e.organizer || undefined,
+        }));
+        return res.json(converted);
+      }
+    } catch (err) {
+      console.warn('Note on fetching events from Supabase:', err);
+    }
+    res.json(serverEventsList);
+  });
+
+  app.post('/api/events', async (req, res) => {
+    try {
+      const evt = req.body;
+      if (!evt || !evt.title) {
+        return res.status(400).json({ error: 'Valid event object with title required' });
+      }
+
+      // Add to server memory
+      const idx = serverEventsList.findIndex(e => e.id === evt.id || (e.title === evt.title && e.date === evt.date));
+      if (idx >= 0) {
+        serverEventsList[idx] = { ...serverEventsList[idx], ...evt };
+      } else {
+        serverEventsList.unshift(evt);
+      }
+
+      // Upsert to Supabase
+      try {
+        const supabaseAdmin = getSupabaseAdmin();
+        const row: any = {
+          title: evt.title,
+          date: evt.date,
+          time: evt.time || '14:00 - 17:00',
+          location: evt.location || 'Main Campus',
+          description: evt.description || '',
+          category: evt.category || 'Community Celebration',
+          image_url: evt.imageUrl || null,
+          status: evt.status || 'Upcoming',
+          organizer: evt.organizer || 'Samanthasappy Events Committee',
+          updated_at: new Date().toISOString(),
+        };
+        if (evt.id && evt.id.length > 10) row.id = evt.id;
+        await supabaseAdmin.from('community_events').upsert(row, { onConflict: 'id' });
+      } catch (sbErr) {
+        console.warn('Supabase community_events upsert notice:', sbErr);
+      }
+
+      res.json({ success: true, event: evt });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed to save event' });
+    }
+  });
+
+  app.put('/api/events/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+      const idx = serverEventsList.findIndex(e => e.id === id);
+      if (idx >= 0) {
+        serverEventsList[idx] = { ...serverEventsList[idx], ...updates };
+      }
+
+      try {
+        const supabaseAdmin = getSupabaseAdmin();
+        const row: any = {};
+        if (updates.title !== undefined) row.title = updates.title;
+        if (updates.date !== undefined) row.date = updates.date;
+        if (updates.time !== undefined) row.time = updates.time;
+        if (updates.location !== undefined) row.location = updates.location;
+        if (updates.description !== undefined) row.description = updates.description;
+        if (updates.category !== undefined) row.category = updates.category;
+        if (updates.imageUrl !== undefined) row.image_url = updates.imageUrl;
+        if (updates.status !== undefined) row.status = updates.status;
+        if (updates.organizer !== undefined) row.organizer = updates.organizer;
+        row.updated_at = new Date().toISOString();
+        await supabaseAdmin.from('community_events').update(row).eq('id', id);
+      } catch (sbErr) {
+        console.warn('Supabase community_events update notice:', sbErr);
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed to update event' });
+    }
+  });
+
+  app.delete('/api/events/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const idx = serverEventsList.findIndex(e => e.id === id);
+      if (idx >= 0) {
+        serverEventsList.splice(idx, 1);
+      }
+
+      try {
+        const supabaseAdmin = getSupabaseAdmin();
+        await supabaseAdmin.from('community_events').delete().eq('id', id);
+      } catch (sbErr) {
+        console.warn('Supabase community_events delete notice:', sbErr);
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed to delete event' });
+    }
+  });
+
   app.get('/api/users', (req, res) => {
     res.json(serverUsersList);
   });
@@ -273,7 +460,7 @@ async function startServer() {
         if (authErr) {
           console.warn('Server createUser note:', authErr.message);
           const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
-          const existing = listData?.users?.find(u => u.email?.toLowerCase() === cleanEmail);
+          const existing = listData?.users?.find((u: any) => u.email?.toLowerCase() === cleanEmail);
           if (existing) {
             effectiveUserId = existing.id;
           }
@@ -467,7 +654,7 @@ async function startServer() {
         if (authErr) {
           console.warn('Server create relative user note:', authErr.message);
           const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
-          const existing = listData?.users?.find(u => u.email?.toLowerCase() === relativeEmail);
+          const existing = listData?.users?.find((u: any) => u.email?.toLowerCase() === relativeEmail);
           if (existing) {
             relativeUserId = existing.id;
           }
@@ -1074,6 +1261,9 @@ async function startServer() {
       const { data: rawActivityLogs = [] } = await supabaseAdmin.from('activity_logs').select('*').order('created_at', { ascending: false });
       const { data: rawApplications = [] } = await supabaseAdmin.from('applications').select('*');
       const { data: rawConsultations = [] } = await supabaseAdmin.from('consultation_bookings').select('*');
+      const { data: rawEvents = [] } = await supabaseAdmin.from('community_events').select('*');
+      const { data: rawJobs = [] } = await supabaseAdmin.from('job_vacancies').select('*');
+      const { data: rawGallery = [] } = await supabaseAdmin.from('gallery_items').select('*');
 
       const staffList = [...(rawStaff || [])];
       const residentList = [...(rawResidents || [])];
@@ -1097,22 +1287,35 @@ async function startServer() {
                           emailLower.startsWith('090225535552');
 
         if (isAdmin) {
-          // Ensure admin profile exists in profiles list
-          const existingProfile = profileList.find(p => p.email?.toLowerCase() === emailLower);
-          if (!existingProfile) {
-            const adminProfile = {
-              id: u.id,
-              email: emailLower,
-              name: u.user_metadata?.name || 'Administrator',
-              role: 'Admin',
-              phone: u.user_metadata?.phone || '+234 706 933 2193',
-              position: 'Managing Director & Administrator',
-              avatar: u.user_metadata?.avatar || 'https://lh3.googleusercontent.com/d/1w6G7q5mbHmjWOhDMbYhVJEg6zda_Jw7X=s1600',
-              created_at: u.created_at || new Date().toISOString(),
-            };
-            profileList.push(adminProfile);
-            supabaseAdmin.from('profiles').upsert(adminProfile, { onConflict: 'email' }).then(() => {}, () => {});
+          // Update user metadata in Supabase Auth if needed
+          if (u.user_metadata?.name !== 'Folasade Sanyaolu') {
+            supabaseAdmin.auth.admin.updateUserById(u.id, {
+              user_metadata: { ...(u.user_metadata || {}), name: 'Folasade Sanyaolu', role: 'Admin' }
+            }).catch(e => console.warn('Auth admin name sync note:', e));
           }
+
+          // Ensure admin profile exists and has the correct updated name in profiles list & Supabase table
+          const existingProfile = profileList.find(p => p.email?.toLowerCase() === emailLower);
+          const adminProfile = {
+            id: u.id,
+            email: emailLower,
+            name: 'Folasade Sanyaolu',
+            role: 'Admin',
+            phone: u.user_metadata?.phone || '+234 706 933 2193',
+            position: 'Managing Director & Administrator',
+            avatar: u.user_metadata?.avatar || 'https://lh3.googleusercontent.com/d/1w6G7q5mbHmjWOhDMbYhVJEg6zda_Jw7X=s1600',
+            created_at: u.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+
+          if (!existingProfile) {
+            profileList.push(adminProfile);
+          } else {
+            existingProfile.name = 'Folasade Sanyaolu';
+            existingProfile.role = 'Admin';
+            existingProfile.position = 'Managing Director & Administrator';
+          }
+          supabaseAdmin.from('profiles').upsert(adminProfile, { onConflict: 'email' }).then(() => {}, () => {});
         } else if (isRelative) {
           // Ensure resident exists for this relative
           const relativeName = u.user_metadata?.name || 'Bronze';
@@ -1260,17 +1463,66 @@ async function startServer() {
         vitals: r.vitals || undefined,
       }));
 
-      const convertedUsers = profileList.map(p => ({
-        id: p.id,
-        name: p.name || p.email?.split('@')[0] || 'User',
-        email: p.email || '',
-        phone: p.phone || '',
-        role: p.role || (p.email?.includes('admin') ? 'Admin' : 'Staff'),
-        position: p.position || undefined,
-        relationship: p.relationship || undefined,
-        residentLinkedId: p.resident_linked_id || undefined,
-        avatar: p.avatar || undefined,
-      }));
+      const convertedUsers = profileList.map(p => {
+        const emailLower = (p.email || '').toLowerCase().trim();
+        const isAdmin = p.role === 'Admin' ||
+                        emailLower === 'samanthasappy@gmail.com' ||
+                        emailLower === 'admin@samanthasappy.com' ||
+                        emailLower === 'itopaprop@gmail.com' ||
+                        p.name?.includes('Sonyaolu') ||
+                        p.name?.includes('Folashade');
+        return {
+          id: p.id,
+          name: isAdmin ? 'Folasade Sanyaolu' : (p.name || p.email?.split('@')[0] || 'User'),
+          email: p.email || '',
+          phone: p.phone || '',
+          role: isAdmin ? 'Admin' : (p.role || (p.email?.includes('admin') ? 'Admin' : 'Staff')),
+          position: isAdmin ? 'Managing Director & Administrator' : (p.position || undefined),
+          relationship: p.relationship || undefined,
+          residentLinkedId: p.resident_linked_id || undefined,
+          avatar: p.avatar || undefined,
+        };
+      });
+
+      const convertedEvents = (rawEvents && rawEvents.length > 0)
+        ? rawEvents.map(e => ({
+            id: e.id,
+            title: e.title,
+            date: e.date,
+            time: e.time || undefined,
+            location: e.location || 'Main Campus',
+            description: e.description || '',
+            category: e.category || 'Community Celebration',
+            imageUrl: e.image_url || undefined,
+            status: e.status || 'Upcoming',
+            organizer: e.organizer || undefined,
+          }))
+        : serverEventsList;
+
+      const convertedJobs = (rawJobs && rawJobs.length > 0)
+        ? rawJobs.map(j => ({
+            id: j.id,
+            title: j.title,
+            type: j.type || 'Full-time',
+            department: j.department || 'Care Operations',
+            location: j.location || 'Main Campus',
+            description: j.description || '',
+            requirements: Array.isArray(j.requirements) ? j.requirements : [],
+          }))
+        : [];
+
+      const convertedGallery = (rawGallery && rawGallery.length > 0)
+        ? rawGallery.map(g => ({
+            id: g.id,
+            title: g.title,
+            category: g.category || 'Events',
+            imageUrl: g.image_url || '',
+            videoUrl: g.video_url || undefined,
+            mediaType: g.media_type || 'image',
+            description: g.description || '',
+            date: g.date || '',
+          }))
+        : [];
 
       res.status(200).json({
         success: true,
@@ -1282,6 +1534,9 @@ async function startServer() {
         activityLogs: rawActivityLogs,
         applications: rawApplications,
         consultationBookings: rawConsultations,
+        events: convertedEvents,
+        jobs: convertedJobs,
+        galleryItems: convertedGallery,
         totalAuthUsers: authUsers.length,
       });
     } catch (err: any) {

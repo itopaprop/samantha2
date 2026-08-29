@@ -15,7 +15,7 @@ import {
 export const INITIAL_USERS: User[] = [
   {
     id: 'usr-admin-1',
-    name: 'Folashade Sonyaolu',
+    name: 'Folasade Sanyaolu',
     email: 'samanthasappy@gmail.com',
     password: '@samantha',
     phone: '+2347069332193',
@@ -25,7 +25,7 @@ export const INITIAL_USERS: User[] = [
   },
   {
     id: 'usr-admin-2',
-    name: 'Folashade Sonyaolu',
+    name: 'Folasade Sanyaolu',
     email: 'itopaprop@gmail.com',
     password: '@samantha',
     phone: '+2347069332193',
@@ -677,41 +677,4 @@ export const INITIAL_TRAINING_PROGRAMS: TrainingProgram[] = [
   }
 ];
 
-export const INITIAL_COMMUNITY_EVENTS: CommunityEvent[] = [
-  {
-    id: 'evt-1',
-    title: 'Annual Grandparents & Family Garden Celebration',
-    date: '2026-08-20',
-    time: '14:00 - 17:30',
-    location: 'Main Campus Central Courtyard & Gardens',
-    description: 'A grand summer gathering with live acoustic music, afternoon tea, interactive children storytelling, and family photo portraits.',
-    category: 'Community Celebration',
-    imageUrl: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80',
-    status: 'Upcoming',
-    organizer: 'Samanthasappy Events Team'
-  },
-  {
-    id: 'evt-2',
-    title: 'Dementia & Memory Care Family Workshop',
-    date: '2026-08-28',
-    time: '10:00 - 12:30',
-    location: 'Sunshine Conference Parlor',
-    description: 'Interactive educational seminar led by Senior Clinical Psychologists on compassionate communication and memory therapy techniques for families.',
-    category: 'Educational & Workshop',
-    imageUrl: 'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=800&q=80',
-    status: 'Upcoming',
-    organizer: 'Clinical Nursing Unit'
-  },
-  {
-    id: 'evt-3',
-    title: 'Staff Health, Wellness & Caregiver Appreciation Day',
-    date: '2026-09-05',
-    time: '09:00 - 16:00',
-    location: 'Samanthasappy Recreation Center',
-    description: 'Recognizing our tireless healthcare staff with health screenings, relaxation spa sessions, awards presentation, and team lunch.',
-    category: 'Health & Wellness',
-    imageUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80',
-    status: 'Upcoming',
-    organizer: 'Management Board'
-  }
-];
+export const INITIAL_COMMUNITY_EVENTS: CommunityEvent[] = [];

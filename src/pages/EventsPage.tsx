@@ -170,8 +170,16 @@ export const EventsPage: React.FC = () => {
         {filteredEvents.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-300 space-y-3">
             <Calendar className="w-12 h-12 text-slate-300 mx-auto" />
-            <h3 className="text-base font-bold text-slate-700">No events found matching your search</h3>
-            <p className="text-xs text-slate-500">Try adjusting your filters or search keywords.</p>
+            <h3 className="text-base font-bold text-slate-700">
+              {searchTerm || selectedCategory !== 'all' || selectedStatus !== 'all' 
+                ? 'No events found matching your search' 
+                : 'No events currently scheduled'}
+            </h3>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              {searchTerm || selectedCategory !== 'all' || selectedStatus !== 'all'
+                ? 'Try adjusting your filters or search keywords.'
+                : 'New events, workshops, and family gatherings will appear here once published by the management team.'}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">

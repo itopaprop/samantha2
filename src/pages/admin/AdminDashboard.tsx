@@ -10,6 +10,7 @@ import { CredentialsCreatedModal, CredentialsData } from '../../components/modal
 import { EditResidentModal } from '../../components/modals/EditResidentModal';
 import { EditStaffModal } from '../../components/modals/EditStaffModal';
 import { EditShiftModal } from '../../components/modals/EditShiftModal';
+import { EditEventModal } from '../../components/modals/EditEventModal';
 import { ViewShiftsModal } from '../../components/modals/ViewShiftsModal';
 import { ComposeMessageModal } from '../../components/modals/ComposeMessageModal';
 import { ShareEventModal } from '../../components/modals/ShareEventModal';
@@ -87,7 +88,6 @@ export const AdminDashboard: React.FC = () => {
     deleteShift, 
     markMessageAsRead,
     showToast,
-    purgeAllDemoRecords,
     purgeAllNonAdminUsers,
     syncDatabase,
     logout 
@@ -96,7 +96,6 @@ export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'residents' | 'staff' | 'shifts' | 'messages' | 'events' | 'jobs' | 'gallery' | 'settings'>('overview');
   const [messagingTab, setMessagingTab] = useState<'inbox' | 'sent' | 'applications'>('inbox');
   const [deletingItem, setDeletingItem] = useState<{ type: 'message' | 'application'; id: string; title: string } | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
 
   // Auto-sync Supabase live Auth users & database tables on mount
   useEffect(() => {
@@ -104,21 +103,6 @@ export const AdminDashboard: React.FC = () => {
       syncDatabase().catch((e: any) => console.warn('Auto sync warning:', e));
     }
   }, [syncDatabase]);
-
-  const handleManualSync = async () => {
-    if (isSyncing) return;
-    setIsSyncing(true);
-    try {
-      if (syncDatabase) {
-        await syncDatabase();
-      }
-      showToast('Dashboard data synchronized with Supabase.');
-    } catch (err: any) {
-      showToast('Sync error: ' + (err?.message || 'Could not sync.'));
-    } finally {
-      setIsSyncing(false);
-    }
-  };
 
   // Modals state
   const [isAddResidentOpen, setIsAddResidentOpen] = useState(false);
@@ -138,13 +122,12 @@ export const AdminDashboard: React.FC = () => {
   const [adminZoomScale, setAdminZoomScale] = useState<number>(1);
   const [sharingAdminEvent, setSharingAdminEvent] = useState<CommunityEvent | null>(null);
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
-  const [isPurgeDemoModalOpen, setIsPurgeDemoModalOpen] = useState(false);
-  const [isPurging, setIsPurging] = useState(false);
 
   // Edit modal states
   const [editingResident, setEditingResident] = useState<Resident | null>(null);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
+  const [editingEvent, setEditingEvent] = useState<CommunityEvent | null>(null);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -496,36 +479,39 @@ export const AdminDashboard: React.FC = () => {
       <main className="flex-1 p-6 lg:p-10 space-y-8 overflow-y-auto">
         
         {/* Top Greeting Header */}
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
           <div className="flex items-center gap-4 sm:gap-5">
-            <div 
-              className="relative group cursor-pointer shrink-0"
-              onClick={() => setIsEditProfileOpen(true)}
-              title="Click to change your profile image"
-            >
-              <img
-                src={adminAvatar}
-                alt={currentUser.name}
-                referrerPolicy="no-referrer"
-                className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-purple-500/40 shadow-md ring-4 ring-purple-50 group-hover:opacity-90 transition-opacity"
-              />
-              <div className="absolute inset-0 bg-slate-900/50 rounded-2xl flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
-                <Camera className="w-5 h-5 mb-0.5" />
-                <span className="text-[9px] font-bold">Edit</span>
+            <div className="flex flex-col items-center gap-1.5 shrink-0">
+              <div 
+                className="relative group cursor-pointer"
+                onClick={() => setIsEditProfileOpen(true)}
+                title="Click to change your profile image"
+              >
+                <img
+                  src={adminAvatar}
+                  alt={currentUser.name}
+                  referrerPolicy="no-referrer"
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-purple-500/40 shadow-md ring-4 ring-purple-50 group-hover:opacity-90 transition-opacity"
+                />
+                <div className="absolute inset-0 bg-slate-900/50 rounded-2xl flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
+                  <Camera className="w-5 h-5 mb-0.5" />
+                  <span className="text-[9px] font-bold">Edit</span>
+                </div>
               </div>
+              <button
+                onClick={() => setIsEditProfileOpen(true)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-[11px] font-bold shadow-2xs transition-colors cursor-pointer"
+                title="Edit Photo"
+              >
+                <Camera className="w-3 h-3 text-purple-600" />
+                <span>Edit Photo</span>
+              </button>
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
                   Welcome, {currentUser.name}
                 </h1>
-                <button
-                  onClick={() => setIsEditProfileOpen(true)}
-                  className="p-1.5 text-slate-400 hover:text-sky-700 hover:bg-sky-50 rounded-lg transition-colors cursor-pointer"
-                  title="Edit Profile & Photo"
-                >
-                  <Edit3 className="w-4 h-4" />
-                </button>
               </div>
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-900 border border-purple-200">
@@ -541,25 +527,6 @@ export const AdminDashboard: React.FC = () => {
 
           {/* Quick Action Trigger Bar & Clickable Inbox Notification */}
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={handleManualSync}
-              disabled={isSyncing}
-              className={`border font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer ${
-                isSyncing 
-                  ? 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse' 
-                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
-              }`}
-              title="Sync & Reconcile live users and data with Supabase"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'Syncing...' : 'Sync Supabase Data'}</span>
-            </button>
-            <button
-              onClick={() => setIsEditProfileOpen(true)}
-              className="bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
-            >
-              <Camera className="w-3.5 h-3.5 text-purple-600" /> Edit Photo
-            </button>
             <button
               onClick={() => setActiveTab('messages')}
               className="relative flex items-center gap-2 px-3.5 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200/90 rounded-xl font-bold text-xs shadow-2xs transition-all cursor-pointer group"
@@ -600,13 +567,6 @@ export const AdminDashboard: React.FC = () => {
               className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <Calendar className="w-3.5 h-3.5" /> Add Shift
-            </button>
-            <button
-              onClick={() => setIsPurgeDemoModalOpen(true)}
-              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer ml-auto"
-              title="Delete all demo records of staff & residents"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-rose-600" /> Purge Demo Data
             </button>
           </div>
         </div>
@@ -920,16 +880,8 @@ export const AdminDashboard: React.FC = () => {
                       <td colSpan={6} className="p-8 text-center text-slate-500">
                         <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                         <p className="text-xs font-semibold text-slate-700">No resident records found.</p>
-                        <p className="text-[11px] text-slate-400 mt-1">If you have resident relative accounts registered in Supabase, click below to sync them.</p>
+                        <p className="text-[11px] text-slate-400 mt-1">Add a resident or relative account to get started.</p>
                         <div className="mt-3 flex items-center justify-center gap-2">
-                          <button
-                            onClick={handleManualSync}
-                            disabled={isSyncing}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                            Sync Supabase Users
-                          </button>
                           <button
                             onClick={() => setIsAddResidentOpen(true)}
                             className="bg-sky-700 hover:bg-sky-800 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
@@ -1020,16 +972,8 @@ export const AdminDashboard: React.FC = () => {
                       <td colSpan={6} className="p-8 text-center text-slate-500">
                         <UserCheck className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                         <p className="text-xs font-semibold text-slate-700">No staff members found.</p>
-                        <p className="text-[11px] text-slate-400 mt-1">If you have staff members registered in Supabase, click below to sync them.</p>
+                        <p className="text-[11px] text-slate-400 mt-1">Add a registered staff member or care lead to get started.</p>
                         <div className="mt-3 flex items-center justify-center gap-2">
-                          <button
-                            onClick={handleManualSync}
-                            disabled={isSyncing}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                            Sync Supabase Users
-                          </button>
                           <button
                             onClick={() => setIsAddStaffOpen(true)}
                             className="bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
@@ -1514,16 +1458,28 @@ export const AdminDashboard: React.FC = () => {
                         }}
                         className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-500 opacity-90" 
                       />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteEvent(evt.id);
-                        }}
-                        className="absolute top-2 right-2 p-1.5 bg-rose-600/90 hover:bg-rose-700 text-white rounded-lg transition-colors cursor-pointer z-10"
-                        title="Delete Event"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingEvent(evt);
+                          }}
+                          className="p-1.5 bg-slate-900/90 hover:bg-amber-500 hover:text-slate-950 text-white rounded-lg transition-colors cursor-pointer"
+                          title="Edit Event"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteEvent(evt.id);
+                          }}
+                          className="p-1.5 bg-rose-600/90 hover:bg-rose-700 text-white rounded-lg transition-colors cursor-pointer"
+                          title="Delete Event"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                       <span className="absolute bottom-2 left-2 text-[10px] font-bold bg-amber-500 text-slate-950 px-2 py-0.5 rounded shadow-xs z-10">
                         {evt.category}
                       </span>
@@ -2233,6 +2189,16 @@ export const AdminDashboard: React.FC = () => {
                 {/* Modal Footer Actions */}
                 <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row gap-3">
                   <button
+                    onClick={() => {
+                      const evtToEdit = viewingEvent;
+                      setViewingEvent(null);
+                      setEditingEvent(evtToEdit);
+                    }}
+                    className="py-2.5 px-4 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-all flex items-center justify-center gap-1.5 cursor-pointer font-extrabold shadow-sm"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" /> Edit Event
+                  </button>
+                  <button
                     onClick={handleAdminShare}
                     className="py-2.5 px-4 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                     title="Share flyer link"
@@ -2264,6 +2230,13 @@ export const AdminDashboard: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* Edit Event Modal */}
+      <EditEventModal
+        isOpen={!!editingEvent}
+        onClose={() => setEditingEvent(null)}
+        event={editingEvent}
+      />
 
       {/* Share Admin Event Modal */}
       <ShareEventModal
@@ -2393,66 +2366,6 @@ export const AdminDashboard: React.FC = () => {
         onClose={() => setIsEditProfileOpen(false)}
         targetUser={currentUser}
       />
-
-      {/* Purge All Demo Records Confirmation Modal */}
-      {isPurgeDemoModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150"
-          onClick={() => !isPurging && setIsPurgeDemoModalOpen(false)}
-        >
-          <div
-            className="max-w-md w-full bg-white rounded-3xl p-6 border border-slate-200 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-extrabold text-slate-900">Purge All Demo Records?</h3>
-                <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                  This will immediately remove all placeholder/demo residents (e.g. Margaret Thatcher, Winston Churchill) and demo caregivers from your database, cache, and cloud storage. Real administrator accounts (<strong className="text-slate-900">samanthasappy@gmail.com</strong> & <strong className="text-slate-900">itopaprop@gmail.com</strong>) will remain intact.
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-rose-50 p-3.5 rounded-2xl border border-rose-100 text-xs text-rose-900 space-y-1">
-              <div className="font-bold">What this cleans:</div>
-              <ul className="list-disc list-inside space-y-0.5 text-[11px] text-rose-800">
-                <li>Demo residents & care profiles</li>
-                <li>Demo staff & caregiver accounts</li>
-                <li>Demo shifts & placeholder logs</li>
-                <li>Local storage cache synchronization</li>
-              </ul>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                disabled={isPurging}
-                onClick={() => setIsPurgeDemoModalOpen(false)}
-                className="w-full sm:w-auto px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isPurging}
-                onClick={async () => {
-                  setIsPurging(true);
-                  await purgeAllDemoRecords();
-                  setIsPurging(false);
-                  setIsPurgeDemoModalOpen(false);
-                }}
-                className="w-full sm:w-auto px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
-              >
-                <Trash2 className="w-4 h-4" />
-                {isPurging ? 'Purging Demo Records...' : 'Confirm Purge Demo Records'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

@@ -190,18 +190,20 @@ export const isDemoRecord = (item: any): boolean => {
     'usr-staff-1', 'usr-staff-2', 'usr-staff-3', 'usr-staff-4',
     'usr-relative-1', 'usr-relative-2',
     'sh-101', 'sh-102', 'sh-103', 'sh-104',
-    'msg-101', 'msg-102', 'msg-103'
+    'msg-101', 'msg-102', 'msg-103',
+    'evt-1', 'evt-2', 'evt-3'
   ];
   if (demoIds.includes(id)) return true;
 
-  // Known demo resident names
+  // Known demo resident names & event titles
   const demoNames = [
     'eleanor miller', 'thomas wright', 'arthur pendelton', 'clara & leo bennett',
     'clara bennett', 'leo bennett', 'sophia lee', 'george harris',
     'sarah jenkins', 'marcus vance', 'emily watson', 'robert taylor',
-    'david miller', 'rebecca wright'
+    'david miller', 'rebecca wright',
+    'annual grandparents', 'dementia & memory care', 'staff health, wellness'
   ];
-  if (demoNames.some(dn => name.includes(dn))) return true;
+  if (demoNames.some(dn => name.includes(dn) || String(item.title || '').toLowerCase().includes(dn))) return true;
 
   // Known demo emails
   if (
@@ -226,7 +228,7 @@ const generateTempPassword = (): string => {
   return `@${randomWord}${num}`;
 };
 
-const DEMO_CLEANUP_KEY = 'shh_demo_purge_v4';
+const DEMO_CLEANUP_KEY = 'shh_demo_purge_v5';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Clear any existing cached demo records from previous sessions
@@ -238,6 +240,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.removeItem('shh_messages');
       localStorage.removeItem('shh_activity_logs');
       localStorage.removeItem('shh_users');
+      localStorage.removeItem('shh_events');
       localStorage.setItem(DEMO_CLEANUP_KEY, 'purged');
     } catch {
       // Ignore localStorage access restrictions
@@ -253,7 +256,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!saved) return INITIAL_USERS;
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed.filter(u => !isDemoRecord(u)) : INITIAL_USERS;
+      const list = Array.isArray(parsed) && parsed.length > 0 ? parsed.filter(u => !isDemoRecord(u)) : INITIAL_USERS;
+      return list.map(u => {
+        if (u.role === 'Admin' || u.email?.toLowerCase() === 'samanthasappy@gmail.com' || u.email?.toLowerCase() === 'itopaprop@gmail.com' || u.name?.includes('Sonyaolu') || u.name?.includes('Folashade')) {
+          return { ...u, name: 'Folasade Sanyaolu' };
+        }
+        return u;
+      });
     } catch {
       return INITIAL_USERS;
     }
@@ -264,7 +273,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!saved) return null;
     try {
       const parsed = JSON.parse(saved);
-      return isDemoRecord(parsed) ? null : parsed;
+      if (isDemoRecord(parsed)) return null;
+      if (parsed && (parsed.role === 'Admin' || parsed.email?.toLowerCase() === 'samanthasappy@gmail.com' || parsed.email?.toLowerCase() === 'itopaprop@gmail.com' || parsed.name?.includes('Sonyaolu') || parsed.name?.includes('Folashade'))) {
+        return { ...parsed, name: 'Folasade Sanyaolu' };
+      }
+      return parsed;
     } catch {
       return null;
     }
@@ -333,7 +346,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [events, setEvents] = useState<CommunityEvent[]>(() => {
     const saved = localStorage.getItem('shh_events');
-    return saved ? JSON.parse(saved) : INITIAL_COMMUNITY_EVENTS;
+    if (!saved) return INITIAL_COMMUNITY_EVENTS;
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed.filter(e => !isDemoRecord(e)) : INITIAL_COMMUNITY_EVENTS;
+    } catch {
+      return INITIAL_COMMUNITY_EVENTS;
+    }
   });
 
   const [jobs, setJobs] = useState<JobVacancy[]>(() => {
@@ -441,6 +460,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (Array.isArray(syncData.consultationBookings) && syncData.consultationBookings.length > 0) {
               setConsultationBookings(syncData.consultationBookings.map(consultationFromRow));
             }
+            if (Array.isArray(syncData.events)) {
+              setEvents(syncData.events.filter((e: any) => !isDemoRecord(e)));
+            }
+            if (Array.isArray(syncData.jobs) && syncData.jobs.length > 0) {
+              setJobs(syncData.jobs);
+            }
+            if (Array.isArray(syncData.galleryItems) && syncData.galleryItems.length > 0) {
+              setGalleryItems(syncData.galleryItems);
+            }
           }
         }
       } catch (syncErr) {
@@ -450,7 +478,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // 1. Direct fetch Profiles / Users
       const { data: profileRows, error: profErr } = await supabase.from('profiles').select('*');
       if (!profErr && profileRows && profileRows.length > 0) {
-        const cleanUsers = profileRows.map(profileToUser).filter(u => !isDemoRecord(u));
+        const cleanUsers = profileRows.map(profileToUser).filter(u => !isDemoRecord(u)).map(u => {
+          if (u.role === 'Admin' || u.email?.toLowerCase() === 'samanthasappy@gmail.com' || u.email?.toLowerCase() === 'itopaprop@gmail.com' || u.name?.includes('Sonyaolu') || u.name?.includes('Folashade')) {
+            return { ...u, name: 'Folasade Sanyaolu' };
+          }
+          return u;
+        });
+
+        // Ensure Supabase profiles table has the updated admin name
+        for (const p of profileRows) {
+          const em = (p.email || '').toLowerCase();
+          if (p.role === 'Admin' || em === 'samanthasappy@gmail.com' || em === 'itopaprop@gmail.com' || p.name?.includes('Sonyaolu') || p.name?.includes('Folashade')) {
+            if (p.name !== 'Folasade Sanyaolu') {
+              supabase.from('profiles').update({ name: 'Folasade Sanyaolu', role: 'Admin', updated_at: new Date().toISOString() }).eq('id', p.id).then(() => {}, () => {});
+            }
+          }
+        }
+
         setUsers(prev => {
           const userMap = new Map<string, User>();
           INITIAL_USERS.forEach(u => {
@@ -546,8 +590,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // 7. Fetch Community Events
       const { data: eventRows, error: evtErr } = await supabase.from('community_events').select('*');
-      if (!evtErr && eventRows && eventRows.length > 0) {
-        setEvents(eventRows.map(eventFromRow));
+      if (!evtErr && eventRows) {
+        setEvents(eventRows.map(eventFromRow).filter(e => !isDemoRecord(e)));
+
+        // Clean any demo events from Supabase table
+        const demoEvts = eventRows.filter(isDemoRecord);
+        if (demoEvts.length > 0) {
+          demoEvts.forEach(de => {
+            if (de.id) {
+              supabase.from('community_events').delete().eq('id', de.id).then(() => {}, () => {});
+            }
+          });
+        }
+      } else {
+        try {
+          const evRes = await fetch('/api/events');
+          if (evRes.ok) {
+            const evData = await evRes.json();
+            if (Array.isArray(evData)) {
+              setEvents(evData.filter((e: any) => !isDemoRecord(e)));
+            }
+          }
+        } catch (evErr) {
+          console.warn('Events fallback fetch notice:', evErr);
+        }
       }
 
       // 8. Fetch Job Vacancies
@@ -720,6 +786,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     initFirestore();
     fetchSupabaseData();
 
+    // Supabase Realtime subscription for automatic live synchronization
+    const realtimeChannel = supabase
+      .channel('public-db-live-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public' },
+        () => {
+          fetchSupabaseData();
+        }
+      )
+      .subscribe();
+
+    // Silent background live sync interval every 10 seconds to guarantee fresh state
+    const autoSyncInterval = setInterval(() => {
+      fetchSupabaseData();
+    }, 10000);
+
     // Check server fallback for users/staff
     fetch('/api/users')
       .then(res => res.json())
@@ -741,6 +824,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return () => {
       unsubList.forEach(fn => fn());
+      supabase.removeChannel(realtimeChannel);
+      clearInterval(autoSyncInterval);
     };
   }, [fetchSupabaseData]);
 
@@ -2056,7 +2141,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isRelativeAndStaff) {
       const adminUsers = users.filter(u => u.role === 'Admin');
-      const targetAdmin = adminUsers[0] || { id: 'usr-admin-1', name: 'Folashade Sonyaolu', role: 'Admin' };
+      const targetAdmin = adminUsers[0] || { id: 'usr-admin-1', name: 'Folasade Sanyaolu', role: 'Admin' };
 
       if (msgData.receiverId !== targetAdmin.id) {
         const ccMsg: Message = {
@@ -2164,6 +2249,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setEvents(prev => [newEvent, ...prev]);
 
+    // Save to server fallback cache
+    fetch('/api/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newEvent),
+    }).catch(err => console.warn('Server event post notice:', err));
+
     try {
       const { data: inserted } = await supabase
         .from('community_events')
@@ -2201,6 +2293,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     const cleanUpdated = { ...updated, imageUrl };
     setEvents(prev => prev.map(e => e.id === id ? { ...e, ...cleanUpdated } : e));
+
+    // Update server fallback cache
+    fetch(`/api/events/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanUpdated),
+    }).catch(err => console.warn('Server event put notice:', err));
+
     try {
       await supabase.from('community_events').update(eventToRow(cleanUpdated)).eq('id', id);
     } catch (err) {
@@ -2212,6 +2312,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteEvent = async (id: string) => {
     const target = events.find(e => e.id === id);
     setEvents(prev => prev.filter(e => e.id !== id));
+
+    // Delete from server fallback cache
+    fetch(`/api/events/${id}`, {
+      method: 'DELETE',
+    }).catch(err => console.warn('Server event delete notice:', err));
+
     try {
       await supabase.from('community_events').delete().eq('id', id);
     } catch (err) {

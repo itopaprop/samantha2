@@ -63,7 +63,7 @@ export const AboutPage: React.FC = () => {
             <div className="relative rounded-3xl overflow-hidden shadow-xl border-4 border-white group">
               <img
                 src="https://lh3.googleusercontent.com/d/1w6G7q5mbHmjWOhDMbYhVJEg6zda_Jw7X=s1600"
-                alt="Folashade Sonyaolu, LLB, QaAA"
+                alt="Folasade Sanyaolu, LLB, QaAA"
                 referrerPolicy="no-referrer"
                 onError={(e) => {
                   const target = e.currentTarget;
@@ -76,7 +76,7 @@ export const AboutPage: React.FC = () => {
               {/* Lower Overlay Badge */}
               <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/90 via-slate-950/60 to-transparent p-5 text-white flex flex-col items-center justify-end text-center">
                 <div className="font-extrabold text-xl sm:text-2xl text-white tracking-tight drop-shadow-md">
-                  Folashade Sonyaolu
+                  Folasade Sanyaolu
                 </div>
                 <div className="text-xs sm:text-sm font-semibold text-sky-300 tracking-wider uppercase drop-shadow-xs mt-0.5">
                   LLB, QaAA

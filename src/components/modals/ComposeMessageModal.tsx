@@ -108,7 +108,7 @@ export const ComposeMessageModal: React.FC<Props> = ({ isOpen, onClose, defaultR
     if (adminOptions.length === 0) {
       adminOptions.push({
         id: 'usr-admin-1',
-        name: 'Folashade Sonyaolu (Managing Director / Admin)',
+        name: 'Folasade Sanyaolu (Managing Director / Admin)',
         role: 'Admin' as UserRole,
         isAssigned: false,
       });
@@ -119,7 +119,7 @@ export const ComposeMessageModal: React.FC<Props> = ({ isOpen, onClose, defaultR
     if (availableReceivers.length === 0) {
       availableReceivers = [
         { id: 'usr-staff-1', name: 'Sarah Jenkins, RN (Assigned Caregiver)', role: 'Staff' as UserRole, isAssigned: true },
-        { id: 'usr-admin-1', name: 'Folashade Sonyaolu (Admin)', role: 'Admin' as UserRole, isAssigned: false },
+        { id: 'usr-admin-1', name: 'Folasade Sanyaolu (Admin)', role: 'Admin' as UserRole, isAssigned: false },
       ];
     }
   } else {
