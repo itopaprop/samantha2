@@ -113,7 +113,7 @@ interface AppContextType {
   resetPassword?: (email: string) => Promise<boolean>;
   loginWithGoogle: (role: UserRole) => Promise<boolean>;
   switchDemoRole: (role: UserRole) => void;
-  logout: () => void;
+  logout: (redirectPage?: PageView | React.MouseEvent | unknown, customMessage?: string) => Promise<void>;
   updateUserProfile: (userId: string, updates: Partial<User>) => Promise<boolean>;
   deleteUserAccount: (userId: string, email?: string) => Promise<boolean>;
   purgeAllNonAdminUsers: () => Promise<{ success: boolean; deletedCount: number }>;
@@ -1382,15 +1382,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const logout = async () => {
+  const logout = async (redirectPage?: PageView | React.MouseEvent | unknown, customMessage?: string) => {
     try {
       await supabase.auth.signOut();
     } catch (err) {
       console.warn('Sign out notice:', err);
     }
+    const targetPage: PageView = (typeof redirectPage === 'string' && redirectPage.trim() !== '') ? (redirectPage as PageView) : 'home';
+    const message = (typeof customMessage === 'string' && customMessage.trim() !== '') ? customMessage : 'You have been signed out successfully.';
     setCurrentUser(null);
-    setCurrentPage('home');
-    showToast('You have been signed out successfully.');
+    setCurrentPage(targetPage);
+    showToast(message);
   };
 
   // ============================================================================
