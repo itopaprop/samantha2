@@ -24,7 +24,6 @@ export const Navbar: React.FC = () => {
     currentPage, 
     setCurrentPage, 
     currentUser, 
-    switchDemoRole, 
     logout, 
     setIsApplyModalOpen
   } = useApp();

@@ -18,13 +18,16 @@ import {
   Receipt,
   FileCheck,
   AlertCircle,
-  Banknote
+  Banknote,
+  Loader2
 } from 'lucide-react';
 
 export const ApplyNowModal: React.FC = () => {
   const { isApplyModalOpen, setIsApplyModalOpen, showToast, submitApplication } = useApp();
   const [appType, setAppType] = useState<'caregiver' | 'resident'>('caregiver');
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [payLaterWhatsApp, setPayLaterWhatsApp] = useState(false);
   const [copiedAcc, setCopiedAcc] = useState<number | null>(null);
 
   // Fee Notice Popup State for Resident Care Admission (Auto disappears in 25s)
@@ -140,6 +143,8 @@ export const ApplyNowModal: React.FC = () => {
     setReceiptPreview(null);
     setReceiptFileName(null);
     setReceiptFileType(null);
+    setPayLaterWhatsApp(false);
+    setIsSubmitting(false);
     setSubmitted(false);
   };
 
@@ -157,31 +162,39 @@ export const ApplyNowModal: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (appType === 'resident' && !receiptPreview) {
-      showToast('Payment receipt is mandatory. Please attach your payment receipt before submitting.');
+    if (appType === 'resident' && !receiptPreview && !payLaterWhatsApp) {
+      showToast('Please attach your payment receipt or select the WhatsApp payment verification option.');
       return;
     }
 
-    await submitApplication({
-      type: appType,
-      fullName: fullName || (appType === 'caregiver' ? 'Caregiver Applicant' : 'Resident Applicant'),
-      email: email || 'applicant@samanthasappy.com',
-      phone: phone || '+234 706 933 2193',
-      photoUrl: photoPreview || undefined,
-      receiptUrl: (appType === 'resident' && receiptPreview) ? receiptPreview : undefined,
-      receiptName: (appType === 'resident' && receiptFileName) ? receiptFileName : undefined,
-      positionOrCategory: appType === 'caregiver' ? position : careCategory,
-      notesOrStatement: appType === 'caregiver' ? `${experience} • ${statement}` : medicalNotes,
-      sponsorName: appType === 'resident' ? sponsorName : undefined,
-      references: [],
-    });
+    try {
+      setIsSubmitting(true);
+      await submitApplication({
+        type: appType,
+        fullName: fullName || (appType === 'caregiver' ? 'Caregiver Applicant' : 'Resident Applicant'),
+        email: email || 'applicant@samanthasappy.com',
+        phone: phone || '+234 706 933 2193',
+        photoUrl: photoPreview || undefined,
+        receiptUrl: (appType === 'resident' && receiptPreview) ? receiptPreview : undefined,
+        receiptName: (appType === 'resident' && receiptFileName) ? receiptFileName : (payLaterWhatsApp ? 'Payment Confirmation via WhatsApp (+234 706 933 2193)' : undefined),
+        positionOrCategory: appType === 'caregiver' ? position : careCategory,
+        notesOrStatement: appType === 'caregiver' ? `${experience} • ${statement}` : (payLaterWhatsApp ? `${medicalNotes || 'Resident Care Admission Request'}\n[Payment receipt will be shared via WhatsApp / In-person verification]` : (medicalNotes || 'Resident Care Admission Request')),
+        sponsorName: appType === 'resident' ? sponsorName : undefined,
+        references: [],
+      });
 
-    setSubmitted(true);
-    if (appType === 'caregiver') {
-      setTimeout(() => {
-        setIsApplyModalOpen(false);
-        resetForm();
-      }, 3000);
+      setSubmitted(true);
+      if (appType === 'caregiver') {
+        setTimeout(() => {
+          setIsApplyModalOpen(false);
+          resetForm();
+        }, 3000);
+      }
+    } catch (err: any) {
+      console.error('Submission error:', err);
+      showToast('Failed to complete submission. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -235,7 +248,7 @@ export const ApplyNowModal: React.FC = () => {
                   </div>
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-full text-xs font-semibold">
                     <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Email Sent to samanthasappy@gmail.com</span>
+                    <span>Email Sent to Admin (samanthasappy@gmail.com)</span>
                   </div>
                 </div>
               </div>
@@ -640,7 +653,7 @@ export const ApplyNowModal: React.FC = () => {
                   <input
                     type="text"
                     required
-                    placeholder={appType === 'caregiver' ? 'e.g. Sarah Jenkins' : 'e.g. Margaret Thompson'}
+                    placeholder={appType === 'caregiver' ? 'e.g. Applicant Full Name' : 'e.g. Resident Full Name'}
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
@@ -837,10 +850,26 @@ export const ApplyNowModal: React.FC = () => {
 
               {/* Submit Controls */}
               <div className="pt-3 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100">
-                {appType === 'resident' && !receiptPreview ? (
+                {appType === 'resident' && (
+                  <div className="w-full bg-amber-50/80 border border-amber-200 rounded-xl p-2.5 mb-2">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={payLaterWhatsApp}
+                        onChange={(e) => setPayLaterWhatsApp(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+                      />
+                      <span className="text-[11px] text-slate-700 leading-snug">
+                        <strong>WhatsApp / Direct Confirmation:</strong> I will forward my bank payment proof via WhatsApp to <strong>+234 706 933 2193</strong> or provide it upon physical admission.
+                      </span>
+                    </label>
+                  </div>
+                )}
+
+                {appType === 'resident' && !receiptPreview && !payLaterWhatsApp ? (
                   <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1.5 text-center sm:text-left">
                     <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
-                    <span>Attach payment receipt above to enable application submission</span>
+                    <span>Attach receipt or check the WhatsApp option above to enable submission</span>
                   </p>
                 ) : (
                   <div className="hidden sm:block" />
@@ -856,12 +885,21 @@ export const ApplyNowModal: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    disabled={appType === 'resident' && !receiptPreview}
+                    disabled={isSubmitting || (appType === 'resident' && !receiptPreview && !payLaterWhatsApp)}
                     className="px-6 py-2.5 text-xs font-bold bg-sky-700 hover:bg-sky-800 text-white rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
-                    title={appType === 'resident' && !receiptPreview ? 'Please attach a payment receipt to enable submission' : undefined}
+                    title={appType === 'resident' && !receiptPreview && !payLaterWhatsApp ? 'Please attach a payment receipt or select the WhatsApp verification option' : undefined}
                   >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>{appType === 'caregiver' ? 'Submit Caregiver Application' : 'Submit Resident Care Application'}</span>
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Submitting Application...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" />
+                        <span>{appType === 'caregiver' ? 'Submit Caregiver Application' : 'Submit Resident Care Application'}</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>

@@ -2,43 +2,69 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ShieldAlert, Clock, LogOut, RefreshCw } from 'lucide-react';
 
-const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes = 300,000 ms
-const WARNING_WINDOW_MS = 30 * 1000; // 30 seconds warning modal
+// 3 minutes inactivity threshold as requested
+const INACTIVITY_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes = 180,000 ms
+const WARNING_WINDOW_MS = 30 * 1000; // 30 seconds countdown warning modal
+const ACTIVITY_STORAGE_KEY = 'shh_last_activity';
 
 export const SessionTimeoutWarningModal: React.FC = () => {
-  const { currentUser, currentPage, logout } = useApp();
+  const { currentUser, logout } = useApp();
   const [showWarning, setShowWarning] = useState<boolean>(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(30);
   const lastActivityRef = useRef<number>(Date.now());
   const throttleRef = useRef<number>(0);
 
   const resetActivity = useCallback(() => {
-    lastActivityRef.current = Date.now();
-    if (showWarning) {
-      setShowWarning(false);
+    const now = Date.now();
+    lastActivityRef.current = now;
+    try {
+      localStorage.setItem(ACTIVITY_STORAGE_KEY, String(now));
+    } catch {
+      // Ignore localStorage access restrictions
     }
-  }, [showWarning]);
+    setShowWarning(false);
+  }, []);
 
-  // Monitor user events for activity
+  // Monitor user events for activity across all authenticated views
   useEffect(() => {
-    // Only track inactivity when user is logged in and actively on the dashboard
-    if (!currentUser || currentPage !== 'dashboard') {
+    // Only track inactivity when user is actively logged in
+    if (!currentUser) {
       setShowWarning(false);
       return;
     }
 
-    lastActivityRef.current = Date.now();
+    // Initialize with current time or sync from shared storage
+    const now = Date.now();
+    let initialTimestamp = now;
+    try {
+      const stored = localStorage.getItem(ACTIVITY_STORAGE_KEY);
+      if (stored) {
+        const parsed = Number(stored);
+        if (!isNaN(parsed) && parsed <= now && now - parsed < INACTIVITY_TIMEOUT_MS) {
+          initialTimestamp = parsed;
+        } else {
+          localStorage.setItem(ACTIVITY_STORAGE_KEY, String(now));
+        }
+      } else {
+        localStorage.setItem(ACTIVITY_STORAGE_KEY, String(now));
+      }
+    } catch {
+      // Ignore
+    }
+    lastActivityRef.current = initialTimestamp;
 
     const handleUserActivity = () => {
-      const now = Date.now();
+      const currentTime = Date.now();
       // Throttle event handling to at most once every 500ms
-      if (now - throttleRef.current > 500) {
-        throttleRef.current = now;
-        lastActivityRef.current = now;
-        setShowWarning(prev => {
-          if (prev) return false;
-          return false;
-        });
+      if (currentTime - throttleRef.current > 500) {
+        throttleRef.current = currentTime;
+        lastActivityRef.current = currentTime;
+        try {
+          localStorage.setItem(ACTIVITY_STORAGE_KEY, String(currentTime));
+        } catch {
+          // Ignore
+        }
+        setShowWarning(false);
       }
     };
 
@@ -46,7 +72,9 @@ export const SessionTimeoutWarningModal: React.FC = () => {
       'mousemove',
       'mousedown',
       'keydown',
+      'keyup',
       'touchstart',
+      'touchmove',
       'scroll',
       'wheel',
       'click',
@@ -57,28 +85,82 @@ export const SessionTimeoutWarningModal: React.FC = () => {
       window.addEventListener(eventType, handleUserActivity, { passive: true });
     });
 
+    const checkTimeout = () => {
+      let lastActive = lastActivityRef.current;
+      try {
+        const saved = localStorage.getItem(ACTIVITY_STORAGE_KEY);
+        if (saved) {
+          const parsed = Number(saved);
+          if (!isNaN(parsed) && parsed > lastActive) {
+            lastActive = parsed;
+            lastActivityRef.current = parsed;
+          }
+        }
+      } catch {
+        // Ignore
+      }
+
+      const elapsed = Date.now() - lastActive;
+      if (elapsed >= INACTIVITY_TIMEOUT_MS) {
+        setShowWarning(false);
+        logout('login', 'Session Expired: You were automatically signed out due to 3 minutes of inactivity for your security.');
+        return true;
+      }
+      return false;
+    };
+
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        const elapsed = Date.now() - lastActivityRef.current;
-        if (elapsed >= INACTIVITY_TIMEOUT_MS) {
-          logout('login', 'Session Expired: You were automatically logged out due to 5 minutes of inactivity for your security.');
-        }
+        checkTimeout();
       }
     };
 
+    const handleWindowFocus = () => {
+      checkTimeout();
+    };
+
+    // Synchronize user activity and session changes across browser tabs
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === ACTIVITY_STORAGE_KEY && e.newValue) {
+        const foreignTime = Number(e.newValue);
+        if (!isNaN(foreignTime) && foreignTime > lastActivityRef.current) {
+          lastActivityRef.current = foreignTime;
+          setShowWarning(false);
+        }
+      } else if (e.key === 'shh_current_user' && !e.newValue) {
+        setShowWarning(false);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
 
     // Heartbeat check every 1 second
     const interval = setInterval(() => {
-      const elapsed = Date.now() - lastActivityRef.current;
+      let lastActive = lastActivityRef.current;
+      try {
+        const saved = localStorage.getItem(ACTIVITY_STORAGE_KEY);
+        if (saved) {
+          const parsed = Number(saved);
+          if (!isNaN(parsed) && parsed > lastActive) {
+            lastActive = parsed;
+            lastActivityRef.current = parsed;
+          }
+        }
+      } catch {
+        // Ignore
+      }
+
+      const elapsed = Date.now() - lastActive;
       const remainingMs = INACTIVITY_TIMEOUT_MS - elapsed;
 
       if (remainingMs <= 0) {
         setShowWarning(false);
-        logout('login', 'Session Expired: You were automatically logged out due to 5 minutes of inactivity for your security.');
+        logout('login', 'Session Expired: You were automatically signed out due to 3 minutes of inactivity for your security.');
       } else if (remainingMs <= WARNING_WINDOW_MS) {
         setShowWarning(true);
-        setSecondsRemaining(Math.ceil(remainingMs / 1000));
+        setSecondsRemaining(Math.max(1, Math.ceil(remainingMs / 1000)));
       } else {
         setShowWarning(false);
       }
@@ -88,19 +170,21 @@ export const SessionTimeoutWarningModal: React.FC = () => {
       activityEvents.forEach(eventType => {
         window.removeEventListener(eventType, handleUserActivity);
       });
+      window.removeEventListener('storage', handleStorageChange);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
       clearInterval(interval);
     };
-  }, [currentUser, currentPage, logout]);
+  }, [currentUser, logout]);
 
-  if (!showWarning || !currentUser || currentPage !== 'dashboard') {
+  if (!showWarning || !currentUser) {
     return null;
   }
 
   const progressPercent = Math.max(0, Math.min(100, (secondsRemaining / 30) * 100));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-200">
       <div 
         className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-amber-200 text-center space-y-6 animate-in zoom-in-95 duration-200"
         role="alertdialog"
@@ -120,7 +204,7 @@ export const SessionTimeoutWarningModal: React.FC = () => {
             Session Inactivity Warning
           </h3>
           <p className="text-xs text-slate-600 leading-relaxed max-w-sm mx-auto">
-            Your dashboard session has been idle. For healthcare data privacy and compliance, you will be automatically signed out in:
+            Your session has been idle. For healthcare data privacy and security compliance, active users are automatically signed out after 3 minutes of inactivity. You will be signed out in:
           </p>
         </div>
 
@@ -149,7 +233,7 @@ export const SessionTimeoutWarningModal: React.FC = () => {
           </button>
           
           <button
-            onClick={() => logout('login', 'You signed out from your dashboard session.')}
+            onClick={() => logout('login', 'You signed out from your session.')}
             className="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer order-2 sm:order-1"
           >
             <LogOut className="w-4 h-4 text-slate-500" />

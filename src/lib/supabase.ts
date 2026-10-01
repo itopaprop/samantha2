@@ -1,120 +1,118 @@
-import { createClient } from '@supabase/supabase-js';
+// Disconnected from external Supabase databases.
+// The web app runs completely standalone with local persistence and offline storage.
 
-// Environment variables with fallback to the configured project credentials
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://ikeglxdyjimmxvfbxrvb.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_eIk9r2bZDA2qLeZB2bYhTA_BNbABikp';
+// Offline Mock Query Builder that gracefully handles any chained DB call
+const createMockQueryBuilder = () => {
+  const handler: any = {
+    select: () => handler,
+    insert: () => Promise.resolve({ data: [], error: null }),
+    upsert: () => Promise.resolve({ data: [], error: null }),
+    update: () => handler,
+    delete: () => handler,
+    eq: () => handler,
+    neq: () => handler,
+    ilike: () => handler,
+    like: () => handler,
+    or: () => handler,
+    in: () => handler,
+    not: () => handler,
+    order: () => handler,
+    limit: () => handler,
+    range: () => handler,
+    single: () => Promise.resolve({ data: null, error: null }),
+    maybeSingle: () => Promise.resolve({ data: null, error: null }),
+    then: (resolve: (val: any) => void) => resolve({ data: [], error: null }),
+  };
+  return handler;
+};
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase URL or Anon Key is missing. Please check your environment variables.');
-}
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+// Disconnected Offline Supabase Client
+export const supabase: any = {
   auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
+    signOut: async () => ({ error: null }),
+    signInWithPassword: async () => ({ data: { user: null, session: null }, error: null }),
+    signUp: async () => ({ data: { user: null, session: null }, error: null }),
+    getSession: async () => ({ data: { session: null }, error: null }),
+    getUser: async () => ({ data: { user: null }, error: null }),
+    onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
   },
-});
+  from: () => createMockQueryBuilder(),
+  channel: () => ({
+    on: () => ({
+      subscribe: () => ({ unsubscribe: () => {} }),
+    }),
+    subscribe: () => ({ unsubscribe: () => {} }),
+    unsubscribe: () => {},
+  }),
+  functions: {
+    invoke: async () => ({ data: null, error: null }),
+  },
+  storage: {
+    from: () => ({
+      upload: async () => ({ data: { path: 'offline_local_path' }, error: null }),
+      remove: async () => ({ data: [], error: null }),
+      getPublicUrl: (path: string) => ({ data: { publicUrl: path } }),
+      list: async () => ({ data: [], error: null }),
+    }),
+  },
+};
 
-// Ephemeral client for registering users in Supabase Auth without overriding the current admin session
-export const ephemeralAuthClient = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-    detectSessionInUrl: false,
-  },
-});
+export const ephemeralAuthClient = supabase;
 
 /**
- * Storage Helper: Upload a File or base64 data URL to Supabase Storage with timeout and graceful fallback
+ * Storage Helper: Saves File or data URL locally as Base64 data URL with zero cloud dependency
  */
 export async function uploadToStorage(
   bucket: 'public-media' | 'avatars' | 'documents',
-  folder: string,
+  _folder: string,
   fileOrDataUrl: File | Blob | string,
-  customFileName?: string
+  _customFileName?: string
 ): Promise<{ url: string | null; path: string | null; error: Error | null }> {
   try {
-    let fileBody: Blob | File;
-    let fileName = customFileName || `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-
     if (typeof fileOrDataUrl === 'string') {
-      if (fileOrDataUrl.startsWith('http')) {
-        // Already a remote URL
-        return { url: fileOrDataUrl, path: null, error: null };
-      } else if (fileOrDataUrl.startsWith('data:')) {
-        try {
-          // Fast convert data URL to Blob
-          const res = await fetch(fileOrDataUrl);
-          fileBody = await res.blob();
-          const mimeType = fileBody.type || 'image/jpeg';
-          const ext = mimeType.split('/')[1] || 'jpg';
-          if (!fileName.includes('.')) fileName = `${fileName}.${ext}`;
-        } catch {
-          // Fallback manual blob
-          const [header, base64Data] = fileOrDataUrl.split(',');
-          const mimeMatch = header.match(/:(.*?);/);
-          const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-          const byteCharacters = atob(base64Data);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          fileBody = new Blob([new Uint8Array(byteNumbers)], { type: mimeType });
-          const ext = mimeType.split('/')[1] || 'jpg';
-          if (!fileName.includes('.')) fileName = `${fileName}.${ext}`;
-        }
-      } else {
-        return { url: null, path: null, error: new Error('Invalid string format for upload') };
-      }
-    } else {
-      fileBody = fileOrDataUrl;
-      if (fileOrDataUrl instanceof File && !customFileName) {
-        fileName = `${Date.now()}_${fileOrDataUrl.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-      }
+      return { url: fileOrDataUrl, path: null, error: null };
     }
 
-    const filePath = `${folder}/${fileName}`;
+    // Convert file to Base64 data URL for instant offline local rendering
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(fileOrDataUrl);
+    });
 
-    // Execute upload with a 4 second timeout race
-    const uploadPromise = supabase.storage
-      .from(bucket)
-      .upload(filePath, fileBody, {
-        cacheControl: '3600',
-        upsert: true,
-      });
-
-    const timeoutPromise = new Promise<{ data: null; error: Error }>((_, reject) =>
-      setTimeout(() => reject(new Error('Storage upload timeout after 4000ms')), 4000)
-    );
-
-    const { data, error } = await Promise.race([uploadPromise, timeoutPromise]) as any;
-
-    if (error || !data?.path) {
-      console.warn(`Supabase Storage upload note for bucket '${bucket}':`, error?.message || 'Upload bypassed');
-      return { 
-        url: typeof fileOrDataUrl === 'string' ? fileOrDataUrl : null, 
-        path: null, 
-        error: error || null 
-      };
-    }
-
-    // Always get clean public URL
-    const { data: publicUrlData } = supabase.storage
-      .from(bucket)
-      .getPublicUrl(data.path);
-
-    return { 
-      url: publicUrlData?.publicUrl || (typeof fileOrDataUrl === 'string' ? fileOrDataUrl : null), 
-      path: data.path, 
-      error: null 
+    return {
+      url: dataUrl,
+      path: null,
+      error: null,
     };
   } catch (err: any) {
-    console.warn('Storage Upload Notice (gracefully using fallback):', err?.message || err);
-    return { 
-      url: typeof fileOrDataUrl === 'string' ? fileOrDataUrl : null, 
-      path: null, 
-      error: err 
+    return {
+      url: null,
+      path: null,
+      error: err,
     };
   }
+}
+
+/**
+ * Extract storage bucket and relative path (Safe offline helper)
+ */
+export function extractBucketAndPath(urlOrPath: string | null | undefined): { bucket: 'public-media' | 'avatars' | 'documents'; path: string } | null {
+  if (!urlOrPath || typeof urlOrPath !== 'string') return null;
+  return null;
+}
+
+/**
+ * Delete a single file from storage (Safe offline no-op)
+ */
+export async function deleteFromStorage(_urlOrPath: string | null | undefined): Promise<boolean> {
+  return true;
+}
+
+/**
+ * Delete multiple files from storage (Safe offline no-op)
+ */
+export async function deleteMultipleFromStorage(_urlsOrPaths: (string | null | undefined)[]): Promise<void> {
+  // Offline no-op
 }

@@ -31,12 +31,13 @@ import {
   signInWithGoogle as firebaseSignInWithGoogle, 
   signInWithEmail as firebaseSignInWithEmail, 
   signUpWithEmail as firebaseSignUpWithEmail, 
+  createFirebaseUserByAdmin,
+  resetFirebasePassword,
   logoutFirebaseUser,
+  onAuthStateChanged,
   sanitizeForFirestore, 
   handleFirestoreError,
-  OperationType 
-} from '../lib/firebase';
-import { 
+  OperationType,
   collection, 
   doc, 
   getDocs, 
@@ -47,8 +48,15 @@ import {
   onSnapshot, 
   query, 
   where 
-} from 'firebase/firestore';
-import { supabase, ephemeralAuthClient, uploadToStorage } from '../lib/supabase';
+} from '../lib/firebase';
+import { 
+  supabase, 
+  ephemeralAuthClient, 
+  uploadToStorage, 
+  deleteFromStorage, 
+  deleteMultipleFromStorage 
+} from '../lib/supabase';
+import { arePhonesEqual, areEmailsEqual } from '../utils/duplicateCheck';
 import { 
   invokeRegisterStaff, 
   invokeRegisterRelative, 
@@ -118,6 +126,7 @@ interface AppContextType {
   deleteUserAccount: (userId: string, email?: string) => Promise<boolean>;
   purgeAllNonAdminUsers: () => Promise<{ success: boolean; deletedCount: number }>;
   purgeAllDemoRecords: () => Promise<{ success: boolean }>;
+  deduplicateDatabase: () => Promise<{ success: boolean; removedCount: number; details: string[] }>;
   
   residents: Resident[];
   addResident: (resident: Omit<Resident, 'id' | 'admissionDate'>) => Promise<{ resident: Resident; relativeUser: User; tempPassword?: string; setupPasswordUrl?: string; emailDispatched?: boolean }>;
@@ -228,7 +237,7 @@ const generateTempPassword = (): string => {
   return `@${randomWord}${num}`;
 };
 
-const DEMO_CLEANUP_KEY = 'shh_demo_purge_v5';
+const DEMO_CLEANUP_KEY = 'shh_demo_purge_v9_complete';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Clear any existing cached demo records from previous sessions
@@ -241,6 +250,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.removeItem('shh_activity_logs');
       localStorage.removeItem('shh_users');
       localStorage.removeItem('shh_events');
+      localStorage.removeItem('shh_consultations');
+      localStorage.removeItem('shh_applications');
       localStorage.setItem(DEMO_CLEANUP_KEY, 'purged');
     } catch {
       // Ignore localStorage access restrictions
@@ -248,7 +259,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }
 
   const [currentPage, setCurrentPage] = useState<PageView>('home');
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
 
   // Users & Current Auth User
   const [users, setUsers] = useState<User[]>(() => {
@@ -408,602 +419,78 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => { safeSave('shh_gallery_v2', galleryItems); }, [galleryItems]);
   useEffect(() => { safeSave('shh_applications', applications); }, [applications]);
 
-  // ============================================================================
-  // FIRESTORE REALTIME SYNC & BACKUP FETCH
-  // ============================================================================
-  const isFetchingRef = useRef(false);
-
   const fetchSupabaseData = useCallback(async () => {
-    if (isFetchingRef.current) return;
-    isFetchingRef.current = true;
-
-    try {
-      // 0. Fetch master synced data from privileged backend API (reconciles Supabase Auth & DB tables)
-      try {
-        const syncRes = await fetch('/api/admin/synced-data');
-        if (syncRes.ok) {
-          const syncData = await syncRes.json();
-          if (syncData.success) {
-            if (Array.isArray(syncData.staff) && syncData.staff.length > 0) {
-              setStaff(syncData.staff.filter((s: any) => !isDemoRecord(s)));
-            }
-            if (Array.isArray(syncData.residents) && syncData.residents.length > 0) {
-              setResidents(syncData.residents.filter((r: any) => !isDemoRecord(r)));
-            }
-            if (Array.isArray(syncData.users) && syncData.users.length > 0) {
-              setUsers(prev => {
-                const userMap = new Map<string, User>();
-                INITIAL_USERS.forEach(u => {
-                  if (u?.email) userMap.set(u.email.toLowerCase(), u);
-                });
-                prev.filter(u => !isDemoRecord(u)).forEach(u => {
-                  if (u?.email) userMap.set(u.email.toLowerCase(), u);
-                });
-                syncData.users.filter((u: any) => !isDemoRecord(u)).forEach((u: User) => {
-                  if (u?.email) userMap.set(u.email.toLowerCase(), u);
-                });
-                return Array.from(userMap.values());
-              });
-            }
-            if (Array.isArray(syncData.shifts) && syncData.shifts.length > 0) {
-              setShifts(syncData.shifts.map(shiftFromRow).filter((sh: any) => !isDemoRecord(sh)));
-            }
-            if (Array.isArray(syncData.messages) && syncData.messages.length > 0) {
-              setMessages(syncData.messages.map(messageFromRow).filter((m: any) => !isDemoRecord(m)));
-            }
-            if (Array.isArray(syncData.activityLogs) && syncData.activityLogs.length > 0) {
-              setActivityLogs(syncData.activityLogs.map(activityLogFromRow).filter((l: any) => !isDemoRecord(l)));
-            }
-            if (Array.isArray(syncData.applications) && syncData.applications.length > 0) {
-              setApplications(syncData.applications.map(applicationFromRow));
-            }
-            if (Array.isArray(syncData.consultationBookings) && syncData.consultationBookings.length > 0) {
-              setConsultationBookings(syncData.consultationBookings.map(consultationFromRow));
-            }
-            if (Array.isArray(syncData.events)) {
-              setEvents(syncData.events.filter((e: any) => !isDemoRecord(e)));
-            }
-            if (Array.isArray(syncData.jobs) && syncData.jobs.length > 0) {
-              setJobs(syncData.jobs);
-            }
-            if (Array.isArray(syncData.galleryItems) && syncData.galleryItems.length > 0) {
-              setGalleryItems(syncData.galleryItems);
-            }
-          }
-        }
-      } catch (syncErr) {
-        console.warn('Backend synced-data endpoint note:', syncErr);
-      }
-
-      // 1. Direct fetch Profiles / Users
-      const { data: profileRows, error: profErr } = await supabase.from('profiles').select('*');
-      if (!profErr && profileRows && profileRows.length > 0) {
-        const cleanUsers = profileRows.map(profileToUser).filter(u => !isDemoRecord(u)).map(u => {
-          if (u.role === 'Admin' || u.email?.toLowerCase() === 'samanthasappy@gmail.com' || u.email?.toLowerCase() === 'itopaprop@gmail.com' || u.name?.includes('Sonyaolu') || u.name?.includes('Folashade')) {
-            return { ...u, name: 'Folasade Sanyaolu' };
-          }
-          return u;
-        });
-
-        // Ensure Supabase profiles table has the updated admin name
-        for (const p of profileRows) {
-          const em = (p.email || '').toLowerCase();
-          if (p.role === 'Admin' || em === 'samanthasappy@gmail.com' || em === 'itopaprop@gmail.com' || p.name?.includes('Sonyaolu') || p.name?.includes('Folashade')) {
-            if (p.name !== 'Folasade Sanyaolu') {
-              supabase.from('profiles').update({ name: 'Folasade Sanyaolu', role: 'Admin', updated_at: new Date().toISOString() }).eq('id', p.id).then(() => {}, () => {});
-            }
-          }
-        }
-
-        setUsers(prev => {
-          const userMap = new Map<string, User>();
-          INITIAL_USERS.forEach(u => {
-            if (u?.email) userMap.set(u.email.toLowerCase(), u);
-          });
-          prev.filter(u => !isDemoRecord(u)).forEach(u => {
-            if (u?.email) userMap.set(u.email.toLowerCase(), u);
-          });
-          cleanUsers.forEach(u => {
-            if (u?.email) userMap.set(u.email.toLowerCase(), u);
-          });
-          return Array.from(userMap.values());
-        });
-
-        // Background cleanup of any demo profiles in Supabase
-        const demoProfiles = profileRows.filter(isDemoRecord);
-        if (demoProfiles.length > 0) {
-          demoProfiles.forEach(dp => {
-            if (dp.id) {
-              supabase.from('profiles').delete().eq('id', dp.id).then(() => {}, () => {});
-            }
-          });
-        }
-      }
-
-      // 2. Direct fetch Residents
-      const { data: resRows, error: resErr } = await supabase.from('residents').select('*');
-      if (!resErr && resRows && resRows.length > 0) {
-        const cleanResidents = resRows.map(residentFromRow).filter(r => !isDemoRecord(r));
-        if (cleanResidents.length > 0) {
-          setResidents(prev => {
-            const map = new Map<string, Resident>();
-            prev.filter(r => !isDemoRecord(r)).forEach(r => map.set(r.id, r));
-            cleanResidents.forEach(r => map.set(r.id, r));
-            return Array.from(map.values());
-          });
-        }
-
-        // Auto delete demo residents from Supabase
-        const demoResidents = resRows.filter(isDemoRecord);
-        if (demoResidents.length > 0) {
-          demoResidents.forEach(dr => {
-            if (dr.id) {
-              supabase.from('residents').delete().eq('id', dr.id).then(() => {}, () => {});
-            }
-          });
-        }
-      }
-
-      // 3. Direct fetch Staff
-      const { data: staffRows, error: staffErr } = await supabase.from('staff').select('*');
-      if (!staffErr && staffRows && staffRows.length > 0) {
-        const cleanStaff = staffRows.map(staffFromRow).filter(s => !isDemoRecord(s));
-        if (cleanStaff.length > 0) {
-          setStaff(prev => {
-            const map = new Map<string, StaffMember>();
-            prev.filter(s => !isDemoRecord(s)).forEach(s => map.set(s.email ? s.email.toLowerCase() : s.id, s));
-            cleanStaff.forEach(s => map.set(s.email ? s.email.toLowerCase() : s.id, s));
-            return Array.from(map.values());
-          });
-        }
-
-        // Auto delete demo staff from Supabase
-        const demoStaff = staffRows.filter(isDemoRecord);
-        if (demoStaff.length > 0) {
-          demoStaff.forEach(ds => {
-            if (ds.id) {
-              supabase.from('staff').delete().eq('id', ds.id).then(() => {}, () => {});
-            }
-          });
-        }
-      }
-
-      // 4. Fetch Shifts
-      const { data: shiftRows, error: shiftErr } = await supabase.from('shifts').select('*');
-      if (!shiftErr && shiftRows && shiftRows.length > 0) {
-        const cleanShifts = shiftRows.map(shiftFromRow).filter(sh => !isDemoRecord(sh));
-        setShifts(cleanShifts);
-      }
-
-      // 5. Fetch Messages
-      const { data: msgRows, error: msgErr } = await supabase.from('messages').select('*').order('created_at', { ascending: false });
-      if (!msgErr && msgRows && msgRows.length > 0) {
-        const cleanMessages = msgRows.map(messageFromRow).filter(m => !isDemoRecord(m));
-        setMessages(cleanMessages);
-      }
-
-      // 6. Fetch Activity Logs
-      const { data: logRows, error: logErr } = await supabase.from('activity_logs').select('*').order('created_at', { ascending: false });
-      if (!logErr && logRows && logRows.length > 0) {
-        setActivityLogs(logRows.map(activityLogFromRow).filter(l => !isDemoRecord(l)));
-      }
-
-      // 7. Fetch Community Events
-      const { data: eventRows, error: evtErr } = await supabase.from('community_events').select('*');
-      if (!evtErr && eventRows) {
-        setEvents(eventRows.map(eventFromRow).filter(e => !isDemoRecord(e)));
-
-        // Clean any demo events from Supabase table
-        const demoEvts = eventRows.filter(isDemoRecord);
-        if (demoEvts.length > 0) {
-          demoEvts.forEach(de => {
-            if (de.id) {
-              supabase.from('community_events').delete().eq('id', de.id).then(() => {}, () => {});
-            }
-          });
-        }
-      } else {
-        try {
-          const evRes = await fetch('/api/events');
-          if (evRes.ok) {
-            const evData = await evRes.json();
-            if (Array.isArray(evData)) {
-              setEvents(evData.filter((e: any) => !isDemoRecord(e)));
-            }
-          }
-        } catch (evErr) {
-          console.warn('Events fallback fetch notice:', evErr);
-        }
-      }
-
-      // 8. Fetch Job Vacancies
-      const { data: jobRows, error: jobErr } = await supabase.from('job_vacancies').select('*');
-      if (!jobErr && jobRows && jobRows.length > 0) {
-        setJobs(jobRows.map(jobFromRow));
-      }
-
-      // 9. Fetch Gallery Items
-      const { data: galRows, error: galErr } = await supabase.from('gallery_items').select('*');
-      if (!galErr && galRows && galRows.length > 0) {
-        setGalleryItems(galRows.map(galleryFromRow));
-      }
-
-      // 10. Fetch Applications
-      const { data: appRows, error: appErr } = await supabase.from('applications').select('*');
-      if (!appErr && appRows && appRows.length > 0) {
-        setApplications(appRows.map(applicationFromRow));
-      }
-
-      // 11. Fetch Consultation Bookings
-      const { data: cbRows, error: cbErr } = await supabase.from('consultation_bookings').select('*');
-      if (!cbErr && cbRows && cbRows.length > 0) {
-        setConsultationBookings(cbRows.map(consultationFromRow));
-      }
-    } catch (err) {
-      console.warn('Note on Supabase tables fetch:', err);
-    } finally {
-      isFetchingRef.current = false;
-    }
+    return Promise.resolve();
   }, []);
 
-  // Primary Firestore Real-time Sync & Initialization across all devices
+  // ============================================================================
+  // CLOUD FIRESTORE REAL-TIME SYNCHRONIZATION
+  // Synchronizes collections in real time with local state & localStorage backup
+  // ============================================================================
   useEffect(() => {
-    const unsubList: (() => void)[] = [];
+    if (!db) return;
 
-    const initFirestore = async () => {
+    const unsubs: (() => void)[] = [];
+
+    // Helper to safely bind Firestore collection listeners
+    const bindCollection = <T,>(colName: string, setter: React.Dispatch<React.SetStateAction<T[]>>) => {
       try {
-        // Real-time Users
-        const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+        const unsubscribe = onSnapshot(collection(db, colName), (snapshot) => {
           if (!snapshot.empty) {
-            const fsUsers: User[] = [];
-            snapshot.forEach(docSnap => {
-              const u = docSnap.data() as User;
-              if (!isDemoRecord(u) && !isDemoRecord({ id: docSnap.id })) {
-                fsUsers.push({ ...u, id: docSnap.id });
-              } else {
-                // Auto purge demo user doc from Firestore
-                deleteDoc(doc(db, 'users', docSnap.id)).catch(() => {});
-              }
-            });
-            setUsers(prev => {
-              const map = new Map<string, User>();
-              INITIAL_USERS.forEach(u => {
-                if (u?.email) map.set(u.email.toLowerCase(), u);
-              });
-              prev.filter(u => !isDemoRecord(u)).forEach(u => {
-                if (u?.email) map.set(u.email.toLowerCase(), u);
-              });
-              fsUsers.forEach(u => {
-                if (u?.email) map.set(u.email.toLowerCase(), u);
-              });
+            const rawItems = snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as T[];
+            const items = rawItems.filter(item => !isDemoRecord(item));
+            setter(prev => {
+              const map = new Map<string, T>();
+              prev.forEach((item: any) => { if (item.id && !isDemoRecord(item)) map.set(item.id, item); });
+              items.forEach((item: any) => { if (item.id && !isDemoRecord(item)) map.set(item.id, item); });
               return Array.from(map.values());
             });
           }
-        }, (err) => handleFirestoreError(err, OperationType.LIST, 'users'));
-        unsubList.push(unsubUsers);
-
-        // Real-time Staff
-        const unsubStaff = onSnapshot(collection(db, 'staff'), (snapshot) => {
-          if (!snapshot.empty) {
-            const fsStaff: StaffMember[] = [];
-            snapshot.forEach(docSnap => {
-              const s = docSnap.data() as StaffMember;
-              if (!isDemoRecord(s) && !isDemoRecord({ id: docSnap.id })) {
-                fsStaff.push({ ...s, id: docSnap.id });
-              } else {
-                // Auto purge demo staff doc from Firestore
-                deleteDoc(doc(db, 'staff', docSnap.id)).catch(() => {});
-              }
-            });
-            setStaff(fsStaff);
-          }
-        }, (err) => handleFirestoreError(err, OperationType.LIST, 'staff'));
-        unsubList.push(unsubStaff);
-
-        // Real-time Residents
-        const unsubResidents = onSnapshot(collection(db, 'residents'), (snapshot) => {
-          if (!snapshot.empty) {
-            const fsResidents: Resident[] = [];
-            snapshot.forEach(docSnap => {
-              const r = docSnap.data() as Resident;
-              if (!isDemoRecord(r) && !isDemoRecord({ id: docSnap.id })) {
-                fsResidents.push({ ...r, id: docSnap.id });
-              } else {
-                // Auto purge demo resident doc from Firestore
-                deleteDoc(doc(db, 'residents', docSnap.id)).catch(() => {});
-              }
-            });
-            setResidents(fsResidents);
-          }
-        }, (err) => handleFirestoreError(err, OperationType.LIST, 'residents'));
-        unsubList.push(unsubResidents);
-
-        // Real-time Shifts
-        const unsubShifts = onSnapshot(collection(db, 'shifts'), (snapshot) => {
-          if (!snapshot.empty) {
-            const fsShifts: Shift[] = [];
-            snapshot.forEach(docSnap => {
-              const sh = docSnap.data() as Shift;
-              if (!isDemoRecord(sh) && !isDemoRecord({ id: docSnap.id })) {
-                fsShifts.push({ ...sh, id: docSnap.id });
-              } else {
-                deleteDoc(doc(db, 'shifts', docSnap.id)).catch(() => {});
-              }
-            });
-            setShifts(fsShifts);
-          }
-        }, (err) => handleFirestoreError(err, OperationType.LIST, 'shifts'));
-        unsubList.push(unsubShifts);
-
-        // Real-time Messages
-        const unsubMessages = onSnapshot(collection(db, 'messages'), (snapshot) => {
-          if (!snapshot.empty) {
-            const fsMessages: Message[] = [];
-            snapshot.forEach(docSnap => {
-              const m = docSnap.data() as Message;
-              if (!isDemoRecord(m) && !isDemoRecord({ id: docSnap.id })) {
-                fsMessages.push({ ...m, id: docSnap.id });
-              } else {
-                deleteDoc(doc(db, 'messages', docSnap.id)).catch(() => {});
-              }
-            });
-            setMessages(fsMessages.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || '')));
-          }
-        }, (err) => handleFirestoreError(err, OperationType.LIST, 'messages'));
-        unsubList.push(unsubMessages);
-
-        // Real-time Activity Logs
-        const unsubLogs = onSnapshot(collection(db, 'activity_logs'), (snapshot) => {
-          if (!snapshot.empty) {
-            const fsLogs: ActivityLog[] = [];
-            snapshot.forEach(docSnap => {
-              const l = docSnap.data() as ActivityLog;
-              if (!isDemoRecord(l) && !isDemoRecord({ id: docSnap.id })) {
-                fsLogs.push({ ...l, id: docSnap.id });
-              } else {
-                deleteDoc(doc(db, 'activity_logs', docSnap.id)).catch(() => {});
-              }
-            });
-            setActivityLogs(fsLogs.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || '')));
-          }
-        }, (err) => handleFirestoreError(err, OperationType.LIST, 'activity_logs'));
-        unsubList.push(unsubLogs);
-
-        // Ensure Admin accounts are in Firestore
-        const uSnap = await getDocs(collection(db, 'users'));
-        if (uSnap.empty) {
-          for (const u of INITIAL_USERS) {
-            await setDoc(doc(db, 'users', u.id), sanitizeForFirestore(u), { merge: true });
-          }
-        }
-      } catch (fsErr) {
-        console.warn('Firestore initial setup notice:', fsErr);
-      } finally {
-        setIsAuthLoading(false);
+        }, (err) => {
+          console.warn(`Firestore listener note for ${colName}:`, err.message);
+        });
+        unsubs.push(unsubscribe);
+      } catch (e) {
+        console.warn(`Could not attach Firestore listener for ${colName}:`, e);
       }
     };
 
-    initFirestore();
-    fetchSupabaseData();
-
-    // Supabase Realtime subscription for automatic live synchronization
-    const realtimeChannel = supabase
-      .channel('public-db-live-sync')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public' },
-        () => {
-          fetchSupabaseData();
-        }
-      )
-      .subscribe();
-
-    // Silent background live sync interval every 10 seconds to guarantee fresh state
-    const autoSyncInterval = setInterval(() => {
-      fetchSupabaseData();
-    }, 10000);
-
-    // Check server fallback for users/staff
-    fetch('/api/users')
-      .then(res => res.json())
-      .then((serverUsers: User[]) => {
-        if (Array.isArray(serverUsers) && serverUsers.length > 0) {
-          setUsers(prev => {
-            const map = new Map<string, User>();
-            prev.forEach(u => {
-              if (u?.email) map.set(u.email.toLowerCase(), u);
-            });
-            serverUsers.filter(u => !isDemoRecord(u)).forEach(u => {
-              if (u?.email) map.set(u.email.toLowerCase(), u);
-            });
-            return Array.from(map.values());
-          });
-        }
-      })
-      .catch(() => {});
+    bindCollection('residents', setResidents);
+    bindCollection('staff', setStaff);
+    bindCollection('shifts', setShifts);
+    bindCollection('messages', setMessages);
+    bindCollection('activity_logs', setActivityLogs);
+    bindCollection('consultations', setConsultationBookings);
+    bindCollection('events', setEvents);
+    bindCollection('applications', setApplications);
+    bindCollection('users', setUsers);
 
     return () => {
-      unsubList.forEach(fn => fn());
-      supabase.removeChannel(realtimeChannel);
-      clearInterval(autoSyncInterval);
+      unsubs.forEach(unsub => {
+        try { unsub(); } catch {}
+      });
     };
-  }, [fetchSupabaseData]);
+  }, []);
 
-  // Supabase Auth Listener & Initial Session
+  // Listen to Firebase Authentication state
   useEffect(() => {
-    const initAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          const userEmail = session.user.email?.toLowerCase().trim() || '';
-          
-          // 1. Try finding profile by user id
-          let profile = null;
-          if (isValidUUID(session.user.id)) {
-            const { data: byId } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', session.user.id)
-              .maybeSingle();
-            profile = byId;
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser?.email) {
+        const cleanEmail = firebaseUser.email.toLowerCase();
+        setUsers(prev => {
+          const match = prev.find(u => (u?.email || '').toLowerCase() === cleanEmail) ||
+                        INITIAL_USERS.find(u => (u?.email || '').toLowerCase() === cleanEmail);
+          if (match) {
+            setCurrentUser(prevUser => prevUser ? prevUser : match);
           }
-
-          // 2. Try finding profile by email if not found by id
-          if (!profile && userEmail) {
-            const { data: byEmail } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('email', userEmail)
-              .maybeSingle();
-            profile = byEmail;
-          }
-
-          if (profile) {
-            const authedUser = profileToUser(profile);
-            setCurrentUser(authedUser);
-          } else {
-            // Determine accurate role based on known admin accounts or metadata
-            const localMatch = INITIAL_USERS.find(u => (u?.email || '').toLowerCase() === userEmail);
-            const meta = session.user.user_metadata || {};
-            const isAdmin = userEmail.includes('admin') || userEmail === 'samanthasappy@gmail.com' || userEmail === 'admin@samanthasappy.com' || userEmail === 'itopaprop@gmail.com';
-            const role: UserRole = (meta.role as UserRole) || localMatch?.role || (isAdmin ? 'Admin' : 'Staff');
-            
-            const fallbackUser: User = {
-              id: session.user.id,
-              name: meta.name || localMatch?.name || session.user.email?.split('@')[0] || 'User',
-              email: userEmail,
-              phone: meta.phone || localMatch?.phone || '',
-              role,
-              position: meta.position || localMatch?.position,
-              avatar: meta.avatar || localMatch?.avatar,
-            };
-            setCurrentUser(fallbackUser);
-            Promise.resolve(supabase.from('profiles').upsert(userToProfile(fallbackUser), { onConflict: 'email' })).catch(() => {});
-          }
-        }
-      } catch (err) {
-        console.warn('Auth session check notice:', err);
-      } finally {
-        setIsAuthLoading(false);
+          return prev;
+        });
       }
-    };
-
-    initAuth();
-    fetchSupabaseData();
-
-    // Listen for auth state changes
-    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        const userEmail = session.user.email?.toLowerCase().trim() || '';
-        
-        let profile = null;
-        if (isValidUUID(session.user.id)) {
-          const { data: byId } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
-          profile = byId;
-        }
-
-        if (!profile && userEmail) {
-          const { data: byEmail } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('email', userEmail)
-            .maybeSingle();
-          profile = byEmail;
-        }
-
-        if (profile) {
-          const authedUser = profileToUser(profile);
-          // Prevent accidental downgrade if current user was explicitly Admin
-          setCurrentUser(prev => {
-            if (prev && prev.role === 'Admin' && authedUser.role !== 'Admin' && event === 'TOKEN_REFRESHED') {
-              return prev;
-            }
-            return authedUser;
-          });
-        } else {
-          const localMatch = INITIAL_USERS.find(u => (u?.email || '').toLowerCase() === userEmail);
-          const meta = session.user.user_metadata || {};
-          const isAdmin = userEmail.includes('admin') || userEmail === 'samanthasappy@gmail.com' || userEmail === 'admin@samanthasappy.com' || userEmail === 'itopaprop@gmail.com';
-          const role: UserRole = (meta.role as UserRole) || localMatch?.role || (isAdmin ? 'Admin' : 'Staff');
-          
-          const fallbackUser: User = {
-            id: session.user.id,
-            name: meta.name || localMatch?.name || session.user.email?.split('@')[0] || 'User',
-            email: userEmail,
-            phone: meta.phone || localMatch?.phone || '',
-            role,
-            position: meta.position || localMatch?.position,
-            avatar: meta.avatar || localMatch?.avatar,
-          };
-          setCurrentUser(prev => {
-            if (prev && prev.role === 'Admin' && role !== 'Admin' && event === 'TOKEN_REFRESHED') {
-              return prev;
-            }
-            return fallbackUser;
-          });
-          Promise.resolve(supabase.from('profiles').upsert(userToProfile(fallbackUser), { onConflict: 'email' })).catch(() => {});
-        }
-      } else if (event === 'SIGNED_OUT') {
-        setCurrentUser(null);
-      }
+      setIsAuthLoading(false);
     });
 
-    // Realtime Postgres Changes Subscription
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
-        Promise.resolve(supabase.from('messages').select('*').order('created_at', { ascending: false }))
-          .then(({ data }) => {
-            if (data) setMessages(data.map(messageFromRow));
-          })
-          .catch(() => {});
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'residents' }, () => {
-        Promise.resolve(supabase.from('residents').select('*'))
-          .then(({ data }) => {
-            if (data) setResidents(data.map(residentFromRow));
-          })
-          .catch(() => {});
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, () => {
-        Promise.resolve(supabase.from('staff').select('*'))
-          .then(({ data }) => {
-            if (data) setStaff(data.map(staffFromRow));
-          })
-          .catch(() => {});
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shifts' }, () => {
-        Promise.resolve(supabase.from('shifts').select('*'))
-          .then(({ data }) => {
-            if (data) setShifts(data.map(shiftFromRow));
-          })
-          .catch(() => {});
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'applications' }, () => {
-        Promise.resolve(supabase.from('applications').select('*'))
-          .then(({ data }) => {
-            if (data) setApplications(data.map(applicationFromRow));
-          })
-          .catch(() => {});
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'consultation_bookings' }, () => {
-        Promise.resolve(supabase.from('consultation_bookings').select('*'))
-          .then(({ data }) => {
-            if (data) setConsultationBookings(data.map(consultationFromRow));
-          })
-          .catch(() => {});
-      })
-      .subscribe();
-
-    return () => {
-      authSub.unsubscribe();
-      supabase.removeChannel(channel);
-    };
-  }, [fetchSupabaseData]);
+    return () => unsubscribe();
+  }, []);
 
   // ============================================================================
   // AUTHENTICATION METHODS
@@ -1018,260 +505,108 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // 1. Try Supabase Auth SignIn first if password provided
-    if (cleanPassword) {
-      try {
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password: cleanPassword,
-        });
-
-        if (!authError && authData.user) {
-          // Check profile role in Supabase
-          let profile = null;
-          if (isValidUUID(authData.user.id)) {
-            const { data: byId } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', authData.user.id)
-              .maybeSingle();
-            profile = byId;
-          }
-
-          if (!profile) {
-            const { data: byEmail } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('email', cleanEmail)
-              .maybeSingle();
-            profile = byEmail;
-          }
-
-          if (profile) {
-            const userProfile = profileToUser(profile);
-            const normUserProfileRole = userProfile.role === 'Resident Relative' || userProfile.role.toLowerCase().includes('relat') ? 'Resident Relative' : userProfile.role === 'Staff' || userProfile.role.toLowerCase().includes('staff') || userProfile.role.toLowerCase().includes('caregiver') ? 'Staff' : 'Admin';
-            const normSelectedRole = role === 'Resident Relative' || role.toLowerCase().includes('relat') ? 'Resident Relative' : role === 'Staff' || role.toLowerCase().includes('staff') || role.toLowerCase().includes('caregiver') ? 'Staff' : 'Admin';
-            
-            if (normUserProfileRole !== normSelectedRole) {
-              await supabase.auth.signOut();
-              showToast(`Access Denied: Account role '${userProfile.role}' cannot log in via the ${role} portal.`);
-              return false;
-            }
-            setCurrentUser(userProfile);
-            setCurrentPage('dashboard');
-            showToast(`Welcome back, ${userProfile.name}! Signed in to ${userProfile.role} Portal.`);
-            return true;
-          }
-        }
-      } catch (err) {
-        console.warn('Supabase Auth remote sign-in notice:', err);
-      }
+    if (!cleanPassword) {
+      showToast('Please enter your account password.');
+      return false;
     }
 
-    // 2. Fetch from local state
-    let targetUser = users.find(u => u.email?.trim().toLowerCase() === cleanEmail);
-
-    // 3. Query Firestore 'users' collection directly in case of cross-device registration
-    if (!targetUser) {
-      try {
-        const qUser = query(collection(db, 'users'), where('email', '==', cleanEmail));
-        const snapUser = await getDocs(qUser);
-        if (!snapUser.empty) {
-          targetUser = snapUser.docs[0].data() as User;
-          if (!targetUser.id) targetUser.id = snapUser.docs[0].id;
-          setUsers(prev => {
-            const exists = prev.some(u => (u?.email || '').toLowerCase() === cleanEmail);
-            return exists ? prev.map(u => (u?.email || '').toLowerCase() === cleanEmail ? targetUser! : u) : [...prev, targetUser!];
-          });
-        }
-      } catch (err) {
-        console.warn('Firestore users lookup note:', err);
-      }
-    }
-
-    // 4. Query Firestore 'staff' collection in case user was registered as staff
-    if (!targetUser) {
-      try {
-        const qStaff = query(collection(db, 'staff'), where('email', '==', cleanEmail));
-        const snapStaff = await getDocs(qStaff);
-        if (!snapStaff.empty) {
-          const staffMember = snapStaff.docs[0].data() as StaffMember;
-          targetUser = {
-            id: snapStaff.docs[0].id || staffMember.id,
-            name: staffMember.name,
-            email: staffMember.email,
-            phone: staffMember.phone,
-            role: 'Staff',
-            position: staffMember.position,
-            avatar: staffMember.avatar,
-            password: '@staff123',
-          };
-          setDoc(doc(db, 'users', targetUser.id), sanitizeForFirestore(targetUser), { merge: true }).catch(() => {});
-          setUsers(prev => [...prev.filter(u => (u?.email || '').toLowerCase() !== cleanEmail), targetUser!]);
-        }
-      } catch (err) {
-        console.warn('Firestore staff lookup note:', err);
-      }
-    }
-
-    // 4b. Query Firestore 'residents' collection in case user is relative
-    if (!targetUser) {
-      try {
-        const qRes = query(collection(db, 'residents'), where('relativeEmail', '==', cleanEmail));
-        const snapRes = await getDocs(qRes);
-        if (!snapRes.empty) {
-          const resData = snapRes.docs[0].data() as any;
-          targetUser = {
-            id: `usr_rel_${snapRes.docs[0].id}`,
-            name: resData.relativeName || resData.emergencyContact?.name || `Relative of ${resData.fullName}`,
-            email: cleanEmail,
-            phone: resData.relativePhone || resData.emergencyContact?.phone || '',
-            role: 'Resident Relative',
-            relationship: resData.relativeRelationship || resData.emergencyContact?.relationship || 'Next of Kin',
-            residentLinkedId: snapRes.docs[0].id,
-            password: '@relative123',
-            avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-          };
-          setDoc(doc(db, 'users', targetUser.id), sanitizeForFirestore(targetUser), { merge: true }).catch(() => {});
-          setUsers(prev => [...prev.filter(u => (u?.email || '').toLowerCase() !== cleanEmail), targetUser!]);
-        }
-      } catch (err) {
-        console.warn('Firestore residents lookup note:', err);
-      }
-    }
-
-    // 5. Query Supabase 'profiles' or 'staff' table
-    if (!targetUser) {
-      try {
-        const { data: profileRow } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('email', cleanEmail)
-          .maybeSingle();
-        if (profileRow) {
-          targetUser = profileToUser(profileRow);
-          setUsers(prev => [...prev.filter(u => (u?.email || '').toLowerCase() !== cleanEmail), targetUser!]);
-        } else {
-          const { data: staffRow } = await supabase
-            .from('staff')
-            .select('*')
-            .eq('email', cleanEmail)
-            .maybeSingle();
-          if (staffRow) {
-            const sm = staffFromRow(staffRow);
-            targetUser = {
-              id: sm.id,
-              name: sm.name,
-              email: sm.email,
-              phone: sm.phone,
-              role: 'Staff',
-              position: sm.position,
-              avatar: sm.avatar,
-              password: '@staff123',
-            };
-            setUsers(prev => [...prev.filter(u => (u?.email || '').toLowerCase() !== cleanEmail), targetUser!]);
-          }
-        }
-      } catch (err) {
-        console.warn('Direct profile lookup exception:', err);
-      }
-    }
-
-    // 6. Query Server fallback REST endpoint
-    if (!targetUser) {
-      try {
-        const res = await fetch('/api/users');
-        if (res.ok) {
-          const serverUsers: User[] = await res.json();
-          const match = serverUsers.find(u => (u?.email || '').toLowerCase() === cleanEmail);
-          if (match) {
-            targetUser = match;
-            setDoc(doc(db, 'users', targetUser.id), sanitizeForFirestore(targetUser), { merge: true }).catch(() => {});
-            setUsers(prev => [...prev.filter(u => (u?.email || '').toLowerCase() !== cleanEmail), targetUser!]);
-          }
-        }
-      } catch (err) {
-        console.warn('Server user fallback fetch note:', err);
-      }
-    }
-
-    // 7. Initial Seed Users match
+    // 1. Locate target user profile in memory/localStorage or seeded initial users
+    let targetUser = users.find(u => (u?.email || '').trim().toLowerCase() === cleanEmail);
     if (!targetUser) {
       const initMatch = INITIAL_USERS.find(u => (u?.email || '').toLowerCase() === cleanEmail);
       if (initMatch) targetUser = initMatch;
     }
 
-    if (!targetUser) {
-      showToast(`Login Failed: No registered account found for '${cleanEmail}'. Please check spelling or contact management.`);
-      return false;
-    }
+    // 2. Strict Role Enforcement check against the selected login portal tab
+    if (targetUser) {
+      const normTargetRole = targetUser.role === 'Resident Relative' || targetUser.role.toLowerCase().includes('relat') ? 'Resident Relative' : targetUser.role === 'Staff' || targetUser.role.toLowerCase().includes('staff') || targetUser.role.toLowerCase().includes('caregiver') ? 'Staff' : 'Admin';
+      const normSelectedRole = role === 'Resident Relative' || role.toLowerCase().includes('relat') ? 'Resident Relative' : role === 'Staff' || role.toLowerCase().includes('staff') || role.toLowerCase().includes('caregiver') ? 'Staff' : 'Admin';
 
-    // 8. Strict Role Enforcement check with resilient normalization
-    const normTargetRole = targetUser.role === 'Resident Relative' || targetUser.role.toLowerCase().includes('relat') ? 'Resident Relative' : targetUser.role === 'Staff' || targetUser.role.toLowerCase().includes('staff') || targetUser.role.toLowerCase().includes('caregiver') ? 'Staff' : 'Admin';
-    const normSelectedRole = role === 'Resident Relative' || role.toLowerCase().includes('relat') ? 'Resident Relative' : role === 'Staff' || role.toLowerCase().includes('staff') || role.toLowerCase().includes('caregiver') ? 'Staff' : 'Admin';
-
-    if (normTargetRole !== normSelectedRole) {
-      const roleLabel = targetUser.role === 'Resident Relative' ? 'Relative' : targetUser.role;
-      showToast(`Access Denied: '${targetUser.email}' is registered as a ${targetUser.role} account. Please select the '${roleLabel}' tab above.`);
-      return false;
-    }
-
-    // 9. Validate Password against stored password, generated temp credentials, or role default passwords
-    let expectedPassword = targetUser.password ? targetUser.password.trim() : '';
-    const defaultRolePasswords: string[] = [
-      'CareTeam@2025!',
-      targetUser.role === 'Admin' ? '@samantha' : targetUser.role === 'Staff' ? '@staff123' : '@relative123',
-      targetUser.role === 'Admin' ? 'samantha' : targetUser.role === 'Staff' ? 'staff123' : 'relative123',
-    ];
-
-    const normalizePass = (p: string) => p.replace(/^[@#!]+/, '').trim().toLowerCase();
-
-    let isPasswordValid = false;
-    if (!cleanPassword && !expectedPassword) {
-      isPasswordValid = true;
-    } else if (cleanPassword) {
-      if (expectedPassword && (cleanPassword === expectedPassword || normalizePass(cleanPassword) === normalizePass(expectedPassword))) {
-        isPasswordValid = true;
-      } else if (defaultRolePasswords.some(dp => cleanPassword === dp || normalizePass(cleanPassword) === normalizePass(dp))) {
-        isPasswordValid = true;
-      } else if (!expectedPassword) {
-        // If account had no explicit password stored, save this password for future sessions
-        isPasswordValid = true;
-        targetUser.password = cleanPassword;
-        setDoc(doc(db, 'users', targetUser.id), { password: cleanPassword }, { merge: true }).catch(() => {});
+      if (normTargetRole !== normSelectedRole) {
+        const roleLabel = targetUser.role === 'Resident Relative' ? 'Relative' : targetUser.role;
+        showToast(`Access Denied: '${targetUser.email}' is registered as a ${targetUser.role} account. Please select the '${roleLabel}' tab above.`);
+        return false;
       }
     }
 
-    if (!isPasswordValid) {
-      showToast(`Login Failed: Incorrect password entered for ${cleanEmail}.`);
-      return false;
-    }
+    // 3. Primary Authentication with Firebase Authentication
+    let firebaseAuthenticated = false;
+    try {
+      const userCredential = await firebaseSignInWithEmail(cleanEmail, cleanPassword);
+      if (userCredential && userCredential.user) {
+        firebaseAuthenticated = true;
+      }
+    } catch (fbErr: any) {
+      const code = fbErr?.code || '';
+      console.warn('Firebase Auth sign in notice:', code, fbErr?.message);
 
-    // Auto-sync account into Supabase Auth (auth.users) if it wasn't registered there previously
-    if (cleanPassword) {
-      try {
-        await ephemeralAuthClient.auth.signUp({
-          email: cleanEmail,
-          password: cleanPassword,
-          options: {
-            data: {
-              name: targetUser.name,
-              role: targetUser.role,
-              phone: targetUser.phone || '',
-              avatar: targetUser.avatar || '',
+      // If user exists in the app (e.g. admin or staff/relative registered by admin),
+      // verify their password and provision their account into Firebase Auth if not created yet
+      if (targetUser && (code === 'auth/user-not-found' || code === 'auth/invalid-credential')) {
+        const expectedPassword = targetUser.password ? targetUser.password.trim() : '';
+        const defaultRolePasswords: string[] = [
+          'CareTeam@2025!',
+          targetUser.role === 'Admin' ? '@samantha' : targetUser.role === 'Staff' ? '@staff123' : '@relative123',
+          targetUser.role === 'Admin' ? 'samantha' : targetUser.role === 'Staff' ? 'staff123' : 'relative123',
+        ];
+        const normalizePass = (p: string) => p.replace(/^[@#!]+/, '').trim().toLowerCase();
+
+        const matchesLocal = (expectedPassword && (cleanPassword === expectedPassword || normalizePass(cleanPassword) === normalizePass(expectedPassword))) ||
+          defaultRolePasswords.some(dp => cleanPassword === dp || normalizePass(cleanPassword) === normalizePass(dp));
+
+        if (matchesLocal) {
+          try {
+            const provResult = await createFirebaseUserByAdmin(cleanEmail, cleanPassword, targetUser.name);
+            if (provResult.success || provResult.alreadyExists) {
+              const retryCred = await firebaseSignInWithEmail(cleanEmail, cleanPassword);
+              if (retryCred && retryCred.user) {
+                firebaseAuthenticated = true;
+              }
             }
+          } catch (provErr) {
+            console.warn('Firebase Auth auto-provision notice:', provErr);
           }
-        });
-      } catch (authSyncErr) {
-        console.warn('Supabase Auth auto-sync notice:', authSyncErr);
+        }
+      }
+
+      if (!firebaseAuthenticated) {
+        if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+          showToast(`Login Failed: Incorrect password entered for ${cleanEmail}.`);
+          return false;
+        } else if (code === 'auth/user-not-found') {
+          showToast(`Login Failed: No account found for '${cleanEmail}'. Please contact the administrator.`);
+          return false;
+        } else if (code === 'auth/too-many-requests') {
+          showToast('Access temporarily blocked due to multiple failed attempts. Please try again shortly.');
+          return false;
+        } else if (code === 'auth/user-disabled') {
+          showToast('This account has been disabled. Please contact the administrator.');
+          return false;
+        } else {
+          showToast(`Login Failed: ${fbErr?.message || 'Invalid credentials'}`);
+          return false;
+        }
       }
     }
 
-    // Grant Access and ensure profile in Supabase & Firestore is synced
+    if (!targetUser) {
+      targetUser = {
+        id: auth.currentUser?.uid || `usr_${Date.now()}`,
+        name: auth.currentUser?.displayName || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        phone: '',
+        role: role,
+        password: cleanPassword,
+      };
+      setUsers(prev => [...prev, targetUser!]);
+    }
+
+    // Grant access
     setCurrentUser(targetUser);
     setCurrentPage('dashboard');
-    setDoc(doc(db, 'users', targetUser.id), sanitizeForFirestore(targetUser), { merge: true }).catch(() => {});
-    Promise.resolve(supabase.from('profiles').upsert(userToProfile(targetUser), { onConflict: 'email' })).catch(() => {});
+    try {
+      localStorage.setItem('shh_last_activity', String(Date.now()));
+    } catch {}
     showToast(`Welcome back, ${targetUser.name}! Signed in to ${targetUser.role} Portal.`);
     return true;
   };
@@ -1279,6 +614,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const signUpUser = async (email: string, password: string, name: string, role: UserRole, extra?: Partial<User>): Promise<boolean> => {
     try {
       const cleanEmail = email.trim().toLowerCase();
+      const cleanPhone = extra?.phone?.trim() || '';
+
+      // Check if user already exists by email or phone
+      const duplicateUser = users.find(u => 
+        areEmailsEqual(u.email, cleanEmail) || 
+        (cleanPhone && arePhonesEqual(u.phone, cleanPhone))
+      );
+      if (duplicateUser) {
+        showToast(`Registration prevented: An account with this email (${cleanEmail}) or phone number is already registered.`);
+        return false;
+      }
+
       const userUUID = generateUUID();
 
       let supabaseUserId = userUUID;
@@ -1311,6 +658,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         password,
         ...extra,
       };
+
+      // Provision account into Firebase Authentication
+      try {
+        await createFirebaseUserByAdmin(cleanEmail, password, name);
+      } catch (fbErr) {
+        console.warn('Firebase Auth user creation notice on signup:', fbErr);
+      }
 
       // Always save to Supabase profiles
       const { error: profErr } = await supabase.from('profiles').upsert(userToProfile(newUser), { onConflict: 'email' });
@@ -1348,15 +702,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const resetPassword = async (email: string): Promise<boolean> => {
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
-      if (error) {
-        showToast(`Password Reset Error: ${error.message}`);
-        return false;
-      }
-      showToast('Password reset link sent to your registered email address.');
+      await resetFirebasePassword(email.trim().toLowerCase());
+      showToast('Password reset link sent to your registered email address via Firebase.');
       return true;
-    } catch (err: any) {
-      showToast('Password reset requested.');
+    } catch (fbErr: any) {
+      console.warn('Firebase reset password notice:', fbErr);
+      showToast('Password reset link requested. If registered, check your inbox.');
       return true;
     }
   };
@@ -1366,10 +717,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (matchedUser) {
       setCurrentUser(matchedUser);
       setCurrentPage('dashboard');
+      try {
+        localStorage.setItem('shh_last_activity', String(Date.now()));
+      } catch {}
       showToast(`Signed in to ${role} Portal as ${matchedUser.name}.`);
       return true;
     }
-    showToast(`No demo user profile found for role: ${role}`);
+    showToast(`No registered user profile found for role: ${role}`);
     return false;
   };
 
@@ -1378,6 +732,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (found) {
       setCurrentUser(found);
       setCurrentPage('dashboard');
+      try {
+        localStorage.setItem('shh_last_activity', String(Date.now()));
+      } catch {}
       showToast(`Switched active view role to ${found.name} (${role}).`);
     }
   };
@@ -1388,9 +745,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       console.warn('Sign out notice:', err);
     }
+    try {
+      await logoutFirebaseUser();
+    } catch (err) {
+      console.warn('Firebase sign out notice:', err);
+    }
     const targetPage: PageView = (typeof redirectPage === 'string' && redirectPage.trim() !== '') ? (redirectPage as PageView) : 'home';
     const message = (typeof customMessage === 'string' && customMessage.trim() !== '') ? customMessage : 'You have been signed out successfully.';
     setCurrentUser(null);
+    try {
+      localStorage.removeItem('shh_current_user');
+      localStorage.removeItem('shh_last_activity');
+    } catch {
+      // Ignore
+    }
     setCurrentPage(targetPage);
     showToast(message);
   };
@@ -1505,6 +873,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ============================================================================
 
   const addResident = async (residentData: Omit<Resident, 'id' | 'admissionDate'>) => {
+    const cleanName = residentData.fullName.trim().toLowerCase();
+    const cleanRelativePhone = residentData.emergencyContact?.phone?.trim() || '';
+
+    // STRICT DUPLICATE CHECK: Resident name & emergency contact phone
+    const duplicateResident = residents.find(r => 
+      r.fullName.trim().toLowerCase() === cleanName ||
+      (cleanRelativePhone && arePhonesEqual(r.emergencyContact?.phone, cleanRelativePhone))
+    );
+    if (duplicateResident) {
+      const msg = `Registration Blocked: A resident with this name (${residentData.fullName}) or emergency contact phone is already registered.`;
+      showToast(msg);
+      throw new Error(msg);
+    }
+
     const residentUUID = generateUUID();
 
     // 1. Upload Avatar if base64/data
@@ -1589,6 +971,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Edge Function relative registration note (falling back to client store):', edgeErr);
     }
 
+    const relativePassword = '@relative123';
     const newRelativeUser: User = {
       id: relativeUserId,
       name: residentData.emergencyContact.name || 'Relative of ' + newResident.fullName,
@@ -1597,9 +980,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       role: 'Resident Relative',
       relationship: residentData.emergencyContact.relationship || 'Next of Kin',
       residentLinkedId: newResident.id,
+      password: relativePassword,
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
     };
     setUsers(prev => [...prev, newRelativeUser]);
+
+    // Provision relative account into Firebase Authentication
+    try {
+      await createFirebaseUserByAdmin(relativeEmail.toLowerCase(), relativePassword, newRelativeUser.name);
+    } catch (fbRelErr) {
+      console.warn('Firebase Auth relative registration notice:', fbRelErr);
+    }
+
     setDoc(doc(db, 'users', newRelativeUser.id), sanitizeForFirestore(newRelativeUser), { merge: true }).catch(() => {});
     fetch('/api/users', {
       method: 'POST',
@@ -1692,6 +1084,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const linkedRelative = users.find(u => u.residentLinkedId === id || (target && u.name.toLowerCase().includes(target.fullName.toLowerCase())));
     const relativeEmail = linkedRelative?.email;
 
+    // Immediately purge all files from Supabase Storage (avatar and reference documents)
+    const storageFilesToDelete: (string | null | undefined)[] = [
+      target?.avatar,
+      linkedRelative?.avatar,
+      ...(target?.references?.map(r => r.photoUrl) || []),
+    ];
+    deleteMultipleFromStorage(storageFilesToDelete).catch(() => {});
+
     // 1. Instant optimistic update on Dashboard UI
     setResidents(prev => prev.filter(r => r.id !== id));
     if (linkedRelative) {
@@ -1736,6 +1136,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ============================================================================
 
   const addStaff = async (staffData: Omit<StaffMember, 'id' | 'joinDate' | 'assignedResidentsCount'>) => {
+    const cleanEmail = staffData.email.trim().toLowerCase();
+    const cleanPhone = staffData.phone.trim();
+
+    // STRICT DUPLICATE CHECK: email and phone against both staff and users
+    const duplicateStaff = staff.find(s => 
+      areEmailsEqual(s.email, cleanEmail) || arePhonesEqual(s.phone, cleanPhone)
+    );
+    const duplicateUser = users.find(u => 
+      areEmailsEqual(u.email, cleanEmail) || arePhonesEqual(u.phone, cleanPhone)
+    );
+
+    if (duplicateStaff || duplicateUser) {
+      const msg = `Registration Blocked: A staff member or user with this email (${cleanEmail}) or phone (${cleanPhone}) is already registered.`;
+      showToast(msg);
+      throw new Error(msg);
+    }
+
     const tempPassword = generateTempPassword();
     const staffUUID = generateUUID();
 
@@ -1758,7 +1175,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     const joinDate = new Date().toISOString().split('T')[0];
-    const cleanEmail = staffData.email.trim().toLowerCase();
 
     // 1. Call Privileged Supabase Edge Function to Create Auth Account, DB Profile & Dispatch Email
     let effectiveStaffUUID = staffUUID;
@@ -1808,6 +1224,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       password: tempPassword,
     };
     setUsers(prev => [...prev, newUser]);
+
+    // Provision staff account into Firebase Authentication
+    try {
+      await createFirebaseUserByAdmin(cleanEmail, tempPassword, newStaff.name);
+    } catch (fbStaffErr) {
+      console.warn('Firebase Auth staff registration notice:', fbStaffErr);
+    }
 
     // Save to Firestore and Server API immediately for all devices
     setDoc(doc(db, 'staff', newStaff.id), sanitizeForFirestore(newStaff), { merge: true }).catch(() => {});
@@ -1921,6 +1344,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetUser = users.find(u => u.id === id || (target?.email && (u?.email || '').toLowerCase() === target.email.toLowerCase()));
     const targetEmail = target?.email || targetUser?.email;
 
+    // Immediately purge all files from Supabase Storage (avatar & guarantor documents)
+    const storageFilesToDelete: (string | null | undefined)[] = [
+      target?.avatar,
+      targetUser?.avatar,
+      ...(target?.references?.map(r => r.photoUrl) || []),
+    ];
+    deleteMultipleFromStorage(storageFilesToDelete).catch(() => {});
+
     // 1. Instant optimistic update on Dashboard UI
     setStaff(prev => prev.filter(s => s.id !== id && (!targetEmail || (s?.email || '').toLowerCase() !== targetEmail.toLowerCase())));
     setUsers(prev => prev.filter(u => u.id !== id && (!targetEmail || (u?.email || '').toLowerCase() !== targetEmail.toLowerCase())));
@@ -1958,6 +1389,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (cleanEmail === 'samanthasappy@gmail.com' || cleanEmail === 'admin@samanthasappy.com' || cleanEmail === 'itopaprop@gmail.com') {
       showToast('Cannot delete the primary administrator account.');
       return false;
+    }
+
+    const targetUser = users.find(u => u.id === userId || (cleanEmail && (u.email || '').toLowerCase() === cleanEmail));
+    if (targetUser?.avatar) {
+      deleteFromStorage(targetUser.avatar).catch(() => {});
     }
 
     setUsers(prev => prev.filter(u => u.id !== userId && (!cleanEmail || (u?.email || '').toLowerCase() !== cleanEmail)));
@@ -2001,6 +1437,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const deduplicateDatabase = async (): Promise<{ success: boolean; removedCount: number; details: string[] }> => {
+    try {
+      showToast('Scanning database for duplicate registrations (email & phone)...');
+      const res = await fetch('/api/admin/deduplicate-database', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        const totalRemoved = (data.removedUsers || 0) + (data.removedStaff || 0) + (data.removedResidents || 0) + (data.removedApplications || 0);
+        if (totalRemoved > 0) {
+          showToast(`Cleanup complete: Removed ${totalRemoved} duplicate registration(s) (leaving 1 of each).`);
+        } else {
+          showToast('Database verified clean: No duplicate registrations found.');
+        }
+        await fetchSupabaseData();
+        return { success: true, removedCount: totalRemoved, details: data.details || [] };
+      } else {
+        showToast(`Deduplication notice: ${data.error || 'Server processing'}`);
+        return { success: false, removedCount: 0, details: [] };
+      }
+    } catch (err: any) {
+      showToast(`Deduplication notice: ${err?.message || 'Check connection'}`);
+      return { success: false, removedCount: 0, details: [] };
+    }
+  };
+
   const purgeAllDemoRecords = async (): Promise<{ success: boolean }> => {
     try {
       // 1. Instant local filter
@@ -2035,24 +1495,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       // Query Firestore collections for any remaining demo docs
-      const [resSnap, staffSnap] = await Promise.all([
-        getDocs(collection(db, 'residents')),
-        getDocs(collection(db, 'staff'))
-      ]);
-
-      resSnap.forEach(d => {
-        if (isDemoRecord(d.data()) || isDemoRecord({ id: d.id })) {
-          deleteDoc(doc(db, 'residents', d.id)).catch(() => {});
+      try {
+        const collectionsToScrub = ['residents', 'staff', 'shifts', 'messages', 'events', 'users', 'activity_logs'];
+        for (const colName of collectionsToScrub) {
+          try {
+            const snap = await getDocs(collection(db, colName));
+            snap.forEach(d => {
+              if (isDemoRecord(d.data()) || isDemoRecord({ id: d.id })) {
+                deleteDoc(doc(db, colName, d.id)).catch(() => {});
+              }
+            });
+          } catch (colErr) {
+            console.warn(`Firestore scrub notice for ${colName}:`, colErr);
+          }
         }
-      });
+      } catch (e) {
+        console.warn('Scrubbing Firestore demo docs notice:', e);
+      }
 
-      staffSnap.forEach(d => {
-        if (isDemoRecord(d.data()) || isDemoRecord({ id: d.id })) {
-          deleteDoc(doc(db, 'staff', d.id)).catch(() => {});
-        }
-      });
-
-      showToast('All demo records of staff and residents successfully deleted.');
+      showToast('All demo records successfully removed.');
       return { success: true };
     } catch (err: any) {
       console.warn('Purge demo error:', err);
@@ -2072,6 +1533,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: shiftUUID,
     };
     setShifts(prev => [newShift, ...prev]);
+
+    // Save to Firestore
+    setDoc(doc(db, 'shifts', newShift.id), sanitizeForFirestore(newShift), { merge: true }).catch(() => {});
 
     try {
       const { data: inserted } = await supabase
@@ -2093,6 +1557,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
     };
     setActivityLogs(prev => [newLog, ...prev]);
+    setDoc(doc(db, 'activity_logs', newLog.id), sanitizeForFirestore(newLog), { merge: true }).catch(() => {});
     try {
       await supabase.from('activity_logs').insert([activityLogToRow(newLog)]);
     } catch (err) {
@@ -2104,6 +1569,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateShift = async (id: string, updated: Partial<Shift>) => {
     setShifts(prev => prev.map(s => s.id === id ? { ...s, ...updated } : s));
+    setDoc(doc(db, 'shifts', id), sanitizeForFirestore(updated), { merge: true }).catch(() => {});
     try {
       await supabase.from('shifts').update(shiftToRow(updated)).eq('id', id);
     } catch (err) {
@@ -2114,6 +1580,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteShift = async (id: string) => {
     setShifts(prev => prev.filter(s => s.id !== id));
+    deleteDoc(doc(db, 'shifts', id)).catch(() => {});
     try {
       await supabase.from('shifts').delete().eq('id', id);
     } catch (err) {
@@ -2158,6 +1625,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           timestamp,
         };
         setMessages(prev => [newMsg, ccMsg, ...prev]);
+        setDoc(doc(db, 'messages', newMsg.id), sanitizeForFirestore(newMsg), { merge: true }).catch(() => {});
+        setDoc(doc(db, 'messages', ccMsg.id), sanitizeForFirestore(ccMsg), { merge: true }).catch(() => {});
 
         try {
           await supabase.from('messages').insert([messageToRow(newMsg), messageToRow(ccMsg)]);
@@ -2171,6 +1640,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setMessages(prev => [newMsg, ...prev]);
+    setDoc(doc(db, 'messages', newMsg.id), sanitizeForFirestore(newMsg), { merge: true }).catch(() => {});
     try {
       await supabase.from('messages').insert([messageToRow(newMsg)]);
     } catch (err) {
@@ -2181,6 +1651,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const markMessageAsRead = async (id: string) => {
     setMessages(prev => prev.map(m => m.id === id ? { ...m, isRead: true } : m));
+    updateDoc(doc(db, 'messages', id), { isRead: true }).catch(() => {});
     try {
       await supabase.from('messages').update({ is_read: true }).eq('id', id);
     } catch (err) {
@@ -2199,7 +1670,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteApplication = async (id: string) => {
+    const target = applications.find(a => a.id === id);
     setApplications(prev => prev.filter(a => a.id !== id));
+
+    // Immediately clean up application files from Supabase Storage
+    if (target) {
+      const filesToDelete = [
+        target.photoUrl,
+        target.receiptUrl,
+        ...(target.references?.map(r => r.photoUrl) || []),
+      ];
+      deleteMultipleFromStorage(filesToDelete).catch(() => {});
+    }
+
+    deleteDoc(doc(db, 'applications', id)).catch(() => {});
+    fetch(`/api/applications/${id}`, { method: 'DELETE' }).catch(() => {});
     try {
       await supabase.from('applications').delete().eq('id', id);
     } catch (err) {
@@ -2217,6 +1702,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString().split('T')[0],
     };
     setConsultationBookings(prev => [newBooking, ...prev]);
+
+    // Save to Firestore
+    setDoc(doc(db, 'consultations', newBooking.id), sanitizeForFirestore(newBooking), { merge: true }).catch(() => {});
 
     try {
       const { data: inserted } = await supabase
@@ -2250,6 +1738,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: eventUUID,
     };
     setEvents(prev => [newEvent, ...prev]);
+
+    // Save to Firestore
+    setDoc(doc(db, 'events', newEvent.id), sanitizeForFirestore(newEvent), { merge: true }).catch(() => {});
 
     // Save to server fallback cache
     fetch('/api/events', {
@@ -2315,7 +1806,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const target = events.find(e => e.id === id);
     setEvents(prev => prev.filter(e => e.id !== id));
 
-    // Delete from server fallback cache
+    // Immediately clean up event image from Supabase Storage
+    if (target?.imageUrl) {
+      deleteFromStorage(target.imageUrl).catch(() => {});
+    }
+
+    // Delete from server fallback cache & storage
     fetch(`/api/events/${id}`, {
       method: 'DELETE',
     }).catch(err => console.warn('Server event delete notice:', err));
@@ -2533,6 +2029,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteGalleryItem = async (id: string) => {
     const target = galleryItems.find(g => g.id === id);
     setGalleryItems(prev => prev.filter(g => g.id !== id));
+
+    // Immediately clean up image and video from Supabase Storage
+    if (target) {
+      deleteMultipleFromStorage([target.imageUrl, target.videoUrl]).catch(() => {});
+    }
+
+    // Call server backend gallery delete API
+    fetch(`/api/gallery/${id}`, { method: 'DELETE' }).catch(() => {});
+
     try {
       await supabase.from('gallery_items').delete().eq('id', id);
     } catch (err) {
@@ -2548,30 +2053,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ============================================================================
 
   const submitApplication = async (appData: Omit<ApplicationSubmission, 'id' | 'createdAt' | 'status'>): Promise<ApplicationSubmission> => {
+    const cleanEmail = (appData.email || '').trim().toLowerCase();
+    const cleanPhone = (appData.phone || '').trim();
+
+    // STRICT DUPLICATE CHECK: verify both email and phone to prevent duplicate applications or clash with staff
+    const existingApp = applications.find(a => 
+      areEmailsEqual(a.email, cleanEmail) || arePhonesEqual(a.phone, cleanPhone)
+    );
+    if (existingApp) {
+      const msg = `Duplicate Application Prevented: An application with this email (${cleanEmail}) or phone (${cleanPhone}) has already been submitted and is pending review.`;
+      showToast(msg);
+      throw new Error(msg);
+    }
+
+    if (appData.type === 'caregiver') {
+      const existingStaffOrUser = staff.find(s => areEmailsEqual(s.email, cleanEmail) || arePhonesEqual(s.phone, cleanPhone)) ||
+        users.find(u => areEmailsEqual(u.email, cleanEmail) || arePhonesEqual(u.phone, cleanPhone));
+      if (existingStaffOrUser) {
+        const msg = `Registration Prevented: A staff member or account with this email (${cleanEmail}) or phone (${cleanPhone}) already exists in the system.`;
+        showToast(msg);
+        throw new Error(msg);
+      }
+    }
+
     const appUUID = generateUUID();
     const createdAt = new Date().toISOString().replace('T', ' ').slice(0, 16);
 
-    // 1. Upload applicant photo to documents/avatars bucket
+    // 1. Upload applicant photo to documents/avatars bucket (resilient)
     let photoUrl = appData.photoUrl;
     if (appData.photoUrl?.startsWith('data:')) {
-      const { url } = await uploadToStorage('documents', 'applicants', appData.photoUrl, `${appUUID}_applicant.jpg`);
-      if (url) photoUrl = url;
+      try {
+        const { url } = await uploadToStorage('documents', 'applicants', appData.photoUrl, `${appUUID}_applicant.jpg`);
+        if (url) photoUrl = url;
+      } catch (uploadErr) {
+        console.warn('Applicant photo upload note (using raw preview):', uploadErr);
+      }
     }
 
-    // 2. Upload payment receipt to documents/receipts bucket
+    // 2. Upload payment receipt to documents/receipts bucket (resilient)
     let receiptUrl = appData.receiptUrl;
     if (appData.receiptUrl?.startsWith('data:')) {
-      const { url } = await uploadToStorage('documents', 'receipts', appData.receiptUrl, `${appUUID}_receipt.jpg`);
-      if (url) receiptUrl = url;
+      try {
+        const { url } = await uploadToStorage('documents', 'receipts', appData.receiptUrl, `${appUUID}_receipt.jpg`);
+        if (url) receiptUrl = url;
+      } catch (uploadErr) {
+        console.warn('Receipt upload note (using raw preview):', uploadErr);
+      }
     }
 
-    // 3. Upload reference/guarantor documents
+    // 3. Upload reference/guarantor documents (resilient)
+    const rawRefs = Array.isArray(appData.references) ? appData.references : [];
     const processedReferences = await Promise.all(
-      appData.references.map(async (ref, idx) => {
+      rawRefs.map(async (ref, idx) => {
         let refPhotoUrl = ref.photoUrl;
         if (ref.photoUrl?.startsWith('data:')) {
-          const { url } = await uploadToStorage('documents', 'guarantors', ref.photoUrl, `${appUUID}_ref_${idx + 1}.jpg`);
-          if (url) refPhotoUrl = url;
+          try {
+            const { url } = await uploadToStorage('documents', 'guarantors', ref.photoUrl, `${appUUID}_ref_${idx + 1}.jpg`);
+            if (url) refPhotoUrl = url;
+          } catch (uploadErr) {
+            console.warn('Ref photo upload note:', uploadErr);
+          }
         }
         return {
           ...ref,
@@ -2591,9 +2132,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'Received',
     };
 
+    // 4. Update local state immediately
     setApplications(prev => [newSubmission, ...prev]);
 
-    // Save to Supabase
+    // 5. Save to Firestore (real-time sync)
+    setDoc(doc(db, 'applications', newSubmission.id), sanitizeForFirestore(newSubmission), { merge: true }).catch((fsErr) => {
+      console.warn('Firestore application insert notice:', fsErr);
+    });
+
+    // 6. Save to Server API Cache
+    fetch('/api/applications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newSubmission),
+    }).catch((srvErr) => {
+      console.warn('Server application save notice:', srvErr);
+    });
+
+    // 7. Save to Supabase table
     try {
       const { data: inserted } = await supabase
         .from('applications')
@@ -2605,11 +2161,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Supabase application insert notice:', err);
     }
 
-    // Dispatch high-priority Message / Notification to Admin users
+    // 8. Dispatch high-priority Message / Notification to Admin users
     const adminUsers = users.filter(u => u.role === 'Admin');
-    const adminTargets = adminUsers.length > 0 
-      ? adminUsers 
-      : [{ id: 'usr-admin-1', name: 'Managing Director & Admin', email: 'samanthasappy@gmail.com', role: 'Admin' as UserRole }];
+    const knownAdmins: User[] = [
+      { id: 'usr-admin-1', name: 'Folasade Sanyaolu (MD)', email: 'samanthasappy@gmail.com', phone: '+2347069332193', role: 'Admin' },
+      { id: 'usr-admin-2', name: 'Folasade Sanyaolu (Admin)', email: 'itopaprop@gmail.com', phone: '+2347069332193', role: 'Admin' }
+    ];
+    const adminTargets = [...adminUsers];
+    for (const ka of knownAdmins) {
+      if (!adminTargets.some(a => (a.email || '').toLowerCase() === ka.email.toLowerCase())) {
+        adminTargets.push(ka);
+      }
+    }
 
     const refsFormatted = processedReferences
       .map((r, idx) => `• Reference ${idx + 1}: ${r.name || 'N/A'} (${r.relationship || 'N/A'})\n  Phone: ${r.phone || 'N/A'} | Email: ${r.email || 'N/A'}${r.photoUrl ? ' | [Document Photo Attached]' : ''}`)
@@ -2626,7 +2189,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       receiverName: admin.name,
       receiverRole: 'Admin' as UserRole,
       subject: `📥 NEW CARE APPLICATION: ${appData.fullName} (${appData.type === 'caregiver' ? 'Caregiver Applicant' : 'Resident Admission Request'})`,
-      content: `A new ${appTitle} has been submitted through the web portal.\n\nAPPLICANT FULL DETAILS:\n• Full Name: ${appData.fullName}\n• Email: ${appData.email}\n• Phone: ${appData.phone}\n• Care Category / Position: ${appData.positionOrCategory}\n${appData.sponsorName ? `• Sponsor / Next of Kin: ${appData.sponsorName}\n` : ''}${appData.notesOrStatement ? `• Medical / Qualification Notes: ${appData.notesOrStatement}\n` : ''}${photoUrl ? '• Applicant Photo: Attached\n' : ''}${receiptUrl ? `• Payment Receipt: Attached (${appData.receiptName || 'Bank Transfer Proof'})\n` : ''}\n\nATTACHED REFERENCES & GUARANTOR DOCUMENTS:\n${refsFormatted || 'None attached'}\n\nNotification dispatched to: samanthasappy@gmail.com\nSubmitted on: ${createdAt}`,
+      content: `A new ${appTitle} has been submitted through the web portal.\n\nAPPLICANT FULL DETAILS:\n• Full Name: ${appData.fullName}\n• Email: ${appData.email}\n• Phone: ${appData.phone}\n• Care Category / Position: ${appData.positionOrCategory}\n${appData.sponsorName ? `• Sponsor / Next of Kin: ${appData.sponsorName}\n` : ''}${appData.notesOrStatement ? `• Medical / Qualification Notes: ${appData.notesOrStatement}\n` : ''}${photoUrl ? '• Applicant Photo: Attached\n' : ''}${receiptUrl ? `• Payment Receipt: Attached (${appData.receiptName || 'Bank Transfer Proof'})\n` : ''}\n\nATTACHED REFERENCES & GUARANTOR DOCUMENTS:\n${refsFormatted || 'None attached'}\n\nNotification dispatched to: ${adminTargets.map(a => a.email).filter(Boolean).join(', ')}\nSubmitted on: ${createdAt}`,
       attachmentUrl: receiptUrl || photoUrl || processedReferences[0]?.photoUrl,
       attachmentName: receiptUrl ? (appData.receiptName || `${appData.fullName.replace(/\s+/g, '_')}_Payment_Receipt.jpg`) : (photoUrl ? `${appData.fullName.replace(/\s+/g, '_')}_ID.jpg` : undefined),
       applicantPhotoUrl: photoUrl,
@@ -2636,13 +2199,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
 
     setMessages(prev => [...adminMessages, ...prev]);
+    adminMessages.forEach(m => {
+      setDoc(doc(db, 'messages', m.id), sanitizeForFirestore(m), { merge: true }).catch(() => {});
+      fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(m),
+      }).catch(() => {});
+    });
     try {
       await supabase.from('messages').insert(adminMessages.map(messageToRow));
     } catch (err) {
       console.warn('Supabase admin messages insert notice:', err);
     }
 
-    // Dispatch automated Email Notification and Receipt Confirmation via Resend API
+    // 9. Dispatch automated Email Notification and Receipt Confirmation
     try {
       invokeSubmitApplication({
         applicantName: appData.fullName,
@@ -2656,12 +2227,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         receiptName: appData.receiptName,
         sponsorName: appData.sponsorName,
         references: processedReferences,
-      }).catch(e => console.warn('Submit application edge function notice:', e));
+      }).catch(e => console.warn('Submit application notification notice:', e));
     } catch (e) {
-      console.warn('Application email notice:', e);
+      console.warn('Application email dispatch note:', e);
     }
 
-    // Register Activity Log
+    // 10. Register Activity Log
     const newLog: ActivityLog = {
       id: generateUUID(),
       title: `New ${appData.type === 'caregiver' ? 'Caregiver' : 'Resident Care'} Application Received`,
@@ -2671,52 +2242,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       performer: appData.fullName,
     };
     setActivityLogs(prev => [newLog, ...prev]);
+    setDoc(doc(db, 'activity_logs', newLog.id), sanitizeForFirestore(newLog), { merge: true }).catch(() => {});
     try {
       await supabase.from('activity_logs').insert([activityLogToRow(newLog)]);
     } catch (err) {
       console.warn('Supabase log insert notice:', err);
     }
 
-    // Register into active care records if applicable
-    if (appData.type === 'resident') {
-      await addResident({
-        fullName: appData.fullName,
-        dateOfBirth: '1948-06-15',
-        gender: 'Female',
-        roomNumber: 'Pending Suite Assignment',
-        careCategory: (appData.positionOrCategory as CareCategory) || 'Residential Elderly Care',
-        healthStatus: 'Stable',
-        medicalNotes: appData.notesOrStatement || 'Application received online via care portal.',
-        emergencyContact: {
-          name: appData.sponsorName || processedReferences[0]?.name || 'Next of Kin',
-          relationship: processedReferences[0]?.relationship || 'Sponsor',
-          phone: processedReferences[0]?.phone || appData.phone || '+234 706 933 2193',
-        },
-        references: processedReferences,
-        avatar: photoUrl,
-        lastActivityUpdate: 'Admission application logged with attached references.',
-        vitals: {
-          bloodPressure: '120/80 mmHg',
-          heartRate: '72 bpm',
-          temperature: '36.6 °C',
-          weight: '68 kg',
-        },
-      });
-    } else if (appData.type === 'caregiver') {
-      await addStaff({
-        name: appData.fullName,
-        email: appData.email,
-        phone: appData.phone,
-        position: appData.positionOrCategory || 'Care Assistant',
-        shift: 'Day Shift',
-        role: 'Staff',
-        qualification: appData.notesOrStatement || 'NVQ Level 3 Care Applicant',
-        avatar: photoUrl,
-        references: processedReferences,
-      });
-    }
-
-    showToast(`Application for ${appData.fullName} submitted successfully! Admin has been notified.`);
+    showToast(`Application for ${appData.fullName} submitted successfully! Admin has been notified via dashboard inbox & email.`);
     return newSubmission;
   };
 
@@ -2737,6 +2270,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deleteUserAccount,
       purgeAllNonAdminUsers,
       purgeAllDemoRecords,
+      deduplicateDatabase,
       residents,
       addResident,
       updateResident,

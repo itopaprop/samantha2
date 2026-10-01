@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
-  const { loginUser, loginWithGoogle, resetPassword } = useApp();
+  const { loginUser, resetPassword } = useApp();
 
   const [selectedRole, setSelectedRole] = useState<UserRole>('Admin');
   const [email, setEmail] = useState('');
@@ -23,7 +23,6 @@ export const LoginPage: React.FC = () => {
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [logoSrc, setLogoSrc] = useState('https://lh3.googleusercontent.com/d/1sUJpAFMzsPRgNuvKDSyRU01sgnLK41Fg');
 
   const [authError, setAuthError] = useState<string | null>(null);
@@ -33,20 +32,6 @@ export const LoginPage: React.FC = () => {
     setAuthError(null);
     setEmail('');
     setPassword('');
-  };
-
-  const handleGoogleSignIn = async () => {
-    setAuthError(null);
-    setIsGoogleLoading(true);
-    try {
-      await loginWithGoogle(selectedRole);
-    } catch (err: any) {
-      if (err?.message) {
-        setAuthError(err.message);
-      }
-    } finally {
-      setIsGoogleLoading(false);
-    }
   };
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -208,25 +193,6 @@ export const LoginPage: React.FC = () => {
               {isSubmitting ? 'Authenticating...' : `Sign In to ${selectedRole} Portal`}
             </button>
           </form>
-
-          {/* Divider */}
-          <div className="relative flex items-center justify-center">
-            <div className="border-t border-slate-200 w-full"></div>
-            <span className="bg-white px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
-              or continue with
-            </span>
-          </div>
-
-          {/* Demo Quick Access */}
-          <button
-            type="button"
-            onClick={handleGoogleSignIn}
-            className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl border border-slate-200 shadow-2xs transition-all flex items-center justify-center gap-2 text-xs cursor-pointer"
-          >
-            <KeyRound className="w-3.5 h-3.5 text-slate-500" />
-            <span>Instant Demo Access ({selectedRole})</span>
-          </button>
-
 
         </div>
 

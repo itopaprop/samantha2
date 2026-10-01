@@ -4,14 +4,13 @@ service cloud.firestore {
 
     // =========================================================================
     // 1. GLOBAL SAFETY NET (Default Deny Catch-All)
-    // All paths not explicitly permitted are strictly closed by default.
     // =========================================================================
     match /{document=**} {
       allow read, write: if false;
     }
 
     // =========================================================================
-    // HELPER FUNCTIONS & AUTHENTICATION PREDICATES
+    // HELPER FUNCTIONS & PREDICATES
     // =========================================================================
     function isSignedIn() {
       return request.auth != null;
@@ -24,12 +23,17 @@ service cloud.firestore {
       );
     }
 
+    function isOwner(userId) {
+      return isSignedIn() && (
+        request.auth.uid == userId ||
+        (request.auth.token.email != null && resource != null && resource.data.email == request.auth.token.email)
+      );
+    }
+
     // =========================================================================
     // 2. USERS COLLECTION (/users/{userId})
-    // Strict User Isolation:
-    // - User A can only read and update their own user profile.
-    // - User A is strictly forbidden from viewing or altering User B or User C.
-    // - Non-admin users cannot alter their role to escalate privileges.
+    // Strict User Isolation: User A can only read and write their own data.
+    // User A cannot read User B or User C data.
     // =========================================================================
     match /users/{userId} {
       allow get: if isSignedIn() && (
@@ -52,6 +56,7 @@ service cloud.firestore {
       allow update: if isSignedIn() && (
         isAdmin() || (
           (request.auth.uid == userId || resource.data.email == request.auth.token.email) &&
+          // Prevent non-admin users from escalating their own role
           request.resource.data.role == resource.data.role
         )
       );
@@ -61,10 +66,8 @@ service cloud.firestore {
 
     // =========================================================================
     // 3. MESSAGES COLLECTION (/messages/{messageId})
-    // Direct User Isolation:
-    // - A user can only access messages where they are the sender or receiver.
-    // - User A cannot snoop on or intercept communications of User B or User C.
-    // - Senders cannot spoof sender identity.
+    // Direct User Isolation: Users can only read messages sent by or to them.
+    // User A cannot snoop on messages between User B and User C.
     // =========================================================================
     match /messages/{messageId} {
       allow get: if isSignedIn() && (
@@ -103,9 +106,7 @@ service cloud.firestore {
 
     // =========================================================================
     // 4. SHIFTS COLLECTION (/shifts/{shiftId})
-    // Staff Duty Isolation:
-    // - Care staff User A can only view their own shifts, not User B's shifts.
-    // - Only administrators can schedule, modify, or delete shifts.
+    // Staff Duty Isolation: Staff User A can only see their own assigned shifts.
     // =========================================================================
     match /shifts/{shiftId} {
       allow get: if isSignedIn() && (
@@ -130,8 +131,7 @@ service cloud.firestore {
 
     // =========================================================================
     // 5. STAFF DIRECTORY (/staff/{staffId})
-    // Staff Profile Access:
-    // - Staff member can only read and edit their own staff document.
+    // Staff Member Profile: User can only read and update their own staff record.
     // =========================================================================
     match /staff/{staffId} {
       allow get: if isSignedIn() && (
@@ -158,9 +158,8 @@ service cloud.firestore {
 
     // =========================================================================
     // 6. RESIDENTS COLLECTION (/residents/{residentId})
-    // Sensitive Medical & Care Plans:
-    // - Strictly restricted to Administrators, Assigned Care Staff, or the
-    //   verified linked family relative.
+    // Sensitive Medical & Care Plans: Restricted to Admins, Assigned Staff,
+    // or the verified linked Family Relative.
     // =========================================================================
     match /residents/{residentId} {
       allow get: if isSignedIn() && (
@@ -188,9 +187,7 @@ service cloud.firestore {
 
     // =========================================================================
     // 7. CONSULTATIONS COLLECTION (/consultations/{consultationId})
-    // Public Booking Submissions:
-    // - Any prospective family can submit an assessment request.
-    // - Users can only view their own consultation booking; other bookings are hidden.
+    // Public Booking Submissions: User can only view their own consultation.
     // =========================================================================
     match /consultations/{consultationId} {
       allow create: if true;
@@ -210,9 +207,7 @@ service cloud.firestore {
 
     // =========================================================================
     // 8. APPLICATIONS COLLECTION (/applications/{applicationId})
-    // Confidential Job & Admission Intake Applications:
-    // - Public can submit applications.
-    // - Access is restricted to the applicant themselves or Administrators.
+    // Intake & Job Applications: Confidential to applicant and Admins.
     // =========================================================================
     match /applications/{applicationId} {
       allow create: if true;
@@ -265,7 +260,7 @@ service cloud.firestore {
     }
 
     // =========================================================================
-    // 11. SDK CONNECTION HEALTH CHECK
+    // 11. CONNECTION HEALTH CHECK
     // =========================================================================
     match /test/{docId} {
       allow get: if true;

@@ -14,13 +14,15 @@ import {
   Upload,
   Image as ImageIcon,
   Trash2,
-  Users
+  Users,
+  Loader2
 } from 'lucide-react';
 
 export const CareersPage: React.FC = () => {
   const { showToast, jobs, submitApplication } = useApp();
   const [selectedPosition, setSelectedPosition] = useState<string>('Senior Care Assistant');
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [form, setForm] = useState({
     fullName: '',
@@ -59,33 +61,41 @@ export const CareersPage: React.FC = () => {
         photoUrl: r.photoUrl || undefined,
       }));
 
-    await submitApplication({
-      type: 'caregiver',
-      fullName: form.fullName || 'Job Applicant',
-      email: form.email || 'applicant@samanthasappy.com',
-      phone: form.phone || '+234 706 933 2193',
-      photoUrl: form.photoUrl || undefined,
-      positionOrCategory: form.position,
-      notesOrStatement: form.coverLetter,
-      references: formattedRefs,
-    });
-
-    setSubmitted(true);
-    setTimeout(() => {
-      setSubmitted(false);
-      setForm({
-        fullName: '',
-        email: '',
-        phone: '',
-        address: '',
-        position: 'Senior Care Assistant',
-        coverLetter: '',
-        cvFile: null,
-        photoUrl: null,
-        ref1: { name: '', relationship: '', phone: '', email: '', photoUrl: null },
-        ref2: { name: '', relationship: '', phone: '', email: '', photoUrl: null },
+    try {
+      setIsSubmitting(true);
+      await submitApplication({
+        type: 'caregiver',
+        fullName: form.fullName || 'Job Applicant',
+        email: form.email || 'applicant@samanthasappy.com',
+        phone: form.phone || '+234 706 933 2193',
+        photoUrl: form.photoUrl || undefined,
+        positionOrCategory: form.position,
+        notesOrStatement: form.coverLetter,
+        references: formattedRefs,
       });
-    }, 3000);
+
+      setSubmitted(true);
+      setTimeout(() => {
+        setSubmitted(false);
+        setForm({
+          fullName: '',
+          email: '',
+          phone: '',
+          address: '',
+          position: 'Senior Care Assistant',
+          coverLetter: '',
+          cvFile: null,
+          photoUrl: null,
+          ref1: { name: '', relationship: '', phone: '', email: '', photoUrl: null },
+          ref2: { name: '', relationship: '', phone: '', email: '', photoUrl: null },
+        });
+      }, 3000);
+    } catch (err: any) {
+      console.error('Submission error:', err);
+      showToast('Error submitting application. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -603,10 +613,20 @@ export const CareersPage: React.FC = () => {
               <div className="pt-2">
                 <button
                   type="submit"
-                  className="w-full bg-sky-700 hover:bg-sky-800 text-white font-bold py-3.5 px-6 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
+                  disabled={isSubmitting}
+                  className="w-full bg-sky-700 hover:bg-sky-800 disabled:bg-slate-400 disabled:cursor-not-allowed text-white font-bold py-3.5 px-6 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
                 >
-                  <Send className="w-4 h-4" />
-                  Submit Application
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Submitting Application...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Submit Application</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

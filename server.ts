@@ -29,25 +29,57 @@ function getGeminiClient(): GoogleGenAI {
   return geminiClient;
 }
 
-// Lazy initialized Supabase Admin Client (Privileged operations with Service Role Key)
-let supabaseAdminClient: SupabaseClient | null = null;
+// Disconnected Offline Mock Supabase Admin Client (No external database connection)
+function getSupabaseAdmin(): any {
+  const handler: any = {
+    select: () => handler,
+    insert: () => Promise.resolve({ data: [], error: null }),
+    upsert: () => Promise.resolve({ data: [], error: null }),
+    update: () => handler,
+    delete: () => handler,
+    eq: () => handler,
+    neq: () => handler,
+    ilike: () => handler,
+    like: () => handler,
+    or: () => handler,
+    in: () => handler,
+    not: () => handler,
+    order: () => handler,
+    limit: () => handler,
+    range: () => handler,
+    single: () => Promise.resolve({ data: null, error: null }),
+    maybeSingle: () => Promise.resolve({ data: null, error: null }),
+    then: (resolve: (val: any) => void) => resolve({ data: [], error: null }),
+  };
 
-function getSupabaseAdmin(): SupabaseClient {
-  if (!supabaseAdminClient) {
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://ikeglxdyjimmxvfbxrvb.supabase.co';
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_eIk9r2bZDA2qLeZB2bYhTA_BNbABikp';
-    
-    supabaseAdminClient = createClient(supabaseUrl, serviceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
+  return {
+    auth: {
+      admin: {
+        listUsers: async () => ({ data: { users: [] }, error: null }),
+        getUserById: async () => ({ data: { user: null }, error: null }),
+        deleteUser: async () => ({ data: {}, error: null }),
+        createUser: async () => ({ data: { user: { id: 'local_user' } }, error: null }),
+        updateUserById: async () => ({ data: { user: {} }, error: null }),
+        generateLink: async () => ({ data: { properties: { action_link: '#' } }, error: null }),
       },
-    });
-  }
-  return supabaseAdminClient;
+    },
+    from: () => handler,
+    rpc: async () => ({ data: null, error: null }),
+    storage: {
+      from: () => ({
+        remove: async () => ({ data: [], error: null }),
+        list: async () => ({ data: [], error: null }),
+      }),
+    },
+  };
 }
 
-const ADMIN_NOTIFICATION_EMAIL = process.env.ADMIN_EMAIL || 'samanthasappy@gmail.com';
+// Admin notification email recipients (business inbox and administrator email)
+const DEFAULT_ADMIN_EMAILS = ['samanthasappy@gmail.com', 'itopaprop@gmail.com'];
+const ADMIN_NOTIFICATION_EMAILS: string[] = process.env.ADMIN_EMAIL 
+  ? Array.from(new Set([...process.env.ADMIN_EMAIL.split(',').map(e => e.trim().toLowerCase()), ...DEFAULT_ADMIN_EMAILS]))
+  : DEFAULT_ADMIN_EMAILS;
+const ADMIN_NOTIFICATION_EMAIL = ADMIN_NOTIFICATION_EMAILS[0] || 'samanthasappy@gmail.com';
 
 // Helper to send transactional emails via Resend or HTTP fallback
 async function dispatchEmail(params: {
@@ -89,27 +121,117 @@ async function dispatchEmail(params: {
     }
   }
 
-  // Graceful fallback to guarantee notification transmission
+  // Graceful fallback to guarantee notification transmission to all recipients
   if (recipients.length > 0) {
-    try {
-      const primaryEmail = recipients[0];
-      const fallbackRes = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(primaryEmail)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({
-          _subject: params.subject,
-          Message: params.text,
-        }),
-      });
-      if (fallbackRes.ok) {
-        return { sent: true, provider: 'formsubmit_fallback' };
+    let anySent = false;
+    for (const email of recipients) {
+      try {
+        const fallbackRes = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(email)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({
+            _subject: params.subject,
+            Message: params.text,
+          }),
+        });
+        if (fallbackRes.ok) {
+          anySent = true;
+        }
+      } catch (fbErr: any) {
+        console.warn('Fallback dispatch error:', fbErr?.message || fbErr);
       }
-    } catch (fbErr: any) {
-      console.warn('Fallback dispatch error:', fbErr?.message || fbErr);
+    }
+    if (anySent) {
+      return { sent: true, provider: 'formsubmit_fallback' };
     }
   }
 
   return { sent: false, provider: 'none', error: 'No active email provider configured or failed' };
+}
+
+// ============================================================================
+// DUPLICATE CHECK & STORAGE CLEANUP HELPERS
+// ============================================================================
+
+function normalizePhone(phone?: string | null): string {
+  if (!phone) return '';
+  const digits = phone.replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('234')) return digits.slice(3);
+  if (digits.startsWith('0')) return digits.slice(1);
+  return digits;
+}
+
+function arePhonesEqual(phone1?: string | null, phone2?: string | null): boolean {
+  if (!phone1 || !phone2) return false;
+  const p1 = normalizePhone(phone1);
+  const p2 = normalizePhone(phone2);
+  if (!p1 || !p2) return false;
+  if (p1 === p2) return true;
+  if (p1.length >= 7 && p2.length >= 7) {
+    if (p1.endsWith(p2) || p2.endsWith(p1)) return true;
+    if (p1.slice(-8) === p2.slice(-8)) return true;
+  }
+  return false;
+}
+
+function areEmailsEqual(email1?: string | null, email2?: string | null): boolean {
+  if (!email1 || !email2) return false;
+  return email1.trim().toLowerCase() === email2.trim().toLowerCase();
+}
+
+function extractBucketAndPath(urlOrPath: string | null | undefined): { bucket: string; path: string } | null {
+  if (!urlOrPath || typeof urlOrPath !== 'string') return null;
+  const trimmed = urlOrPath.trim();
+  if (!trimmed || trimmed.startsWith('data:')) return null;
+
+  const urlPattern = /\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+)$/;
+  const match = trimmed.match(urlPattern);
+  if (match) {
+    const bucket = match[1];
+    const pathWithoutQuery = match[2].split('?')[0];
+    return { bucket, path: decodeURIComponent(pathWithoutQuery) };
+  }
+
+  const knownBuckets = ['public-media', 'avatars', 'documents'];
+  for (const b of knownBuckets) {
+    if (trimmed.startsWith(b + '/')) {
+      return { bucket: b, path: trimmed.slice(b.length + 1) };
+    }
+  }
+  return null;
+}
+
+async function deleteFilesFromSupabaseStorage(urlsOrPaths: (string | null | undefined)[]): Promise<void> {
+  const valid = urlsOrPaths.filter(Boolean) as string[];
+  if (valid.length === 0) return;
+
+  const bucketMap: Record<string, string[]> = {};
+  for (const item of valid) {
+    const parsed = extractBucketAndPath(item);
+    if (parsed) {
+      if (!bucketMap[parsed.bucket]) bucketMap[parsed.bucket] = [];
+      if (!bucketMap[parsed.bucket].includes(parsed.path)) {
+        bucketMap[parsed.bucket].push(parsed.path);
+      }
+    }
+  }
+
+  try {
+    const supabaseAdmin = getSupabaseAdmin();
+    for (const [bucket, paths] of Object.entries(bucketMap)) {
+      if (paths.length > 0) {
+        const { error } = await supabaseAdmin.storage.from(bucket).remove(paths);
+        if (error) {
+          console.warn(`[Server Storage] Failed to remove ${paths.join(', ')} from ${bucket}:`, error.message);
+        } else {
+          console.log(`[Server Storage] Successfully deleted ${paths.length} file(s) from ${bucket}`);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Server Storage] Error during storage removal:', err?.message || err);
+  }
 }
 
 async function startServer() {
@@ -159,6 +281,7 @@ async function startServer() {
     }
   ];
   const serverResidentsList: any[] = [];
+  const serverApplicationsList: any[] = [];
 
   // One-time startup sync for admin name in Supabase
   (async () => {
@@ -319,19 +442,44 @@ async function startServer() {
     }
   });
 
+  // Immediately purge files from Supabase Storage endpoint
+  app.post('/api/storage/delete', async (req, res) => {
+    try {
+      const { urls } = req.body;
+      if (Array.isArray(urls) && urls.length > 0) {
+        await deleteFilesFromSupabaseStorage(urls);
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      console.warn('Storage deletion endpoint notice:', err?.message || err);
+      res.status(500).json({ error: err?.message || 'Storage deletion error' });
+    }
+  });
+
   app.delete('/api/events/:id', async (req, res) => {
     try {
       const { id } = req.params;
+      let imageUrlToDelete: string | null = null;
       const idx = serverEventsList.findIndex(e => e.id === id);
       if (idx >= 0) {
+        imageUrlToDelete = serverEventsList[idx]?.imageUrl || null;
         serverEventsList.splice(idx, 1);
       }
 
       try {
         const supabaseAdmin = getSupabaseAdmin();
+        if (!imageUrlToDelete) {
+          const { data: evRow } = await supabaseAdmin.from('community_events').select('image_url').eq('id', id).maybeSingle();
+          if (evRow?.image_url) imageUrlToDelete = evRow.image_url;
+        }
         await supabaseAdmin.from('community_events').delete().eq('id', id);
       } catch (sbErr) {
         console.warn('Supabase community_events delete notice:', sbErr);
+      }
+
+      // Purge event banner from Supabase storage
+      if (imageUrlToDelete) {
+        deleteFilesFromSupabaseStorage([imageUrlToDelete]).catch(() => {});
       }
 
       res.json({ success: true });
@@ -340,14 +488,48 @@ async function startServer() {
     }
   });
 
+  app.delete('/api/gallery/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const supabaseAdmin = getSupabaseAdmin();
+      let filesToDelete: string[] = [];
+      try {
+        const { data: item } = await supabaseAdmin.from('gallery_items').select('image_url, video_url').eq('id', id).maybeSingle();
+        if (item?.image_url) filesToDelete.push(item.image_url);
+        if (item?.video_url) filesToDelete.push(item.video_url);
+        await supabaseAdmin.from('gallery_items').delete().eq('id', id);
+      } catch (err: any) {
+        console.warn('Supabase gallery delete notice:', err?.message);
+      }
+
+      if (filesToDelete.length > 0) {
+        deleteFilesFromSupabaseStorage(filesToDelete).catch(() => {});
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed to delete gallery item' });
+    }
+  });
+
   app.get('/api/users', (req, res) => {
     res.json(serverUsersList);
   });
 
-  app.post('/api/users', (req, res) => {
+  app.post('/api/users', async (req, res) => {
     const user = req.body;
     if (user && user.email) {
-      const idx = serverUsersList.findIndex(u => u.email?.toLowerCase() === user.email.toLowerCase());
+      const cleanEmail = user.email.trim().toLowerCase();
+      const cleanPhone = user.phone ? user.phone.trim() : '';
+
+      // Duplicate check against server memory and Supabase profiles
+      const isDupMemory = serverUsersList.some(u => 
+        (u.id !== user.id) && (areEmailsEqual(u.email, cleanEmail) || (cleanPhone && arePhonesEqual(u.phone, cleanPhone)))
+      );
+      if (isDupMemory) {
+        return res.status(409).json({ error: 'A user with this email or phone number is already registered.' });
+      }
+
+      const idx = serverUsersList.findIndex(u => u.id === user.id || u.email?.toLowerCase() === cleanEmail);
       if (idx >= 0) {
         serverUsersList[idx] = { ...serverUsersList[idx], ...user };
       } else {
@@ -366,7 +548,17 @@ async function startServer() {
   app.post('/api/staff', (req, res) => {
     const staff = req.body;
     if (staff && staff.email) {
-      const idx = serverStaffList.findIndex(s => s.email?.toLowerCase() === staff.email.toLowerCase());
+      const cleanEmail = staff.email.trim().toLowerCase();
+      const cleanPhone = staff.phone ? staff.phone.trim() : '';
+
+      const isDupMemory = serverStaffList.some(s => 
+        (s.id !== staff.id) && (areEmailsEqual(s.email, cleanEmail) || (cleanPhone && arePhonesEqual(s.phone, cleanPhone)))
+      );
+      if (isDupMemory) {
+        return res.status(409).json({ error: 'A staff member with this email or phone number is already registered.' });
+      }
+
+      const idx = serverStaffList.findIndex(s => s.id === staff.id || s.email?.toLowerCase() === cleanEmail);
       if (idx >= 0) {
         serverStaffList[idx] = { ...serverStaffList[idx], ...staff };
       } else {
@@ -376,6 +568,116 @@ async function startServer() {
     } else {
       res.status(400).json({ error: 'Valid staff object with email required' });
     }
+  });
+
+  app.get('/api/applications', async (req, res) => {
+    try {
+      const supabaseAdmin = getSupabaseAdmin();
+      const { data: dbApps } = await supabaseAdmin
+        .from('applications')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .abortSignal(AbortSignal.timeout(1500));
+      if (Array.isArray(dbApps) && dbApps.length > 0) {
+        res.json(dbApps);
+        return;
+      }
+    } catch (e) {
+      // fallback to memory list
+    }
+    res.json(serverApplicationsList);
+  });
+
+  app.post('/api/applications', async (req, res) => {
+    const appData = req.body;
+    if (!appData || !appData.id) {
+      res.status(400).json({ error: 'Valid application object with id required' });
+      return;
+    }
+
+    const cleanEmail = (appData.email || '').trim().toLowerCase();
+    const cleanPhone = (appData.phone || '').trim();
+
+    // Check duplicate applications by email & phone
+    const hasDuplicate = serverApplicationsList.some(a => 
+      a.id !== appData.id && (areEmailsEqual(a.email, cleanEmail) || (cleanPhone && arePhonesEqual(a.phone, cleanPhone)))
+    );
+    if (hasDuplicate) {
+      return res.status(409).json({ error: 'An application with this email or phone number is already on file.' });
+    }
+
+    const idx = serverApplicationsList.findIndex(a => a.id === appData.id);
+    if (idx >= 0) {
+      serverApplicationsList[idx] = { ...serverApplicationsList[idx], ...appData };
+    } else {
+      serverApplicationsList.unshift(appData);
+    }
+
+    try {
+      const supabaseAdmin = getSupabaseAdmin();
+      const row = {
+        id: appData.id,
+        full_name: appData.fullName || appData.full_name || appData.applicantName || 'Applicant',
+        email: cleanEmail,
+        phone: appData.phone || '',
+        type: appData.type || 'caregiver',
+        photo_url: appData.photoUrl || appData.photo_url || null,
+        receipt_url: appData.receiptUrl || appData.receipt_url || null,
+        receipt_name: appData.receiptName || appData.receipt_name || null,
+        position_or_category: appData.positionOrCategory || appData.position_or_category || appData.position || null,
+        notes_or_statement: appData.notesOrStatement || appData.notes_or_statement || appData.notes || null,
+        sponsor_name: appData.sponsorName || appData.sponsor_name || null,
+        references: typeof appData.references === 'string' ? appData.references : JSON.stringify(appData.references || []),
+        status: appData.status || 'Received',
+        created_at: appData.createdAt || appData.created_at || new Date().toISOString(),
+      };
+      await supabaseAdmin.from('applications').upsert(row, { onConflict: 'id' });
+    } catch (sbErr) {
+      console.warn('Supabase application upsert notice:', sbErr);
+    }
+
+    res.json({ success: true, application: appData });
+  });
+
+  app.delete('/api/applications/:id', async (req, res) => {
+    const { id } = req.params;
+    let filesToDelete: string[] = [];
+    const idx = serverApplicationsList.findIndex(a => a.id === id);
+    if (idx >= 0) {
+      const a = serverApplicationsList[idx];
+      if (a.photoUrl) filesToDelete.push(a.photoUrl);
+      if (a.receiptUrl) filesToDelete.push(a.receiptUrl);
+      if (Array.isArray(a.references)) {
+        a.references.forEach((r: any) => { if (r.photoUrl) filesToDelete.push(r.photoUrl); });
+      }
+      serverApplicationsList.splice(idx, 1);
+    }
+    try {
+      const supabaseAdmin = getSupabaseAdmin();
+      if (filesToDelete.length === 0) {
+        const { data: appRow } = await supabaseAdmin.from('applications').select('photo_url, receipt_url, references').eq('id', id).maybeSingle();
+        if (appRow?.photo_url) filesToDelete.push(appRow.photo_url);
+        if (appRow?.receipt_url) filesToDelete.push(appRow.receipt_url);
+        if (appRow?.references) {
+          try {
+            const parsedRefs = typeof appRow.references === 'string' ? JSON.parse(appRow.references) : appRow.references;
+            if (Array.isArray(parsedRefs)) {
+              parsedRefs.forEach((r: any) => { if (r.photoUrl) filesToDelete.push(r.photoUrl); });
+            }
+          } catch {}
+        }
+      }
+      await supabaseAdmin.from('applications').delete().eq('id', id);
+    } catch (sbErr) {
+      console.warn('Supabase application delete notice:', sbErr);
+    }
+
+    // Purge files from Supabase Storage
+    if (filesToDelete.length > 0) {
+      deleteFilesFromSupabaseStorage(filesToDelete).catch(() => {});
+    }
+
+    res.json({ success: true });
   });
 
   // 1. Register Staff & Dispatch Welcome Email
@@ -400,9 +702,40 @@ async function startServer() {
       }
 
       const cleanEmail = email.trim().toLowerCase();
+      const cleanPhone = phone ? phone.trim() : '';
       const origin = appUrl || req.headers.origin || `http://${req.headers.host}`;
       const loginUrl = `${origin}/login`;
       const supabaseAdmin = getSupabaseAdmin();
+
+      // STRICT DUPLICATE CHECK: email & phone check against staff and users
+      const dupStaffMem = serverStaffList.some(s => 
+        areEmailsEqual(s.email, cleanEmail) || (cleanPhone && arePhonesEqual(s.phone, cleanPhone))
+      );
+      const dupUserMem = serverUsersList.some(u => 
+        areEmailsEqual(u.email, cleanEmail) || (cleanPhone && arePhonesEqual(u.phone, cleanPhone))
+      );
+
+      if (dupStaffMem || dupUserMem) {
+        return res.status(409).json({ 
+          error: `Duplicate registration prevented: A staff member or user with this email (${cleanEmail}) or phone (${cleanPhone}) already exists.` 
+        });
+      }
+
+      try {
+        const { data: existingProfiles } = await supabaseAdmin.from('profiles').select('id, email, phone');
+        if (existingProfiles && existingProfiles.length > 0) {
+          const profileDup = existingProfiles.find(p => 
+            areEmailsEqual(p.email, cleanEmail) || (cleanPhone && arePhonesEqual(p.phone, cleanPhone))
+          );
+          if (profileDup) {
+            return res.status(409).json({ 
+              error: `Duplicate registration prevented: An account with this email (${cleanEmail}) or phone (${cleanPhone}) is already registered in the database.` 
+            });
+          }
+        }
+      } catch (checkErr) {
+        console.warn('Profile duplicate check note:', checkErr);
+      }
 
       let effectiveUserId = '';
       let setupPasswordUrl: string | undefined;
@@ -556,7 +889,7 @@ async function startServer() {
       });
 
       dispatchEmail({
-        to: ADMIN_NOTIFICATION_EMAIL,
+        to: ADMIN_NOTIFICATION_EMAILS,
         subject: adminEmailContent.subject,
         html: adminEmailContent.html,
         text: adminEmailContent.text,
@@ -597,10 +930,22 @@ async function startServer() {
       const supabaseAdmin = getSupabaseAdmin();
 
       const residentId = `res_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      const relativePhoneClean = relative.phone ? relative.phone.replace(/[^0-9]/g, '') : `${Date.now()}`;
+      const relativePhoneClean = relative.phone ? relative.phone.trim() : '';
       const relativeEmail = (relative.email && relative.email.includes('@'))
         ? relative.email.trim().toLowerCase()
-        : `${relativePhoneClean}@relative.samanthasappy.com`;
+        : (relativePhoneClean ? `${relativePhoneClean.replace(/\D/g, '')}@relative.samanthasappy.com` : `${Date.now()}@relative.samanthasappy.com`);
+
+      // STRICT DUPLICATE CHECK: verify relative email & phone
+      if (relativeEmail && !relativeEmail.endsWith('@relative.samanthasappy.com')) {
+        const dupUser = serverUsersList.find(u => 
+          areEmailsEqual(u.email, relativeEmail) || (relativePhoneClean && arePhonesEqual(u.phone, relativePhoneClean))
+        );
+        if (dupUser) {
+          return res.status(409).json({ 
+            error: `Registration Blocked: A relative or user with this email (${relativeEmail}) or phone (${relativePhoneClean}) is already registered.` 
+          });
+        }
+      }
 
       // Save Resident
       const residentRow = {
@@ -733,7 +1078,7 @@ async function startServer() {
       });
 
       dispatchEmail({
-        to: ADMIN_NOTIFICATION_EMAIL,
+        to: ADMIN_NOTIFICATION_EMAILS,
         subject: adminEmailContent.subject,
         html: adminEmailContent.html,
         text: adminEmailContent.text,
@@ -777,6 +1122,64 @@ async function startServer() {
       const applicantEmail = application.email.trim().toLowerCase();
       const isCaregiver = application.type === 'caregiver';
       const positionOrCategory = application.position || application.careCategory || (isCaregiver ? 'Caregiver Staff' : 'Assisted Living');
+      const appId = application.id || `app_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const nowIso = new Date().toISOString();
+
+      // 0. Persist application to Supabase & Memory Cache
+      const appRow = {
+        id: appId,
+        full_name: application.applicantName,
+        email: applicantEmail,
+        phone: application.phone || '',
+        type: isCaregiver ? 'caregiver' : 'resident',
+        photo_url: application.photoUrl || application.photo_url || null,
+        receipt_url: application.receiptUrl || application.receipt_url || null,
+        receipt_name: application.receiptName || application.receipt_name || (application.paymentReceipt ? 'Payment Receipt Slip' : null),
+        position_or_category: positionOrCategory,
+        notes_or_statement: application.experience || application.notes || application.medicalHistory || '',
+        sponsor_name: application.sponsorName || application.relativeName || null,
+        references: typeof application.references === 'string' ? application.references : JSON.stringify(application.references || []),
+        status: 'Received',
+        created_at: nowIso,
+      };
+
+      const existingIdx = serverApplicationsList.findIndex(a => a.id === appId);
+      if (existingIdx >= 0) {
+        serverApplicationsList[existingIdx] = { ...serverApplicationsList[existingIdx], ...appRow };
+      } else {
+        serverApplicationsList.unshift(appRow);
+      }
+
+      try {
+        const supabaseAdmin = getSupabaseAdmin();
+        await supabaseAdmin.from('applications').upsert(appRow, { onConflict: 'id' });
+
+        // Create Admin Inbox Messages for both administrators
+        const adminTargets = [
+          { id: 'usr-admin-1', name: 'Folasade Sanyaolu (MD)', email: 'samanthasappy@gmail.com' },
+          { id: 'usr-admin-2', name: 'Folasade Sanyaolu (Admin)', email: 'itopaprop@gmail.com' }
+        ];
+
+        const adminInAppMessages = adminTargets.map(adm => ({
+          id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          sender_id: 'usr-system',
+          sender_name: 'Care Application Portal',
+          sender_role: 'Admin',
+          receiver_id: adm.id,
+          receiver_name: adm.name,
+          receiver_role: 'Admin',
+          subject: `📥 NEW CARE APPLICATION: ${application.applicantName} (${isCaregiver ? 'Caregiver Applicant' : 'Resident Care Admission Request'})`,
+          content: `A new ${isCaregiver ? 'Caregiver Job Application' : 'Resident Care Admission Application'} has been submitted through the web portal.\n\nAPPLICANT DETAILS:\n• Full Name: ${application.applicantName}\n• Email: ${applicantEmail}\n• Phone: ${application.phone || 'N/A'}\n• Category / Role: ${positionOrCategory}\n${application.sponsorName ? `• Sponsor / Relative: ${application.sponsorName}\n` : ''}${application.notes ? `• Notes / Medical: ${application.notes}\n` : ''}${application.receiptName || application.paymentReceipt ? `• Payment Receipt: Attached (${application.receiptName || 'Bank Transfer Receipt'})\n` : ''}\nNotification dispatched to: samanthasappy@gmail.com, itopaprop@gmail.com`,
+          attachment_url: application.receiptUrl || application.photoUrl || null,
+          attachment_name: application.receiptName || null,
+          is_read: false,
+          created_at: nowIso,
+        }));
+
+        await supabaseAdmin.from('messages').insert(adminInAppMessages);
+      } catch (dbErr) {
+        console.warn('Supabase application/messages insert note:', dbErr);
+      }
 
       // 1. Generate & Dispatch Receipt Confirmation Email to Applicant
       const applicantReceiptEmail = generateApplicantReceiptConfirmationEmail({
@@ -815,7 +1218,7 @@ async function startServer() {
       });
 
       const adminEmailResult = await dispatchEmail({
-        to: ADMIN_NOTIFICATION_EMAIL,
+        to: ADMIN_NOTIFICATION_EMAILS,
         subject: adminAppNotification.subject,
         html: adminAppNotification.html,
         text: adminAppNotification.text,
@@ -865,8 +1268,8 @@ async function startServer() {
 
       const authUsers = (authData?.users || []).map((u: any) => {
         const emailLower = u.email?.toLowerCase() || '';
-        const profile = profilesMap.get(emailLower);
-        const staff = staffMap.get(emailLower);
+        const profile: any = profilesMap.get(emailLower);
+        const staff: any = staffMap.get(emailLower);
 
         return {
           id: u.id,
@@ -941,6 +1344,28 @@ async function startServer() {
           await supabaseAdmin.auth.admin.deleteUser(staffId);
           deletedAuthIds.push(staffId);
         } catch {}
+      }
+
+      // 1.5 Collect avatars and guarantor documents for storage cleanup
+      const staffFilesToDelete: string[] = [];
+      try {
+        const query = staffId 
+          ? supabaseAdmin.from('staff').select('avatar, references').or(`id.eq.${staffId},user_id.eq.${staffId}`)
+          : supabaseAdmin.from('staff').select('avatar, references').ilike('email', cleanEmail);
+        const { data: staffRows } = await query;
+        if (staffRows) {
+          for (const s of staffRows) {
+            if (s.avatar) staffFilesToDelete.push(s.avatar);
+            if (Array.isArray(s.references)) {
+              s.references.forEach((r: any) => { if (r?.photoUrl) staffFilesToDelete.push(r.photoUrl); });
+            }
+          }
+        }
+      } catch (stgErr) {
+        console.warn('Note finding staff storage files:', stgErr);
+      }
+      if (staffFilesToDelete.length > 0) {
+        deleteFilesFromSupabaseStorage(staffFilesToDelete).catch(() => {});
       }
 
       // 2. Delete from public.staff
@@ -1023,6 +1448,23 @@ async function startServer() {
         }
       } catch (authErr: any) {
         console.warn('Auth admin list/delete error in delete-resident:', authErr?.message);
+      }
+
+      // 1.5 Extract resident avatar and reference documents for storage cleanup
+      const resFilesToDelete: string[] = [];
+      try {
+        if (residentId) {
+          const { data: resRow } = await supabaseAdmin.from('residents').select('avatar, references').eq('id', residentId).maybeSingle();
+          if (resRow?.avatar) resFilesToDelete.push(resRow.avatar);
+          if (Array.isArray(resRow?.references)) {
+            resRow.references.forEach((r: any) => { if (r?.photoUrl) resFilesToDelete.push(r.photoUrl); });
+          }
+        }
+      } catch (stgErr) {
+        console.warn('Note finding resident storage files:', stgErr);
+      }
+      if (resFilesToDelete.length > 0) {
+        deleteFilesFromSupabaseStorage(resFilesToDelete).catch(() => {});
       }
 
       // 2. Delete from public.residents table
@@ -1119,6 +1561,21 @@ async function startServer() {
           authDeleteError = err?.message;
           console.warn('Auth admin delete exception:', err);
         }
+      }
+
+      // 1.5 Extract user avatar for storage cleanup
+      let userAvatarToDelete: string | null = null;
+      try {
+        const query = resolvedUserId
+          ? supabaseAdmin.from('profiles').select('avatar').eq('id', resolvedUserId).maybeSingle()
+          : supabaseAdmin.from('profiles').select('avatar').ilike('email', cleanEmail).maybeSingle();
+        const { data: profRow } = await query;
+        if (profRow?.avatar) userAvatarToDelete = profRow.avatar;
+      } catch (stgErr) {
+        console.warn('Note finding user avatar for deletion:', stgErr);
+      }
+      if (userAvatarToDelete) {
+        deleteFilesFromSupabaseStorage([userAvatarToDelete]).catch(() => {});
       }
 
       // 2. Delete from public.profiles table
@@ -1545,6 +2002,209 @@ async function startServer() {
     }
   });
 
+  // 9. DEDUPLICATE DATABASE (Removes duplicate registrations across profiles, staff, residents, and applications)
+  async function runDatabaseDeduplication() {
+    const supabaseAdmin = getSupabaseAdmin();
+    const protectedEmails = ['samanthasappy@gmail.com', 'itopaprop@gmail.com', 'admin@samanthasappy.com'];
+    let removedUsers = 0;
+    let removedStaff = 0;
+    let removedResidents = 0;
+    let removedApplications = 0;
+    const details: string[] = [];
+
+    // 1. DEDUPLICATE PROFILES & AUTH USERS
+    try {
+      const { data: profiles, error: pErr } = await supabaseAdmin.from('profiles').select('*').order('created_at', { ascending: true });
+      if (!pErr && Array.isArray(profiles) && profiles.length > 0) {
+        const seenEmails = new Map<string, any>();
+        const seenPhones = new Map<string, any>();
+        const toDeleteProfileIds: string[] = [];
+
+        for (const prof of profiles) {
+          const email = (prof.email || '').trim().toLowerCase();
+          const phone = prof.phone ? normalizePhone(prof.phone) : '';
+          const isProtected = protectedEmails.includes(email);
+
+          let duplicateFound = false;
+          let keeper: any = null;
+
+          if (email && seenEmails.has(email)) {
+            duplicateFound = true;
+            keeper = seenEmails.get(email);
+          } else if (phone && seenPhones.has(phone)) {
+            duplicateFound = true;
+            keeper = seenPhones.get(phone);
+          }
+
+          if (duplicateFound && !isProtected) {
+            toDeleteProfileIds.push(prof.id);
+            details.push(`Duplicate profile removed: ${prof.name || prof.id} (${email || phone})`);
+            if (prof.avatar && prof.avatar !== keeper?.avatar) {
+              deleteFilesFromSupabaseStorage([prof.avatar]).catch(() => {});
+            }
+          } else {
+            if (email) seenEmails.set(email, prof);
+            if (phone) seenPhones.set(phone, prof);
+          }
+        }
+
+        for (const id of toDeleteProfileIds) {
+          try {
+            await supabaseAdmin.from('profiles').delete().eq('id', id);
+            await supabaseAdmin.auth.admin.deleteUser(id).catch(() => {});
+            removedUsers++;
+          } catch (e: any) {
+            console.warn('Error deleting duplicate profile/auth:', e?.message);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('Profile deduplication error:', err?.message);
+    }
+
+    // 2. DEDUPLICATE STAFF
+    try {
+      const { data: staffList, error: sErr } = await supabaseAdmin.from('staff').select('*').order('created_at', { ascending: true });
+      if (!sErr && Array.isArray(staffList) && staffList.length > 0) {
+        const seenStaffEmails = new Map<string, any>();
+        const seenStaffPhones = new Map<string, any>();
+        const toDeleteStaffIds: string[] = [];
+
+        for (const stf of staffList) {
+          const email = (stf.email || '').trim().toLowerCase();
+          const phone = stf.phone ? normalizePhone(stf.phone) : '';
+          const isProtected = protectedEmails.includes(email);
+
+          let duplicateFound = false;
+          let keeper: any = null;
+
+          if (email && seenStaffEmails.has(email)) {
+            duplicateFound = true;
+            keeper = seenStaffEmails.get(email);
+          } else if (phone && seenStaffPhones.has(phone)) {
+            duplicateFound = true;
+            keeper = seenStaffPhones.get(phone);
+          }
+
+          if (duplicateFound && !isProtected) {
+            toDeleteStaffIds.push(stf.id);
+            details.push(`Duplicate staff removed: ${stf.name || stf.id} (${email || phone})`);
+            if (stf.avatar && stf.avatar !== keeper?.avatar) {
+              deleteFilesFromSupabaseStorage([stf.avatar]).catch(() => {});
+            }
+          } else {
+            if (email) seenStaffEmails.set(email, stf);
+            if (phone) seenStaffPhones.set(phone, stf);
+          }
+        }
+
+        for (const id of toDeleteStaffIds) {
+          try {
+            await supabaseAdmin.from('staff').delete().eq('id', id);
+            removedStaff++;
+          } catch (e: any) {
+            console.warn('Error deleting duplicate staff:', e?.message);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('Staff deduplication error:', err?.message);
+    }
+
+    // 3. DEDUPLICATE RESIDENTS
+    try {
+      const { data: resList, error: rErr } = await supabaseAdmin.from('residents').select('*').order('created_at', { ascending: true });
+      if (!rErr && Array.isArray(resList) && resList.length > 0) {
+        const seenNames = new Map<string, any>();
+        const toDeleteResIds: string[] = [];
+
+        for (const res of resList) {
+          const cleanName = (res.full_name || '').trim().toLowerCase();
+          if (cleanName && seenNames.has(cleanName)) {
+            toDeleteResIds.push(res.id);
+            details.push(`Duplicate resident removed: ${res.full_name} (${res.id})`);
+            if (res.avatar) {
+              deleteFilesFromSupabaseStorage([res.avatar]).catch(() => {});
+            }
+          } else if (cleanName) {
+            seenNames.set(cleanName, res);
+          }
+        }
+
+        for (const id of toDeleteResIds) {
+          try {
+            await supabaseAdmin.from('residents').delete().eq('id', id);
+            removedResidents++;
+          } catch (e: any) {
+            console.warn('Error deleting duplicate resident:', e?.message);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('Resident deduplication error:', err?.message);
+    }
+
+    // 4. DEDUPLICATE APPLICATIONS
+    try {
+      const { data: apps, error: aErr } = await supabaseAdmin.from('applications').select('*').order('created_at', { ascending: false });
+      if (!aErr && Array.isArray(apps) && apps.length > 0) {
+        const seenAppEmails = new Map<string, any>();
+        const seenAppPhones = new Map<string, any>();
+        const toDeleteAppIds: string[] = [];
+
+        for (const app of apps) {
+          const email = (app.email || '').trim().toLowerCase();
+          const phone = app.phone ? normalizePhone(app.phone) : '';
+
+          let duplicate = false;
+          if (email && seenAppEmails.has(email)) duplicate = true;
+          else if (phone && seenAppPhones.has(phone)) duplicate = true;
+
+          if (duplicate) {
+            toDeleteAppIds.push(app.id);
+            details.push(`Duplicate application removed: ${app.full_name} (${email || phone})`);
+            const files = [app.photo_url, app.receipt_url];
+            deleteFilesFromSupabaseStorage(files).catch(() => {});
+          } else {
+            if (email) seenAppEmails.set(email, app);
+            if (phone) seenAppPhones.set(phone, app);
+          }
+        }
+
+        for (const id of toDeleteAppIds) {
+          try {
+            await supabaseAdmin.from('applications').delete().eq('id', id);
+            removedApplications++;
+          } catch (e: any) {
+            console.warn('Error deleting duplicate application:', e?.message);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('Application deduplication error:', err?.message);
+    }
+
+    console.log(`[Deduplication Run] Removed: ${removedUsers} profiles, ${removedStaff} staff, ${removedResidents} residents, ${removedApplications} applications.`);
+    return {
+      success: true,
+      removedUsers,
+      removedStaff,
+      removedResidents,
+      removedApplications,
+      details,
+    };
+  }
+
+  app.post('/api/admin/deduplicate-database', async (req, res) => {
+    try {
+      const result = await runDatabaseDeduplication();
+      res.json(result);
+    } catch (err: any) {
+      console.error('Error running database deduplication endpoint:', err);
+      res.status(500).json({ error: err?.message || 'Database deduplication failed.' });
+    }
+  });
+
   // ============================================================================
   // VITE MIDDLEWARE / STATIC ASSETS (SINGLE ENTRY POINT)
   // ============================================================================
@@ -1565,6 +2225,10 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Samantha Sappy Care Fullstack Server running on http://0.0.0.0:${PORT}`);
+    // Run database deduplication on startup to clean any legacy duplicates
+    setTimeout(() => {
+      runDatabaseDeduplication().catch(err => console.warn('Startup deduplication notice:', err));
+    }, 2000);
   });
 }
 

@@ -411,7 +411,7 @@ export const OrganizationChart: React.FC = () => {
             </p>
 
             <div className="space-y-2">
-              <div className="text-xs font-bold text-slate-900 uppercase tracking-wider text-[10px]">Sample Shift Allocation</div>
+              <div className="text-xs font-bold text-slate-900 uppercase tracking-wider text-[10px]">Shift Duty Allocation</div>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                   <div className="font-bold text-slate-800">Day Shift (08:00 - 18:00)</div>

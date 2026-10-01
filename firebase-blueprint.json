@@ -1,91 +1,122 @@
 {
   "entities": {
-    "users": {
-      "title": "Users",
-      "description": "Registered user profiles with roles (Admin, Staff, Resident Relative)",
+    "User": {
+      "title": "User",
+      "description": "User account and profile data for authentication and role-based access",
       "type": "object",
       "properties": {
-        "uid": { "type": "string" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
         "email": { "type": "string" },
-        "displayName": { "type": "string" },
-        "role": { "type": "string", "enum": ["Admin", "Staff", "Resident Relative"] },
         "phone": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "role": { "type": "string", "enum": ["Admin", "Staff", "Resident Relative"] },
+        "position": { "type": "string" },
+        "avatar": { "type": "string" },
+        "relationship": { "type": "string" },
+        "residentLinkedId": { "type": "string" }
       },
-      "required": ["uid", "email", "role"]
+      "required": ["id", "name", "email", "role"]
     },
-    "residents": {
-      "title": "Residents",
-      "description": "Residents residing at SamanthaSappy Care Home",
+    "Resident": {
+      "title": "Resident",
+      "description": "Resident profile, care plan, medical notes, and health records",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "fullName": { "type": "string" },
+        "dateOfBirth": { "type": "string" },
+        "gender": { "type": "string" },
         "roomNumber": { "type": "string" },
         "careCategory": { "type": "string" },
-        "age": { "type": "number" },
-        "dateOfBirth": { "type": "string" },
-        "emergencyContact": { "type": "string" },
-        "status": { "type": "string" },
-        "carePlanNotes": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "medicalNotes": { "type": "string" },
+        "healthStatus": { "type": "string" },
+        "admissionDate": { "type": "string" }
       },
-      "required": ["fullName", "roomNumber", "careCategory"]
+      "required": ["id", "fullName", "careCategory"]
     },
-    "staff": {
-      "title": "Staff Members",
-      "description": "Caregivers, nurses, and administrative personnel",
+    "StaffMember": {
+      "title": "StaffMember",
+      "description": "Staff profile, employment record, and care shift assignments",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "fullName": { "type": "string" },
-        "role": { "type": "string" },
+        "name": { "type": "string" },
         "email": { "type": "string" },
         "phone": { "type": "string" },
-        "status": { "type": "string" },
-        "shiftPreference": { "type": "string" }
+        "position": { "type": "string" },
+        "shift": { "type": "string" },
+        "role": { "type": "string" },
+        "qualification": { "type": "string" }
       },
-      "required": ["fullName", "email", "role"]
+      "required": ["id", "name", "email", "position"]
     },
-    "shifts": {
-      "title": "Shifts",
-      "description": "Scheduled work shifts for staff members",
+    "Shift": {
+      "title": "Shift",
+      "description": "Scheduled duty shifts and assignments for care staff",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "staffId": { "type": "string" },
         "staffName": { "type": "string" },
-        "role": { "type": "string" },
-        "date": { "type": "string" },
+        "shiftDate": { "type": "string" },
         "startTime": { "type": "string" },
         "endTime": { "type": "string" },
-        "status": { "type": "string" },
-        "notes": { "type": "string" }
+        "shiftType": { "type": "string" },
+        "location": { "type": "string" }
       },
-      "required": ["staffName", "date", "startTime", "endTime"]
+      "required": ["id", "staffId", "staffName", "shiftDate"]
     },
-    "community_events": {
-      "title": "Community Events",
-      "description": "Events and activities hosted by SamanthaSappy Care Home",
+    "Message": {
+      "title": "Message",
+      "description": "Internal and family care communication messages",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderRole": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "receiverName": { "type": "string" },
+        "receiverRole": { "type": "string" },
+        "subject": { "type": "string" },
+        "content": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "senderId", "receiverId", "content"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Audit log for facility activities, medical events, and shift updates",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "title": { "type": "string" },
-        "category": { "type": "string" },
-        "date": { "type": "string" },
-        "time": { "type": "string" },
-        "location": { "type": "string" },
         "description": { "type": "string" },
-        "status": { "type": "string" },
-        "rsvpCount": { "type": "number" },
-        "capacity": { "type": "number" },
-        "imageUrl": { "type": "string" }
+        "category": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "performer": { "type": "string" }
       },
-      "required": ["title", "date", "location"]
+      "required": ["id", "title", "timestamp", "performer"]
     },
-    "applications": {
-      "title": "Care Applications",
-      "description": "Resident and Caregiver application submissions",
+    "ConsultationBooking": {
+      "title": "ConsultationBooking",
+      "description": "Appointment requests submitted by families for care assessment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "preferredDate": { "type": "string" },
+        "serviceInterest": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "fullName", "email", "phone"]
+    },
+    "ApplicationSubmission": {
+      "title": "ApplicationSubmission",
+      "description": "Job and resident admission intake applications",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -97,23 +128,82 @@
         "status": { "type": "string" },
         "createdAt": { "type": "string" }
       },
-      "required": ["fullName", "email", "type"]
+      "required": ["id", "fullName", "email", "phone", "type"]
     },
-    "consultation_bookings": {
-      "title": "Consultation Bookings",
-      "description": "Booked consultations for prospective residents and families",
+    "CommunityEvent": {
+      "title": "CommunityEvent",
+      "description": "Upcoming public events, festivities, and community celebrations",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "fullName": { "type": "string" },
-        "email": { "type": "string" },
-        "phone": { "type": "string" },
-        "preferredDate": { "type": "string" },
-        "preferredTime": { "type": "string" },
-        "status": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "location": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "status": { "type": "string" }
       },
-      "required": ["fullName", "email", "preferredDate"]
+      "required": ["id", "title", "date", "location"]
+    },
+    "GalleryItem": {
+      "title": "GalleryItem",
+      "description": "Public facility photographs and activity gallery media",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "description": { "type": "string" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "title", "imageUrl"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Registered user accounts and profiles"
+    },
+    "/residents/{residentId}": {
+      "schema": "Resident",
+      "description": "Resident profiles and medical records"
+    },
+    "/staff/{staffId}": {
+      "schema": "StaffMember",
+      "description": "Staff directory and qualifications"
+    },
+    "/shifts/{shiftId}": {
+      "schema": "Shift",
+      "description": "Duty rosters and shift schedules"
+    },
+    "/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Internal and family communication messages"
+    },
+    "/activity_logs/{logId}": {
+      "schema": "ActivityLog",
+      "description": "System activity logs and care audit entries"
+    },
+    "/consultations/{consultationId}": {
+      "schema": "ConsultationBooking",
+      "description": "Public consultation bookings"
+    },
+    "/applications/{applicationId}": {
+      "schema": "ApplicationSubmission",
+      "description": "Job and admission application submissions"
+    },
+    "/events/{eventId}": {
+      "schema": "CommunityEvent",
+      "description": "Public facility events and schedules"
+    },
+    "/gallery/{galleryId}": {
+      "schema": "GalleryItem",
+      "description": "Public facility photo and activity gallery"
+    },
+    "/test/{docId}": {
+      "schema": "User",
+      "description": "Healthcheck probe document for SDK connection testing"
     }
   }
 }

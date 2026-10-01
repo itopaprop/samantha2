@@ -79,7 +79,7 @@ export const BookConsultationModal: React.FC = () => {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. David Miller"
+                    placeholder="e.g. Full Name"
                     value={formData.fullName}
                     onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
                     className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"

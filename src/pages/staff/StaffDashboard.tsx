@@ -539,7 +539,7 @@ export const StaffDashboard: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-600 pt-3 border-t border-slate-200">
                   <div><strong>Email Address:</strong> {currentUser.email}</div>
-                  <div><strong>Phone Number:</strong> {currentUser.phone || staffProfile?.phone || '+44 20 7946 0884'}</div>
+                  <div><strong>Phone Number:</strong> {currentUser.phone || staffProfile?.phone || 'Not provided'}</div>
                   <div><strong>Professional Certification:</strong> {staffQualification}</div>
                   <div><strong>Assigned Duty Shift:</strong> {staffProfile?.shift || 'Morning Shift'}</div>
                   <div><strong>Total Resident Duty Count:</strong> {totalAssignedCount} Residents</div>

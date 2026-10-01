@@ -44,14 +44,6 @@ export const ComposeMessageModal: React.FC<Props> = ({ isOpen, onClose, defaultR
     }
   });
 
-  if (staffOptions.length === 0) {
-    staffOptions.push(
-      { id: 'usr-staff-1', name: 'Sarah Jenkins, RN (Senior Nurse & Care Lead)', role: 'Staff' },
-      { id: 'usr-staff-2', name: 'Marcus Vance (Dementia Specialist)', role: 'Staff' },
-      { id: 'usr-staff-3', name: 'Emily Watson (Child Educator)', role: 'Staff' }
-    );
-  }
-
   // Build Relative receiver options
   const relativeOptions: { id: string; name: string; role: UserRole }[] = [];
   const relativeIdsSeen = new Set<string>();
@@ -66,13 +58,6 @@ export const ComposeMessageModal: React.FC<Props> = ({ isOpen, onClose, defaultR
       });
     }
   });
-
-  if (relativeOptions.length === 0) {
-    relativeOptions.push(
-      { id: 'usr-relative-1', name: 'David Miller (Son of Eleanor Miller)', role: 'Resident Relative' },
-      { id: 'usr-relative-2', name: 'Rebecca Wright (Daughter of Thomas Wright)', role: 'Resident Relative' }
-    );
-  }
 
   // Determine active receiver list based on selected category or relative role
   let availableReceivers: { id: string; name: string; role: UserRole; isAssigned?: boolean }[] = [];
@@ -115,13 +100,6 @@ export const ComposeMessageModal: React.FC<Props> = ({ isOpen, onClose, defaultR
     }
 
     availableReceivers = [...caregiverOptions, ...adminOptions].filter(r => r.id !== currentUser.id);
-
-    if (availableReceivers.length === 0) {
-      availableReceivers = [
-        { id: 'usr-staff-1', name: 'Sarah Jenkins, RN (Assigned Caregiver)', role: 'Staff' as UserRole, isAssigned: true },
-        { id: 'usr-admin-1', name: 'Folasade Sanyaolu (Admin)', role: 'Admin' as UserRole, isAssigned: false },
-      ];
-    }
   } else {
     // Admin / Staff user: toggle between Staff & Relative
     availableReceivers = recipientCategory === 'Staff' ? staffOptions : relativeOptions;

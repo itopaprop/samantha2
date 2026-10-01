@@ -131,14 +131,14 @@ export const HomePage: React.FC = () => {
 
   const testimonials = [
     {
-      quote: "Samanthasappy Home gave our family complete peace of mind. Nurse Sarah and the team care for my mother Eleanor with such genuine tenderness.",
+      quote: "Samanthasappy Home gave our family complete peace of mind. The care team attends to our mother with such genuine tenderness, respect, and professionalism.",
       author: 'Mrs. Oluwatoyin Ayorinde',
-      role: 'Daughter of Resident Eleanor Miller',
+      role: 'Family Relative',
       rating: 5,
       avatar: 'https://lh3.googleusercontent.com/d/1R5fJ2qNlolxPplTofoUlxcK9enRcki51'
     },
     {
-      quote: "The daycare facilities are second to none! My twins Clara and Leo wake up excited every morning for Montessori storytime with Miss Emily.",
+      quote: "The daycare facilities are second to none! Our children wake up excited every morning for Montessori learning and creative playtime.",
       author: 'Alhaji Isa Mohamed',
       role: 'Parent of Daycare Students',
       rating: 5,
@@ -161,7 +161,7 @@ export const HomePage: React.FC = () => {
     {
       quote: "The real-time updates and daily health logs on the family portal give us tremendous confidence. I know my father is receiving top-tier medical attention.",
       author: 'Dr. Tope Babatunde',
-      role: 'Daughter of Resident Arthur Vance',
+      role: 'Family Relative',
       rating: 5,
       avatar: 'https://lh3.googleusercontent.com/d/1MsXUQUlKKMfa7_x2h2Fd9d-DscUfzpFq'
     },

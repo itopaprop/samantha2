@@ -250,7 +250,7 @@ export const RelativeDashboard: React.FC = () => {
 
                   <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Assigned Caregiver</div>
-                    <div className="font-bold text-slate-900 text-sm">{res.assignedStaffName || 'Nurse Sarah Jenkins'}</div>
+                    <div className="font-bold text-slate-900 text-sm">{res.assignedStaffName || 'Assigned Care Team'}</div>
                   </div>
 
                   <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
@@ -439,8 +439,8 @@ export const RelativeDashboard: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-600 pt-2 border-t border-slate-200">
                   <div><strong>Email:</strong> {currentUser.email}</div>
-                  <div><strong>Phone:</strong> {currentUser.phone || '+44 20 7946 0912'}</div>
-                  <div><strong>Linked Resident:</strong> {linkedResidents.map(r => r.fullName).join(', ') || 'Eleanor Miller'}</div>
+                  <div><strong>Phone:</strong> {currentUser.phone || 'Not provided'}</div>
+                  <div><strong>Linked Resident:</strong> {linkedResidents.map(r => r.fullName).join(', ') || 'Pending Resident Link'}</div>
                   <div><strong>Emergency Notification:</strong> Opted-In (SMS & Email)</div>
                 </div>
               </div>

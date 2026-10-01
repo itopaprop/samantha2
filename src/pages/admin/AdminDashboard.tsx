@@ -89,6 +89,7 @@ export const AdminDashboard: React.FC = () => {
     markMessageAsRead,
     showToast,
     purgeAllNonAdminUsers,
+    deduplicateDatabase,
     syncDatabase,
     logout 
   } = useApp();
@@ -96,6 +97,7 @@ export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'residents' | 'staff' | 'shifts' | 'messages' | 'events' | 'jobs' | 'gallery' | 'settings'>('overview');
   const [messagingTab, setMessagingTab] = useState<'inbox' | 'sent' | 'applications'>('inbox');
   const [deletingItem, setDeletingItem] = useState<{ type: 'message' | 'application'; id: string; title: string } | null>(null);
+  const [isDeduplicating, setIsDeduplicating] = useState(false);
 
   // Auto-sync Supabase live Auth users & database tables on mount
   useEffect(() => {
@@ -230,7 +232,12 @@ export const AdminDashboard: React.FC = () => {
   const dailyCareClients = residents.filter(r => r.careCategory === 'Daily Living Assistance' || r.careCategory === 'Residential Elderly Care').length;
   const vulnerableClients = residents.filter(r => r.careCategory === 'Vulnerable Adult Support').length;
   const activeShiftsCount = shifts.length;
-  const unreadMessagesCount = messages.filter(m => m.receiverId === currentUser.id && !m.isRead).length;
+  const inboxMessages = messages.filter(m => 
+    m.receiverId === currentUser.id || 
+    (currentUser.role === 'Admin' && (m.receiverRole === 'Admin' || m.receiverId === 'usr-admin-1' || !m.receiverId))
+  );
+  const sentMessages = messages.filter(m => m.senderId === currentUser.id);
+  const unreadMessagesCount = inboxMessages.filter(m => !m.isRead).length;
 
   // Quick Action Helper
   const triggerAddResidentWithCategory = (cat: CareCategory) => {
@@ -256,12 +263,6 @@ export const AdminDashboard: React.FC = () => {
     const q = searchQuery.toLowerCase().trim();
     return !q || name.includes(q) || pos.includes(q) || email.includes(q);
   });
-
-  const inboxMessages = messages.filter(m => 
-    m.receiverId === currentUser.id || 
-    (currentUser.role === 'Admin' && (m.receiverRole === 'Admin' || m.receiverId === 'usr-admin-1' || !m.receiverId))
-  );
-  const sentMessages = messages.filter(m => m.senderId === currentUser.id);
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col lg:flex-row">
@@ -617,6 +618,19 @@ export const AdminDashboard: React.FC = () => {
                   className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                 >
                   <Brain className="w-3.5 h-3.5" /> Add Vulnerable Client
+                </button>
+                <button
+                  onClick={async () => {
+                    setIsDeduplicating(true);
+                    await deduplicateDatabase();
+                    setIsDeduplicating(false);
+                  }}
+                  disabled={isDeduplicating}
+                  title="Scans all tables and Auth users for matching email or phone number, removes duplicates, cleans storage, and leaves 1 record."
+                  className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ml-auto"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isDeduplicating ? 'animate-spin' : ''}`} />
+                  {isDeduplicating ? 'Scanning & Deduplicating...' : 'Deduplicate Database (Verify Email & Phone)'}
                 </button>
               </div>
             </div>
