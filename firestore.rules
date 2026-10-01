@@ -2,271 +2,116 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // =========================================================================
-    // 1. GLOBAL SAFETY NET (Default Deny Catch-All)
-    // All paths not explicitly permitted are strictly closed by default.
-    // =========================================================================
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // =========================================================================
-    // HELPER FUNCTIONS & AUTHENTICATION PREDICATES
-    // =========================================================================
+    // Helper functions
     function isSignedIn() {
       return request.auth != null;
     }
 
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == 'itopaprop@gmail.com' ||
-        request.auth.token.email == 'samanthasappy@gmail.com'
+        request.auth.token.role == 'Admin' ||
+        (request.auth.token.email != null && (
+          request.auth.token.email.lower() == 'samanthasappy@gmail.com' ||
+          request.auth.token.email.lower() == 'itopaprop@gmail.com'
+        ))
       );
     }
 
-    // =========================================================================
-    // 2. USERS COLLECTION (/users/{userId})
-    // Strict User Isolation:
-    // - User A can only read and update their own user profile.
-    // - User A is strictly forbidden from viewing or altering User B or User C.
-    // - Non-admin users cannot alter their role to escalate privileges.
-    // =========================================================================
+    // 1. Users collection: User A can ONLY read and update their own document.
+    // User A cannot read or access User B or User C's profile.
     match /users/{userId} {
-      allow get: if isSignedIn() && (
-        request.auth.uid == userId ||
-        (resource.data.email != null && resource.data.email == request.auth.token.email) ||
-        isAdmin()
-      );
-
-      allow list: if isSignedIn() && (
-        isAdmin() ||
-        (resource.data.id == request.auth.uid || resource.data.email == request.auth.token.email)
-      );
-
-      allow create: if isSignedIn() && (
-        request.auth.uid == userId ||
-        (request.resource.data.email != null && request.resource.data.email == request.auth.token.email) ||
-        isAdmin()
-      );
-
-      allow update: if isSignedIn() && (
-        isAdmin() || (
-          (request.auth.uid == userId || resource.data.email == request.auth.token.email) &&
-          request.resource.data.role == resource.data.role
-        )
-      );
-
-      allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isSignedIn();
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
     }
 
-    // =========================================================================
-    // 3. MESSAGES COLLECTION (/messages/{messageId})
-    // Direct User Isolation:
-    // - A user can only access messages where they are the sender or receiver.
-    // - User A cannot snoop on or intercept communications of User B or User C.
-    // - Senders cannot spoof sender identity.
-    // =========================================================================
-    match /messages/{messageId} {
-      allow get: if isSignedIn() && (
-        resource.data.senderId == request.auth.uid ||
-        resource.data.receiverId == request.auth.uid ||
-        (resource.data.senderEmail != null && resource.data.senderEmail == request.auth.token.email) ||
-        (resource.data.receiverEmail != null && resource.data.receiverEmail == request.auth.token.email) ||
-        isAdmin()
-      );
-
-      allow list: if isSignedIn() && (
-        isAdmin() ||
-        resource.data.senderId == request.auth.uid ||
-        resource.data.receiverId == request.auth.uid ||
-        (resource.data.senderEmail != null && resource.data.senderEmail == request.auth.token.email) ||
-        (resource.data.receiverEmail != null && resource.data.receiverEmail == request.auth.token.email)
-      );
-
-      allow create: if isSignedIn() && (
-        request.resource.data.senderId == request.auth.uid ||
-        (request.resource.data.senderEmail != null && request.resource.data.senderEmail == request.auth.token.email) ||
-        isAdmin()
-      );
-
-      allow update: if isSignedIn() && (
-        isAdmin() ||
-        resource.data.receiverId == request.auth.uid ||
-        resource.data.senderId == request.auth.uid
-      );
-
-      allow delete: if isSignedIn() && (
-        isAdmin() ||
-        resource.data.senderId == request.auth.uid
-      );
-    }
-
-    // =========================================================================
-    // 4. SHIFTS COLLECTION (/shifts/{shiftId})
-    // Staff Duty Isolation:
-    // - Care staff User A can only view their own shifts, not User B's shifts.
-    // - Only administrators can schedule, modify, or delete shifts.
-    // =========================================================================
-    match /shifts/{shiftId} {
-      allow get: if isSignedIn() && (
-        resource.data.staffId == request.auth.uid ||
-        (resource.data.staffEmail != null && resource.data.staffEmail == request.auth.token.email) ||
-        isAdmin()
-      );
-
-      allow list: if isSignedIn() && (
-        isAdmin() ||
-        resource.data.staffId == request.auth.uid ||
-        (resource.data.staffEmail != null && resource.data.staffEmail == request.auth.token.email)
-      );
-
-      allow create, delete: if isAdmin();
-
-      allow update: if isSignedIn() && (
-        isAdmin() ||
-        resource.data.staffId == request.auth.uid
-      );
-    }
-
-    // =========================================================================
-    // 5. STAFF DIRECTORY (/staff/{staffId})
-    // Staff Profile Access:
-    // - Staff member can only read and edit their own staff document.
-    // =========================================================================
+    // 2. Staff directory: Staff can get their own staff record, Admin can manage all
     match /staff/{staffId} {
-      allow get: if isSignedIn() && (
-        staffId == request.auth.uid ||
-        resource.data.id == request.auth.uid ||
-        (resource.data.email != null && resource.data.email == request.auth.token.email) ||
-        isAdmin()
-      );
-
-      allow list: if isSignedIn() && (
-        isAdmin() ||
-        resource.data.id == request.auth.uid ||
-        (resource.data.email != null && resource.data.email == request.auth.token.email)
-      );
-
-      allow update: if isSignedIn() && (
-        isAdmin() ||
-        staffId == request.auth.uid ||
-        resource.data.id == request.auth.uid
-      );
-
-      allow create, delete: if isAdmin();
+      allow get: if isOwner(staffId) || isAdmin();
+      allow list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
     }
 
-    // =========================================================================
-    // 6. RESIDENTS COLLECTION (/residents/{residentId})
-    // Sensitive Medical & Care Plans:
-    // - Strictly restricted to Administrators, Assigned Care Staff, or the
-    //   verified linked family relative.
-    // =========================================================================
+    // 3. Residents: Admins and staff have access; Relatives can only access their linked resident
     match /residents/{residentId} {
-      allow get: if isSignedIn() && (
-        isAdmin() ||
-        (resource.data.assignedStaffId != null && resource.data.assignedStaffId == request.auth.uid) ||
-        (
-          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.residentLinkedId == residentId
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // 4. Shifts: Staff can only read their assigned shifts; Admin manages all
+    match /shifts/{shiftId} {
+      allow read: if isAdmin() || (
+        isSignedIn() && (
+          resource.data.staffId == request.auth.uid ||
+          (resource.data.staffEmail != null && resource.data.staffEmail == request.auth.token.email)
         )
       );
-
-      allow list: if isSignedIn() && (
-        isAdmin() ||
-        (resource.data.assignedStaffId != null && resource.data.assignedStaffId == request.auth.uid) ||
-        (resource.data.relativeUserId != null && resource.data.relativeUserId == request.auth.uid)
-      );
-
-      allow create, delete: if isAdmin();
-
-      allow update: if isSignedIn() && (
-        isAdmin() ||
-        (resource.data.assignedStaffId != null && resource.data.assignedStaffId == request.auth.uid)
-      );
+      allow write: if isAdmin();
     }
 
-    // =========================================================================
-    // 7. CONSULTATIONS COLLECTION (/consultations/{consultationId})
-    // Public Booking Submissions:
-    // - Any prospective family can submit an assessment request.
-    // - Users can only view their own consultation booking; other bookings are hidden.
-    // =========================================================================
+    // 5. Messages: User can only read messages sent by them or sent to them
+    match /messages/{messageId} {
+      allow get: if isAdmin() || (
+        isSignedIn() && (
+          resource.data.senderId == request.auth.uid ||
+          resource.data.receiverId == request.auth.uid ||
+          (resource.data.receiverEmail != null && resource.data.receiverEmail == request.auth.token.email) ||
+          (resource.data.senderEmail != null && resource.data.senderEmail == request.auth.token.email)
+        )
+      );
+      allow list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        resource.data.receiverId == request.auth.uid ||
+        resource.data.senderId == request.auth.uid ||
+        isAdmin()
+      );
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.senderId == request.auth.uid);
+    }
+
+    // 6. Activity logs: Authenticated read/create, Admin update/delete
+    match /activity_logs/{logId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // 7. Consultation bookings: Anyone can submit, only Admin can read/manage
     match /consultations/{consultationId} {
       allow create: if true;
-
-      allow get: if isSignedIn() && (
-        isAdmin() ||
-        (resource.data.email != null && resource.data.email == request.auth.token.email)
-      );
-
-      allow list: if isSignedIn() && (
-        isAdmin() ||
-        (resource.data.email != null && resource.data.email == request.auth.token.email)
-      );
-
-      allow update, delete: if isAdmin();
+      allow read, update, delete: if isAdmin();
     }
 
-    // =========================================================================
-    // 8. APPLICATIONS COLLECTION (/applications/{applicationId})
-    // Confidential Job & Admission Intake Applications:
-    // - Public can submit applications.
-    // - Access is restricted to the applicant themselves or Administrators.
-    // =========================================================================
+    // 8. Applications: Anyone can submit, only Admin can read/manage
     match /applications/{applicationId} {
       allow create: if true;
-
-      allow get: if isSignedIn() && (
-        isAdmin() ||
-        (resource.data.email != null && resource.data.email == request.auth.token.email)
-      );
-
-      allow list: if isSignedIn() && (
-        isAdmin() ||
-        (resource.data.email != null && resource.data.email == request.auth.token.email)
-      );
-
-      allow update, delete: if isAdmin();
+      allow read, update, delete: if isAdmin();
     }
 
-    // =========================================================================
-    // 9. ACTIVITY LOGS (/activity_logs/{logId})
-    // Audit Trail: Viewable by Admin and the performing staff member.
-    // =========================================================================
-    match /activity_logs/{logId} {
-      allow get: if isSignedIn() && (
-        isAdmin() ||
-        (resource.data.performer != null && resource.data.performer == request.auth.token.email)
-      );
-
-      allow list: if isSignedIn() && (
-        isAdmin() ||
-        (resource.data.performer != null && resource.data.performer == request.auth.token.email)
-      );
-
-      allow create: if isSignedIn();
-
-      allow update, delete: if isAdmin();
-    }
-
-    // =========================================================================
-    // 10. PUBLIC COMMUNITY EVENTS & GALLERY
-    // Publicly readable, write access restricted strictly to Administrators.
-    // =========================================================================
+    // 9. Community events: Public read, Admin write
     match /events/{eventId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
+    // 10. Gallery: Public read, Admin write
     match /gallery/{galleryId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // =========================================================================
-    // 11. SDK CONNECTION HEALTH CHECK
-    // =========================================================================
+    // 11. Job vacancies: Public read, Admin write
+    match /jobs/{jobId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 12. SDK Connection health check
     match /test/{docId} {
       allow get: if true;
       allow list, write: if false;

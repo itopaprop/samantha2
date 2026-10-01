@@ -1,0 +1,32 @@
+{
+  "staff": [],
+  "users": [
+    {
+      "id": "usr-admin-1",
+      "name": "Folasade Sanyaolu",
+      "email": "samanthasappy@gmail.com",
+      "role": "Admin",
+      "position": "Managing Director & Head of Care (LLB, QaAA)",
+      "phone": "+2347069332193",
+      "avatar": "https://lh3.googleusercontent.com/d/1w6G7q5mbHmjWOhDMbYhVJEg6zda_Jw7X=s1600"
+    },
+    {
+      "id": "usr-admin-2",
+      "name": "Folasade Sanyaolu",
+      "email": "itopaprop@gmail.com",
+      "role": "Admin",
+      "position": "Managing Director & Administrator",
+      "phone": "+2347069332193",
+      "avatar": "https://lh3.googleusercontent.com/d/1w6G7q5mbHmjWOhDMbYhVJEg6zda_Jw7X=s1600"
+    }
+  ],
+  "residents": [],
+  "shifts": [],
+  "messages": [],
+  "activity_logs": [],
+  "consultations": [],
+  "applications": [],
+  "events": [],
+  "jobs": [],
+  "gallery": []
+}

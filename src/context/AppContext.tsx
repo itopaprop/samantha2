@@ -151,6 +151,7 @@ interface AppContextType {
   activityLogs: ActivityLog[];
   consultationBookings: ConsultationBooking[];
   bookConsultation: (booking: Omit<ConsultationBooking, 'id' | 'status' | 'createdAt'>) => Promise<void>;
+  deleteConsultation: (id: string) => Promise<void>;
   
   events: CommunityEvent[];
   addEvent: (event: Omit<CommunityEvent, 'id'>) => Promise<void>;
@@ -419,14 +420,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => { safeSave('shh_gallery_v2', galleryItems); }, [galleryItems]);
   useEffect(() => { safeSave('shh_applications', applications); }, [applications]);
 
-  const fetchSupabaseData = useCallback(async () => {
-    return Promise.resolve();
+  // Universal Sync Engine: Synchronizes data across all devices, browsers, and tabs
+  const syncDatabase = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sync-all');
+      if (res.ok) {
+        const data = await res.json();
+        if (data) {
+          if (Array.isArray(data.staff)) {
+            setStaff(data.staff.filter((s: any) => !isDemoRecord(s)));
+          }
+          if (Array.isArray(data.users) && data.users.length > 0) {
+            setUsers(data.users.filter((u: any) => !isDemoRecord(u)));
+          }
+          if (Array.isArray(data.residents)) {
+            setResidents(data.residents.filter((r: any) => !isDemoRecord(r)));
+          }
+          if (Array.isArray(data.shifts)) {
+            setShifts(data.shifts.filter((sh: any) => !isDemoRecord(sh)));
+          }
+          if (Array.isArray(data.messages)) {
+            setMessages(data.messages.filter((m: any) => !isDemoRecord(m)));
+          }
+          if (Array.isArray(data.activity_logs)) {
+            setActivityLogs(data.activity_logs.filter((l: any) => !isDemoRecord(l)));
+          }
+          if (Array.isArray(data.consultations)) {
+            setConsultationBookings(data.consultations.filter((c: any) => !isDemoRecord(c)));
+          }
+          if (Array.isArray(data.applications)) {
+            setApplications(data.applications.filter((a: any) => !isDemoRecord(a)));
+          }
+          if (Array.isArray(data.events)) {
+            setEvents(data.events.filter((e: any) => !isDemoRecord(e)));
+          }
+          if (Array.isArray(data.jobs)) {
+            setJobs(data.jobs);
+          }
+          if (Array.isArray(data.gallery)) {
+            setGalleryItems(data.gallery);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Sync database error:', err);
+    }
   }, []);
 
-  // ============================================================================
-  // CLOUD FIRESTORE REAL-TIME SYNCHRONIZATION
-  // Synchronizes collections in real time with local state & localStorage backup
-  // ============================================================================
+  // 1. Initial boot synchronization from Server API + periodic sync + on window focus
+  useEffect(() => {
+    syncDatabase();
+
+    const interval = setInterval(() => {
+      syncDatabase();
+    }, 10000);
+
+    const onFocus = () => {
+      syncDatabase();
+    };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [syncDatabase]);
+
+  // 2. Real-time Cloud Firestore synchronization across all devices and browsers
   useEffect(() => {
     if (!db) return;
 
@@ -439,19 +499,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!snapshot.empty) {
             const rawItems = snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as T[];
             const items = rawItems.filter(item => !isDemoRecord(item));
-            setter(prev => {
-              const map = new Map<string, T>();
-              prev.forEach((item: any) => { if (item.id && !isDemoRecord(item)) map.set(item.id, item); });
-              items.forEach((item: any) => { if (item.id && !isDemoRecord(item)) map.set(item.id, item); });
-              return Array.from(map.values());
-            });
+            setter(items);
+          } else if (snapshot.metadata.fromCache === false && snapshot.docChanges().some(c => c.type === 'removed')) {
+            const rawItems = snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as T[];
+            setter(rawItems.filter(item => !isDemoRecord(item)));
           }
         }, (err) => {
-          console.warn(`Firestore listener note for ${colName}:`, err.message);
+          console.debug(`Firestore listener notice for ${colName}:`, err.message);
         });
         unsubs.push(unsubscribe);
       } catch (e) {
-        console.warn(`Could not attach Firestore listener for ${colName}:`, e);
+        console.debug(`Could not attach Firestore listener for ${colName}:`, e);
       }
     };
 
@@ -992,12 +1050,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Firebase Auth relative registration notice:', fbRelErr);
     }
 
-    setDoc(doc(db, 'users', newRelativeUser.id), sanitizeForFirestore(newRelativeUser), { merge: true }).catch(() => {});
-    fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newRelativeUser),
-    }).catch(() => {});
+    // Persist resident and relative account across backend server database & Firestore
+    await Promise.allSettled([
+      setDoc(doc(db, 'residents', newResident.id), sanitizeForFirestore(newResident), { merge: true }),
+      setDoc(doc(db, 'users', newRelativeUser.id), sanitizeForFirestore(newRelativeUser), { merge: true }),
+      fetch('/api/residents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newResident),
+      }),
+      fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRelativeUser),
+      }),
+    ]);
 
     // 3. Dispatch in-app Welcome Message to Relative
     const welcomeMsg: Message = {
@@ -1033,8 +1100,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setMessages(prev => [welcomeMsg, ...adminResidentNotifications, ...prev]);
     setDoc(doc(db, 'messages', welcomeMsg.id), sanitizeForFirestore(welcomeMsg), { merge: true }).catch(() => {});
+    fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(welcomeMsg),
+    }).catch(() => {});
+
     adminResidentNotifications.forEach(m => {
       setDoc(doc(db, 'messages', m.id), sanitizeForFirestore(m), { merge: true }).catch(() => {});
+      fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(m),
+      }).catch(() => {});
     });
     try {
       await supabase.from('messages').insert([messageToRow(welcomeMsg), ...adminResidentNotifications.map(messageToRow)]);
@@ -1053,6 +1131,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setActivityLogs(prev => [newLog, ...prev]);
     setDoc(doc(db, 'activity_logs', newLog.id), sanitizeForFirestore(newLog), { merge: true }).catch(() => {});
+    fetch('/api/activity_logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLog),
+    }).catch(() => {});
     try {
       await supabase.from('activity_logs').insert([activityLogToRow(newLog)]);
     } catch (err) {
@@ -1070,7 +1153,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateResident = async (id: string, updated: Partial<Resident>) => {
     setResidents(prev => prev.map(r => r.id === id ? { ...r, ...updated } : r));
-    updateDoc(doc(db, 'residents', id), sanitizeForFirestore(updated)).catch(() => {});
+    const target = residents.find(r => r.id === id);
+    const merged = { ...(target || {}), ...updated, id };
+
+    await Promise.allSettled([
+      setDoc(doc(db, 'residents', id), sanitizeForFirestore(updated), { merge: true }),
+      fetch('/api/residents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged),
+      }),
+    ]);
+
     try {
       await supabase.from('residents').update(residentToRow(updated)).eq('id', id);
     } catch (err) {
@@ -1098,11 +1192,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setUsers(prev => prev.filter(u => u.id !== linkedRelative.id && (!relativeEmail || u.email.toLowerCase() !== relativeEmail.toLowerCase())));
     }
 
-    // 2. Immediate Firestore deletion
-    deleteDoc(doc(db, 'residents', id)).catch(() => {});
-    if (linkedRelative) {
-      deleteDoc(doc(db, 'users', linkedRelative.id)).catch(() => {});
-    }
+    // 2. Immediate Firestore & Backend Server deletion
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'residents', id)),
+      linkedRelative ? deleteDoc(doc(db, 'users', linkedRelative.id)) : Promise.resolve(),
+      fetch(`/api/residents/${id}`, { method: 'DELETE' }),
+      linkedRelative ? fetch(`/api/users/${linkedRelative.id}?email=${encodeURIComponent(relativeEmail || '')}`, { method: 'DELETE' }) : Promise.resolve(),
+    ]);
 
     // 3. Immediate Supabase Database deletion
     try {
@@ -1233,18 +1329,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Save to Firestore and Server API immediately for all devices
-    setDoc(doc(db, 'staff', newStaff.id), sanitizeForFirestore(newStaff), { merge: true }).catch(() => {});
-    setDoc(doc(db, 'users', newUser.id), sanitizeForFirestore(newUser), { merge: true }).catch(() => {});
-    fetch('/api/staff', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newStaff),
-    }).catch(() => {});
-    fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newUser),
-    }).catch(() => {});
+    await Promise.allSettled([
+      setDoc(doc(db, 'staff', newStaff.id), sanitizeForFirestore(newStaff), { merge: true }),
+      setDoc(doc(db, 'users', newUser.id), sanitizeForFirestore(newUser), { merge: true }),
+      fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newStaff),
+      }),
+      fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser),
+      }),
+    ]);
 
     // 2. Dispatch In-App Welcome Message to Staff Member
     const welcomeMsg: Message = {
@@ -1280,8 +1378,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setMessages(prev => [welcomeMsg, ...adminStaffNotifications, ...prev]);
     setDoc(doc(db, 'messages', welcomeMsg.id), sanitizeForFirestore(welcomeMsg), { merge: true }).catch(() => {});
+    fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(welcomeMsg),
+    }).catch(() => {});
+
     adminStaffNotifications.forEach(m => {
       setDoc(doc(db, 'messages', m.id), sanitizeForFirestore(m), { merge: true }).catch(() => {});
+      fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(m),
+      }).catch(() => {});
     });
     try {
       await supabase.from('messages').insert([messageToRow(welcomeMsg), ...adminStaffNotifications.map(messageToRow)]);
@@ -1299,6 +1408,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setActivityLogs(prev => [newLog, ...prev]);
     setDoc(doc(db, 'activity_logs', newLog.id), sanitizeForFirestore(newLog), { merge: true }).catch(() => {});
+    fetch('/api/activity_logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLog),
+    }).catch(() => {});
     try {
       await supabase.from('activity_logs').insert([activityLogToRow(newLog)]);
     } catch (err) {
@@ -1328,6 +1442,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     updateDoc(doc(db, 'staff', id), sanitizeForFirestore(updated)).catch(() => {});
 
+    const currentStaff = staff.find(s => s.id === id);
+    const mergedStaff = { ...(currentStaff || {}), ...updated, id };
+
+    await Promise.allSettled([
+      fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mergedStaff),
+      }),
+      Object.keys(userUpdates).length > 0 ? fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...userUpdates }),
+      }) : Promise.resolve(),
+    ]);
+
     try {
       await supabase.from('staff').update(staffToRow(updated)).eq('id', id);
       if (Object.keys(userUpdates).length > 0) {
@@ -1356,9 +1486,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStaff(prev => prev.filter(s => s.id !== id && (!targetEmail || (s?.email || '').toLowerCase() !== targetEmail.toLowerCase())));
     setUsers(prev => prev.filter(u => u.id !== id && (!targetEmail || (u?.email || '').toLowerCase() !== targetEmail.toLowerCase())));
     
-    // 2. Immediate Firestore deletion
-    deleteDoc(doc(db, 'staff', id)).catch(() => {});
-    deleteDoc(doc(db, 'users', id)).catch(() => {});
+    // 2. Immediate Firestore & Backend Server deletion
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'staff', id)),
+      deleteDoc(doc(db, 'users', id)),
+      fetch(`/api/staff/${id}?email=${encodeURIComponent(targetEmail || '')}`, { method: 'DELETE' }),
+      fetch(`/api/users/${id}?email=${encodeURIComponent(targetEmail || '')}`, { method: 'DELETE' }),
+    ]);
     
     // 3. Immediate Supabase Database deletion
     try {
@@ -1399,8 +1533,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setUsers(prev => prev.filter(u => u.id !== userId && (!cleanEmail || (u?.email || '').toLowerCase() !== cleanEmail)));
     setStaff(prev => prev.filter(s => s.id !== userId && (!cleanEmail || (s?.email || '').toLowerCase() !== cleanEmail)));
 
-    deleteDoc(doc(db, 'users', userId)).catch(() => {});
-    deleteDoc(doc(db, 'staff', userId)).catch(() => {});
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'users', userId)),
+      deleteDoc(doc(db, 'staff', userId)),
+      fetch(`/api/users/${userId}?email=${encodeURIComponent(cleanEmail || '')}`, { method: 'DELETE' }),
+      fetch(`/api/staff/${userId}?email=${encodeURIComponent(cleanEmail || '')}`, { method: 'DELETE' }),
+    ]);
 
     try {
       await supabase.from('profiles').delete().eq('id', userId);
@@ -1449,7 +1587,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } else {
           showToast('Database verified clean: No duplicate registrations found.');
         }
-        await fetchSupabaseData();
+        await syncDatabase();
         return { success: true, removedCount: totalRemoved, details: data.details || [] };
       } else {
         showToast(`Deduplication notice: ${data.error || 'Server processing'}`);
@@ -1534,8 +1672,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setShifts(prev => [newShift, ...prev]);
 
-    // Save to Firestore
-    setDoc(doc(db, 'shifts', newShift.id), sanitizeForFirestore(newShift), { merge: true }).catch(() => {});
+    // Save to Firestore & backend server
+    await Promise.allSettled([
+      setDoc(doc(db, 'shifts', newShift.id), sanitizeForFirestore(newShift), { merge: true }),
+      fetch('/api/shifts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newShift),
+      }),
+    ]);
 
     try {
       const { data: inserted } = await supabase
@@ -1558,6 +1703,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setActivityLogs(prev => [newLog, ...prev]);
     setDoc(doc(db, 'activity_logs', newLog.id), sanitizeForFirestore(newLog), { merge: true }).catch(() => {});
+    fetch('/api/activity_logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLog),
+    }).catch(() => {});
     try {
       await supabase.from('activity_logs').insert([activityLogToRow(newLog)]);
     } catch (err) {
@@ -1569,7 +1719,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateShift = async (id: string, updated: Partial<Shift>) => {
     setShifts(prev => prev.map(s => s.id === id ? { ...s, ...updated } : s));
-    setDoc(doc(db, 'shifts', id), sanitizeForFirestore(updated), { merge: true }).catch(() => {});
+    const target = shifts.find(s => s.id === id);
+    const merged = { ...(target || {}), ...updated, id };
+
+    await Promise.allSettled([
+      setDoc(doc(db, 'shifts', id), sanitizeForFirestore(updated), { merge: true }),
+      fetch('/api/shifts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged),
+      }),
+    ]);
+
     try {
       await supabase.from('shifts').update(shiftToRow(updated)).eq('id', id);
     } catch (err) {
@@ -1580,7 +1741,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteShift = async (id: string) => {
     setShifts(prev => prev.filter(s => s.id !== id));
-    deleteDoc(doc(db, 'shifts', id)).catch(() => {});
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'shifts', id)),
+      fetch(`/api/shifts/${id}`, { method: 'DELETE' }),
+    ]);
     try {
       await supabase.from('shifts').delete().eq('id', id);
     } catch (err) {
@@ -1625,8 +1789,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           timestamp,
         };
         setMessages(prev => [newMsg, ccMsg, ...prev]);
-        setDoc(doc(db, 'messages', newMsg.id), sanitizeForFirestore(newMsg), { merge: true }).catch(() => {});
-        setDoc(doc(db, 'messages', ccMsg.id), sanitizeForFirestore(ccMsg), { merge: true }).catch(() => {});
+        await Promise.allSettled([
+          setDoc(doc(db, 'messages', newMsg.id), sanitizeForFirestore(newMsg), { merge: true }),
+          setDoc(doc(db, 'messages', ccMsg.id), sanitizeForFirestore(ccMsg), { merge: true }),
+          fetch('/api/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newMsg),
+          }),
+          fetch('/api/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(ccMsg),
+          }),
+        ]);
 
         try {
           await supabase.from('messages').insert([messageToRow(newMsg), messageToRow(ccMsg)]);
@@ -1640,7 +1816,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setMessages(prev => [newMsg, ...prev]);
-    setDoc(doc(db, 'messages', newMsg.id), sanitizeForFirestore(newMsg), { merge: true }).catch(() => {});
+    await Promise.allSettled([
+      setDoc(doc(db, 'messages', newMsg.id), sanitizeForFirestore(newMsg), { merge: true }),
+      fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMsg),
+      }),
+    ]);
+
     try {
       await supabase.from('messages').insert([messageToRow(newMsg)]);
     } catch (err) {
@@ -1651,7 +1835,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const markMessageAsRead = async (id: string) => {
     setMessages(prev => prev.map(m => m.id === id ? { ...m, isRead: true } : m));
-    updateDoc(doc(db, 'messages', id), { isRead: true }).catch(() => {});
+    const target = messages.find(m => m.id === id);
+    const updated = { ...(target || {}), isRead: true, id };
+
+    await Promise.allSettled([
+      updateDoc(doc(db, 'messages', id), { isRead: true }),
+      fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+      }),
+    ]);
+
     try {
       await supabase.from('messages').update({ is_read: true }).eq('id', id);
     } catch (err) {
@@ -1661,6 +1856,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteMessage = async (id: string) => {
     setMessages(prev => prev.filter(m => m.id !== id));
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'messages', id)),
+      fetch(`/api/messages/${id}`, { method: 'DELETE' }),
+    ]);
     try {
       await supabase.from('messages').delete().eq('id', id);
     } catch (err) {
@@ -1683,8 +1882,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deleteMultipleFromStorage(filesToDelete).catch(() => {});
     }
 
-    deleteDoc(doc(db, 'applications', id)).catch(() => {});
-    fetch(`/api/applications/${id}`, { method: 'DELETE' }).catch(() => {});
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'applications', id)),
+      fetch(`/api/applications/${id}`, { method: 'DELETE' }),
+    ]);
+
     try {
       await supabase.from('applications').delete().eq('id', id);
     } catch (err) {
@@ -1703,8 +1905,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setConsultationBookings(prev => [newBooking, ...prev]);
 
-    // Save to Firestore
-    setDoc(doc(db, 'consultations', newBooking.id), sanitizeForFirestore(newBooking), { merge: true }).catch(() => {});
+    // Save to Firestore & backend server
+    await Promise.allSettled([
+      setDoc(doc(db, 'consultations', newBooking.id), sanitizeForFirestore(newBooking), { merge: true }),
+      fetch('/api/consultations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newBooking),
+      }),
+    ]);
 
     try {
       const { data: inserted } = await supabase
@@ -1718,6 +1927,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     showToast('Consultation request submitted successfully! Our care team will contact you shortly.');
+  };
+
+  const deleteConsultation = async (id: string) => {
+    setConsultationBookings(prev => prev.filter(c => c.id !== id));
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'consultations', id)),
+      fetch(`/api/consultations/${id}`, { method: 'DELETE' }),
+    ]);
+    showToast('Consultation removed.');
   };
 
   // ============================================================================
@@ -1739,15 +1957,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setEvents(prev => [newEvent, ...prev]);
 
-    // Save to Firestore
-    setDoc(doc(db, 'events', newEvent.id), sanitizeForFirestore(newEvent), { merge: true }).catch(() => {});
-
-    // Save to server fallback cache
-    fetch('/api/events', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newEvent),
-    }).catch(err => console.warn('Server event post notice:', err));
+    // Save to Firestore & backend server
+    await Promise.allSettled([
+      setDoc(doc(db, 'events', newEvent.id), sanitizeForFirestore(newEvent), { merge: true }),
+      fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newEvent),
+      }),
+    ]);
 
     try {
       const { data: inserted } = await supabase
@@ -1769,6 +1987,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
     };
     setActivityLogs(prev => [newLog, ...prev]);
+    setDoc(doc(db, 'activity_logs', newLog.id), sanitizeForFirestore(newLog), { merge: true }).catch(() => {});
+    fetch('/api/activity_logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLog),
+    }).catch(() => {});
     try {
       await supabase.from('activity_logs').insert([activityLogToRow(newLog)]);
     } catch (err) {
@@ -1787,12 +2011,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cleanUpdated = { ...updated, imageUrl };
     setEvents(prev => prev.map(e => e.id === id ? { ...e, ...cleanUpdated } : e));
 
-    // Update server fallback cache
-    fetch(`/api/events/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cleanUpdated),
-    }).catch(err => console.warn('Server event put notice:', err));
+    const target = events.find(e => e.id === id);
+    const merged = { ...(target || {}), ...cleanUpdated, id };
+
+    await Promise.allSettled([
+      setDoc(doc(db, 'events', id), sanitizeForFirestore(cleanUpdated), { merge: true }),
+      fetch(`/api/events/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged),
+      }),
+    ]);
 
     try {
       await supabase.from('community_events').update(eventToRow(cleanUpdated)).eq('id', id);
@@ -1811,10 +2040,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deleteFromStorage(target.imageUrl).catch(() => {});
     }
 
-    // Delete from server fallback cache & storage
-    fetch(`/api/events/${id}`, {
-      method: 'DELETE',
-    }).catch(err => console.warn('Server event delete notice:', err));
+    // Delete from Firestore & server backend
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'events', id)),
+      fetch(`/api/events/${id}`, { method: 'DELETE' }),
+    ]);
 
     try {
       await supabase.from('community_events').delete().eq('id', id);
@@ -1838,6 +2068,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setJobs(prev => [newJob, ...prev]);
 
+    await Promise.allSettled([
+      setDoc(doc(db, 'jobs', newJob.id), sanitizeForFirestore(newJob), { merge: true }),
+      fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newJob),
+      }),
+    ]);
+
     try {
       const { data: inserted } = await supabase
         .from('job_vacancies')
@@ -1858,6 +2097,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
     };
     setActivityLogs(prev => [newLog, ...prev]);
+    setDoc(doc(db, 'activity_logs', newLog.id), sanitizeForFirestore(newLog), { merge: true }).catch(() => {});
+    fetch('/api/activity_logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLog),
+    }).catch(() => {});
     try {
       await supabase.from('activity_logs').insert([activityLogToRow(newLog)]);
     } catch (err) {
@@ -1869,6 +2114,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateJob = async (id: string, updated: Partial<JobVacancy>) => {
     setJobs(prev => prev.map(j => j.id === id ? { ...j, ...updated } : j));
+    const target = jobs.find(j => j.id === id);
+    const merged = { ...(target || {}), ...updated, id };
+
+    await Promise.allSettled([
+      setDoc(doc(db, 'jobs', id), sanitizeForFirestore(updated), { merge: true }),
+      fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged),
+      }),
+    ]);
+
     try {
       await supabase.from('job_vacancies').update(jobToRow(updated)).eq('id', id);
     } catch (err) {
@@ -1880,6 +2137,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteJob = async (id: string) => {
     const target = jobs.find(j => j.id === id);
     setJobs(prev => prev.filter(j => j.id !== id));
+
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'jobs', id)),
+      fetch(`/api/jobs/${id}`, { method: 'DELETE' }),
+    ]);
+
     try {
       await supabase.from('job_vacancies').delete().eq('id', id);
     } catch (err) {
@@ -1917,6 +2180,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setGalleryItems(prev => [newItem, ...prev]);
 
+    await Promise.allSettled([
+      setDoc(doc(db, 'gallery', newItem.id), sanitizeForFirestore(newItem), { merge: true }),
+      fetch('/api/gallery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newItem),
+      }),
+    ]);
+
     try {
       const { data: inserted } = await supabase
         .from('gallery_items')
@@ -1937,6 +2209,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
     };
     setActivityLogs(prev => [newLog, ...prev]);
+    setDoc(doc(db, 'activity_logs', newLog.id), sanitizeForFirestore(newLog), { merge: true }).catch(() => {});
+    fetch('/api/activity_logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLog),
+    }).catch(() => {});
     try {
       await supabase.from('activity_logs').insert([activityLogToRow(newLog)]);
     } catch (err) {
@@ -1977,6 +2255,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setGalleryItems(prev => [...processedItems, ...prev]);
 
+    await Promise.allSettled(
+      processedItems.map(item =>
+        Promise.allSettled([
+          setDoc(doc(db, 'gallery', item.id), sanitizeForFirestore(item), { merge: true }),
+          fetch('/api/gallery', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(item),
+          }),
+        ])
+      )
+    );
+
     try {
       await supabase.from('gallery_items').insert(processedItems.map(galleryToRow));
     } catch (err) {
@@ -1992,6 +2283,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
     };
     setActivityLogs(prev => [newLog, ...prev]);
+    setDoc(doc(db, 'activity_logs', newLog.id), sanitizeForFirestore(newLog), { merge: true }).catch(() => {});
+    fetch('/api/activity_logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLog),
+    }).catch(() => {});
     try {
       await supabase.from('activity_logs').insert([activityLogToRow(newLog)]);
     } catch (err) {
@@ -2018,6 +2315,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cleanUpdated = { ...updated, imageUrl, videoUrl };
     setGalleryItems(prev => prev.map(g => g.id === id ? { ...g, ...cleanUpdated } : g));
 
+    const target = galleryItems.find(g => g.id === id);
+    const merged = { ...(target || {}), ...cleanUpdated, id };
+
+    await Promise.allSettled([
+      setDoc(doc(db, 'gallery', id), sanitizeForFirestore(cleanUpdated), { merge: true }),
+      fetch('/api/gallery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged),
+      }),
+    ]);
+
     try {
       await supabase.from('gallery_items').update(galleryToRow(cleanUpdated)).eq('id', id);
     } catch (err) {
@@ -2035,8 +2344,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deleteMultipleFromStorage([target.imageUrl, target.videoUrl]).catch(() => {});
     }
 
-    // Call server backend gallery delete API
-    fetch(`/api/gallery/${id}`, { method: 'DELETE' }).catch(() => {});
+    // Call server backend gallery delete API & Firestore
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'gallery', id)),
+      fetch(`/api/gallery/${id}`, { method: 'DELETE' }),
+    ]);
 
     try {
       await supabase.from('gallery_items').delete().eq('id', id);
@@ -2290,6 +2602,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       activityLogs,
       consultationBookings,
       bookConsultation,
+      deleteConsultation,
       events,
       addEvent,
       updateEvent,
@@ -2314,7 +2627,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsApplyModalOpen,
       selectedFacilityId,
       setSelectedFacilityId,
-      syncDatabase: fetchSupabaseData,
+      syncDatabase,
     }}>
       {children}
     </AppContext.Provider>

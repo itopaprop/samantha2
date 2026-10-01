@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
@@ -258,9 +259,10 @@ async function startServer() {
   // API ROUTES (PRIVILEGED SERVER OPERATIONS - SECRETS KEPT SERVER-SIDE)
   // ============================================================================
 
-  // In-memory server-side registry as resilient fallback
-  const serverStaffList: any[] = [];
-  const serverUsersList: any[] = [
+  // Persistent Server-Side Database File Store
+  const DB_FILE = path.join(process.cwd(), 'data', 'database.json');
+
+  const defaultAdminUsers: any[] = [
     {
       id: 'usr-admin-1',
       name: 'Folasade Sanyaolu',
@@ -280,8 +282,82 @@ async function startServer() {
       avatar: 'https://lh3.googleusercontent.com/d/1w6G7q5mbHmjWOhDMbYhVJEg6zda_Jw7X=s1600',
     }
   ];
-  const serverResidentsList: any[] = [];
-  const serverApplicationsList: any[] = [];
+
+  interface ServerStore {
+    staff: any[];
+    users: any[];
+    residents: any[];
+    shifts: any[];
+    messages: any[];
+    activity_logs: any[];
+    consultations: any[];
+    applications: any[];
+    events: any[];
+    jobs: any[];
+    gallery: any[];
+  }
+
+  function loadServerDb(): ServerStore {
+    try {
+      if (fs.existsSync(DB_FILE)) {
+        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        return {
+          staff: Array.isArray(parsed.staff) ? parsed.staff : [],
+          users: Array.isArray(parsed.users) && parsed.users.length > 0 ? parsed.users : defaultAdminUsers,
+          residents: Array.isArray(parsed.residents) ? parsed.residents : [],
+          shifts: Array.isArray(parsed.shifts) ? parsed.shifts : [],
+          messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+          activity_logs: Array.isArray(parsed.activity_logs) ? parsed.activity_logs : [],
+          consultations: Array.isArray(parsed.consultations) ? parsed.consultations : [],
+          applications: Array.isArray(parsed.applications) ? parsed.applications : [],
+          events: Array.isArray(parsed.events) ? parsed.events : [],
+          jobs: Array.isArray(parsed.jobs) ? parsed.jobs : [],
+          gallery: Array.isArray(parsed.gallery) ? parsed.gallery : [],
+        };
+      }
+    } catch (e) {
+      console.warn('Load DB error:', e);
+    }
+    return {
+      staff: [],
+      users: [...defaultAdminUsers],
+      residents: [],
+      shifts: [],
+      messages: [],
+      activity_logs: [],
+      consultations: [],
+      applications: [],
+      events: [],
+      jobs: [],
+      gallery: [],
+    };
+  }
+
+  const serverStore = loadServerDb();
+  function saveServerDb() {
+    try {
+      const dir = path.dirname(DB_FILE);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(DB_FILE, JSON.stringify(serverStore, null, 2), 'utf-8');
+    } catch (e) {
+      console.warn('Save DB error:', e);
+    }
+  }
+
+  const serverStaffList: any[] = serverStore.staff;
+  const serverUsersList: any[] = serverStore.users;
+  const serverResidentsList: any[] = serverStore.residents;
+  const serverShiftsList: any[] = serverStore.shifts;
+  const serverMessagesList: any[] = serverStore.messages;
+  const serverActivityLogsList: any[] = serverStore.activity_logs;
+  const serverConsultationsList: any[] = serverStore.consultations;
+  const serverApplicationsList: any[] = serverStore.applications;
+  const serverEventsList: any[] = serverStore.events;
+  const serverJobsList: any[] = serverStore.jobs;
+  const serverGalleryList: any[] = serverStore.gallery;
 
   // One-time startup sync for admin name in Supabase
   (async () => {
@@ -327,7 +403,6 @@ async function startServer() {
       console.warn('Supabase admin startup sync note:', syncErr);
     }
   })();
-  const serverEventsList: any[] = [];
 
   app.get('/api/health', (req, res) => {
     res.json({
@@ -511,6 +586,23 @@ async function startServer() {
     }
   });
 
+  // Universal Sync Endpoint: delivers all persisted server data to any connecting browser
+  app.get('/api/sync-all', (req, res) => {
+    res.json({
+      staff: serverStaffList,
+      users: serverUsersList,
+      residents: serverResidentsList,
+      shifts: serverShiftsList,
+      messages: serverMessagesList,
+      activity_logs: serverActivityLogsList,
+      consultations: serverConsultationsList,
+      applications: serverApplicationsList,
+      events: serverEventsList,
+      jobs: serverJobsList,
+      gallery: serverGalleryList,
+    });
+  });
+
   app.get('/api/users', (req, res) => {
     res.json(serverUsersList);
   });
@@ -519,26 +611,34 @@ async function startServer() {
     const user = req.body;
     if (user && user.email) {
       const cleanEmail = user.email.trim().toLowerCase();
-      const cleanPhone = user.phone ? user.phone.trim() : '';
-
-      // Duplicate check against server memory and Supabase profiles
-      const isDupMemory = serverUsersList.some(u => 
-        (u.id !== user.id) && (areEmailsEqual(u.email, cleanEmail) || (cleanPhone && arePhonesEqual(u.phone, cleanPhone)))
-      );
-      if (isDupMemory) {
-        return res.status(409).json({ error: 'A user with this email or phone number is already registered.' });
-      }
-
       const idx = serverUsersList.findIndex(u => u.id === user.id || u.email?.toLowerCase() === cleanEmail);
       if (idx >= 0) {
         serverUsersList[idx] = { ...serverUsersList[idx], ...user };
       } else {
         serverUsersList.push(user);
       }
+      saveServerDb();
       res.json({ success: true, user });
     } else {
       res.status(400).json({ error: 'Valid user object with email required' });
     }
+  });
+
+  app.delete('/api/users/:id', (req, res) => {
+    const { id } = req.params;
+    const email = req.query.email ? String(req.query.email).trim().toLowerCase() : '';
+    let targetEmail = email;
+    const uIdx = serverUsersList.findIndex(u => u.id === id || (email && u.email?.toLowerCase() === email));
+    if (uIdx >= 0) {
+      if (!targetEmail) targetEmail = serverUsersList[uIdx].email?.toLowerCase() || '';
+      serverUsersList.splice(uIdx, 1);
+    }
+    const sIdx = serverStaffList.findIndex(s => s.id === id || (targetEmail && s.email?.toLowerCase() === targetEmail));
+    if (sIdx >= 0) {
+      serverStaffList.splice(sIdx, 1);
+    }
+    saveServerDb();
+    res.json({ success: true, id });
   });
 
   app.get('/api/staff', (req, res) => {
@@ -549,25 +649,224 @@ async function startServer() {
     const staff = req.body;
     if (staff && staff.email) {
       const cleanEmail = staff.email.trim().toLowerCase();
-      const cleanPhone = staff.phone ? staff.phone.trim() : '';
-
-      const isDupMemory = serverStaffList.some(s => 
-        (s.id !== staff.id) && (areEmailsEqual(s.email, cleanEmail) || (cleanPhone && arePhonesEqual(s.phone, cleanPhone)))
-      );
-      if (isDupMemory) {
-        return res.status(409).json({ error: 'A staff member with this email or phone number is already registered.' });
-      }
-
       const idx = serverStaffList.findIndex(s => s.id === staff.id || s.email?.toLowerCase() === cleanEmail);
       if (idx >= 0) {
         serverStaffList[idx] = { ...serverStaffList[idx], ...staff };
       } else {
         serverStaffList.push(staff);
       }
+      saveServerDb();
       res.json({ success: true, staff });
     } else {
       res.status(400).json({ error: 'Valid staff object with email required' });
     }
+  });
+
+  app.delete('/api/staff/:id', (req, res) => {
+    const { id } = req.params;
+    const email = req.query.email ? String(req.query.email).trim().toLowerCase() : '';
+    let targetEmail = email;
+    const sIdx = serverStaffList.findIndex(s => s.id === id || (email && s.email?.toLowerCase() === email));
+    if (sIdx >= 0) {
+      if (!targetEmail) targetEmail = serverStaffList[sIdx].email?.toLowerCase() || '';
+      serverStaffList.splice(sIdx, 1);
+    }
+    const uIdx = serverUsersList.findIndex(u => u.id === id || (targetEmail && u.email?.toLowerCase() === targetEmail));
+    if (uIdx >= 0) {
+      serverUsersList.splice(uIdx, 1);
+    }
+    saveServerDb();
+    res.json({ success: true, id });
+  });
+
+  app.get('/api/residents', (req, res) => {
+    res.json(serverResidentsList);
+  });
+
+  app.post('/api/residents', (req, res) => {
+    const resident = req.body;
+    if (resident && resident.id) {
+      const idx = serverResidentsList.findIndex(r => r.id === resident.id);
+      if (idx >= 0) {
+        serverResidentsList[idx] = { ...serverResidentsList[idx], ...resident };
+      } else {
+        serverResidentsList.unshift(resident);
+      }
+      saveServerDb();
+      res.json({ success: true, resident });
+    } else {
+      res.status(400).json({ error: 'Valid resident object required' });
+    }
+  });
+
+  app.delete('/api/residents/:id', (req, res) => {
+    const { id } = req.params;
+    const idx = serverResidentsList.findIndex(r => r.id === id);
+    if (idx >= 0) {
+      serverResidentsList.splice(idx, 1);
+    }
+    // Also remove any relative user linked to this resident
+    const uIdx = serverUsersList.findIndex(u => u.residentLinkedId === id);
+    if (uIdx >= 0) {
+      serverUsersList.splice(uIdx, 1);
+    }
+    saveServerDb();
+    res.json({ success: true, id });
+  });
+
+  app.get('/api/jobs', (req, res) => {
+    res.json(serverJobsList);
+  });
+
+  app.post('/api/jobs', (req, res) => {
+    const job = req.body;
+    if (job && job.id) {
+      const idx = serverJobsList.findIndex(j => j.id === job.id);
+      if (idx >= 0) {
+        serverJobsList[idx] = { ...serverJobsList[idx], ...job };
+      } else {
+        serverJobsList.unshift(job);
+      }
+      saveServerDb();
+      res.json({ success: true, job });
+    } else {
+      res.status(400).json({ error: 'Valid job object required' });
+    }
+  });
+
+  app.delete('/api/jobs/:id', (req, res) => {
+    const { id } = req.params;
+    const idx = serverJobsList.findIndex(j => j.id === id);
+    if (idx >= 0) {
+      serverJobsList.splice(idx, 1);
+      saveServerDb();
+    }
+    res.json({ success: true, id });
+  });
+
+  app.get('/api/gallery', (req, res) => {
+    res.json(serverGalleryList);
+  });
+
+  app.post('/api/gallery', (req, res) => {
+    const item = req.body;
+    if (item && item.id) {
+      const idx = serverGalleryList.findIndex(g => g.id === item.id);
+      if (idx >= 0) {
+        serverGalleryList[idx] = { ...serverGalleryList[idx], ...item };
+      } else {
+        serverGalleryList.unshift(item);
+      }
+      saveServerDb();
+      res.json({ success: true, item });
+    } else {
+      res.status(400).json({ error: 'Valid gallery item required' });
+    }
+  });
+
+  app.get('/api/shifts', (req, res) => {
+    res.json(serverShiftsList);
+  });
+
+  app.post('/api/shifts', (req, res) => {
+    const shift = req.body;
+    if (shift && shift.id) {
+      const idx = serverShiftsList.findIndex(s => s.id === shift.id);
+      if (idx >= 0) {
+        serverShiftsList[idx] = { ...serverShiftsList[idx], ...shift };
+      } else {
+        serverShiftsList.unshift(shift);
+      }
+      saveServerDb();
+      res.json({ success: true, shift });
+    } else {
+      res.status(400).json({ error: 'Valid shift object required' });
+    }
+  });
+
+  app.delete('/api/shifts/:id', (req, res) => {
+    const { id } = req.params;
+    const idx = serverShiftsList.findIndex(s => s.id === id);
+    if (idx >= 0) {
+      serverShiftsList.splice(idx, 1);
+      saveServerDb();
+    }
+    res.json({ success: true, id });
+  });
+
+  app.get('/api/messages', (req, res) => {
+    res.json(serverMessagesList);
+  });
+
+  app.post('/api/messages', (req, res) => {
+    const message = req.body;
+    if (message && message.id) {
+      const idx = serverMessagesList.findIndex(m => m.id === message.id);
+      if (idx >= 0) {
+        serverMessagesList[idx] = { ...serverMessagesList[idx], ...message };
+      } else {
+        serverMessagesList.unshift(message);
+      }
+      saveServerDb();
+      res.json({ success: true, message });
+    } else {
+      res.status(400).json({ error: 'Valid message object required' });
+    }
+  });
+
+  app.delete('/api/messages/:id', (req, res) => {
+    const { id } = req.params;
+    const idx = serverMessagesList.findIndex(m => m.id === id);
+    if (idx >= 0) {
+      serverMessagesList.splice(idx, 1);
+      saveServerDb();
+    }
+    res.json({ success: true, id });
+  });
+
+  app.get('/api/activity_logs', (req, res) => {
+    res.json(serverActivityLogsList);
+  });
+
+  app.post('/api/activity_logs', (req, res) => {
+    const log = req.body;
+    if (log && log.id) {
+      serverActivityLogsList.unshift(log);
+      saveServerDb();
+      res.json({ success: true, log });
+    } else {
+      res.status(400).json({ error: 'Valid log object required' });
+    }
+  });
+
+  app.get('/api/consultations', (req, res) => {
+    res.json(serverConsultationsList);
+  });
+
+  app.post('/api/consultations', (req, res) => {
+    const booking = req.body;
+    if (booking && booking.id) {
+      const idx = serverConsultationsList.findIndex(c => c.id === booking.id);
+      if (idx >= 0) {
+        serverConsultationsList[idx] = { ...serverConsultationsList[idx], ...booking };
+      } else {
+        serverConsultationsList.unshift(booking);
+      }
+      saveServerDb();
+      res.json({ success: true, booking });
+    } else {
+      res.status(400).json({ error: 'Valid booking object required' });
+    }
+  });
+
+  app.delete('/api/consultations/:id', (req, res) => {
+    const { id } = req.params;
+    const idx = serverConsultationsList.findIndex(c => c.id === id);
+    if (idx >= 0) {
+      serverConsultationsList.splice(idx, 1);
+      saveServerDb();
+    }
+    res.json({ success: true, id });
   });
 
   app.get('/api/applications', async (req, res) => {
@@ -773,6 +1072,8 @@ async function startServer() {
       const existingUserIdx = serverUsersList.findIndex(u => u.email?.toLowerCase() === cleanEmail);
       if (existingUserIdx >= 0) serverUsersList[existingUserIdx] = serverUserObj;
       else serverUsersList.push(serverUserObj);
+
+      saveServerDb();
 
       // Create Supabase Auth user securely using Admin API
       try {
@@ -1045,6 +1346,27 @@ async function startServer() {
 
       const { error: profErr } = await supabaseAdmin.from('profiles').upsert(profileRow, { onConflict: 'email' });
       if (profErr) console.warn('Supabase relative profile upsert note:', profErr.message);
+
+      // Save to persistent server store
+      const resIdx = serverResidentsList.findIndex(r => r.id === residentId);
+      if (resIdx >= 0) serverResidentsList[resIdx] = { ...resident, id: residentId };
+      else serverResidentsList.unshift({ ...resident, id: residentId });
+
+      const relUserObj = {
+        id: relativeUserId,
+        email: relativeEmail,
+        name: relative.name,
+        role: 'Resident Relative',
+        relationship: relative.relationship || 'Next of Kin',
+        residentLinkedId: residentId,
+        phone: relative.phone || '+234 706 933 2193',
+        avatar: relative.photoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+      };
+      const relIdx = serverUsersList.findIndex(u => u.email?.toLowerCase() === relativeEmail);
+      if (relIdx >= 0) serverUsersList[relIdx] = relUserObj;
+      else serverUsersList.push(relUserObj);
+
+      saveServerDb();
 
       // Generate & Dispatch Automatic Welcome Email to Relative
       const emailContent = generateRelativeWelcomeEmail({
@@ -1403,6 +1725,8 @@ async function startServer() {
         if (uIdx >= 0) serverUsersList.splice(uIdx, 1);
       }
 
+      saveServerDb();
+
       res.status(200).json({
         success: true,
         message: `Staff member removed from Supabase Auth and database.`,
@@ -1506,6 +1830,8 @@ async function startServer() {
         const uIdx = serverUsersList.findIndex(u => u.email?.toLowerCase() === cleanRelativeEmail);
         if (uIdx >= 0) serverUsersList.splice(uIdx, 1);
       }
+
+      saveServerDb();
 
       res.status(200).json({
         success: true,
