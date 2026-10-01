@@ -588,6 +588,9 @@ async function startServer() {
 
   // Universal Sync Endpoint: delivers all persisted server data to any connecting browser
   app.get('/api/sync-all', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.json({
       staff: serverStaffList,
       users: serverUsersList,
@@ -604,6 +607,9 @@ async function startServer() {
   });
 
   app.get('/api/users', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.json(serverUsersList);
   });
 
@@ -642,6 +648,9 @@ async function startServer() {
   });
 
   app.get('/api/staff', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.json(serverStaffList);
   });
 

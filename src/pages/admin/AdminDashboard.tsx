@@ -99,12 +99,12 @@ export const AdminDashboard: React.FC = () => {
   const [deletingItem, setDeletingItem] = useState<{ type: 'message' | 'application'; id: string; title: string } | null>(null);
   const [isDeduplicating, setIsDeduplicating] = useState(false);
 
-  // Auto-sync Supabase live Auth users & database tables on mount
+  // Auto-sync live database on mount and tab change
   useEffect(() => {
     if (syncDatabase) {
       syncDatabase().catch((e: any) => console.warn('Auto sync warning:', e));
     }
-  }, [syncDatabase]);
+  }, [syncDatabase, activeTab]);
 
   // Modals state
   const [isAddResidentOpen, setIsAddResidentOpen] = useState(false);

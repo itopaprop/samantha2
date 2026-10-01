@@ -31,10 +31,9 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // 2. Staff directory: Staff can get their own staff record, Admin can manage all
+    // 2. Staff directory: Anyone can view staff directory; Admin can create, update, delete
     match /staff/{staffId} {
-      allow get: if isOwner(staffId) || isAdmin();
-      allow list: if isSignedIn();
+      allow read: if true;
       allow create, update, delete: if isAdmin();
     }
 

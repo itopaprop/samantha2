@@ -423,42 +423,88 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Universal Sync Engine: Synchronizes data across all devices, browsers, and tabs
   const syncDatabase = useCallback(async () => {
     try {
-      const res = await fetch('/api/sync-all');
+      const res = await fetch('/api/sync-all', {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      });
       if (res.ok) {
         const data = await res.json();
         if (data) {
           if (Array.isArray(data.staff)) {
-            setStaff(data.staff.filter((s: any) => !isDemoRecord(s)));
+            const cleanStaff = data.staff.filter((s: any) => !isDemoRecord(s));
+            setStaff(cleanStaff);
+            safeSave('shh_staff', cleanStaff);
+            cleanStaff.forEach((s: any) => {
+              if (s?.id && db) {
+                setDoc(doc(db, 'staff', s.id), sanitizeForFirestore(s), { merge: true }).catch(() => {});
+              }
+            });
           }
           if (Array.isArray(data.users) && data.users.length > 0) {
-            setUsers(data.users.filter((u: any) => !isDemoRecord(u)));
+            const cleanUsers = data.users.filter((u: any) => !isDemoRecord(u));
+            setUsers(cleanUsers);
+            safeSave('shh_users', cleanUsers);
+            cleanUsers.forEach((u: any) => {
+              if (u?.id && db) {
+                setDoc(doc(db, 'users', u.id), sanitizeForFirestore(u), { merge: true }).catch(() => {});
+              }
+            });
           }
           if (Array.isArray(data.residents)) {
-            setResidents(data.residents.filter((r: any) => !isDemoRecord(r)));
+            const cleanResidents = data.residents.filter((r: any) => !isDemoRecord(r));
+            setResidents(cleanResidents);
+            safeSave('shh_residents', cleanResidents);
+            cleanResidents.forEach((r: any) => {
+              if (r?.id && db) {
+                setDoc(doc(db, 'residents', r.id), sanitizeForFirestore(r), { merge: true }).catch(() => {});
+              }
+            });
           }
           if (Array.isArray(data.shifts)) {
-            setShifts(data.shifts.filter((sh: any) => !isDemoRecord(sh)));
+            const cleanShifts = data.shifts.filter((sh: any) => !isDemoRecord(sh));
+            setShifts(cleanShifts);
+            safeSave('shh_shifts', cleanShifts);
+            cleanShifts.forEach((sh: any) => {
+              if (sh?.id && db) {
+                setDoc(doc(db, 'shifts', sh.id), sanitizeForFirestore(sh), { merge: true }).catch(() => {});
+              }
+            });
           }
           if (Array.isArray(data.messages)) {
-            setMessages(data.messages.filter((m: any) => !isDemoRecord(m)));
+            const cleanMessages = data.messages.filter((m: any) => !isDemoRecord(m));
+            setMessages(cleanMessages);
+            safeSave('shh_messages', cleanMessages);
           }
           if (Array.isArray(data.activity_logs)) {
-            setActivityLogs(data.activity_logs.filter((l: any) => !isDemoRecord(l)));
+            const cleanLogs = data.activity_logs.filter((l: any) => !isDemoRecord(l));
+            setActivityLogs(cleanLogs);
+            safeSave('shh_activity_logs', cleanLogs);
           }
           if (Array.isArray(data.consultations)) {
-            setConsultationBookings(data.consultations.filter((c: any) => !isDemoRecord(c)));
+            const cleanConsultations = data.consultations.filter((c: any) => !isDemoRecord(c));
+            setConsultationBookings(cleanConsultations);
+            safeSave('shh_consultations', cleanConsultations);
           }
           if (Array.isArray(data.applications)) {
-            setApplications(data.applications.filter((a: any) => !isDemoRecord(a)));
+            const cleanApps = data.applications.filter((a: any) => !isDemoRecord(a));
+            setApplications(cleanApps);
+            safeSave('shh_applications', cleanApps);
           }
           if (Array.isArray(data.events)) {
-            setEvents(data.events.filter((e: any) => !isDemoRecord(e)));
+            const cleanEvents = data.events.filter((e: any) => !isDemoRecord(e));
+            setEvents(cleanEvents);
+            safeSave('shh_events', cleanEvents);
           }
           if (Array.isArray(data.jobs)) {
             setJobs(data.jobs);
+            safeSave('shh_jobs', data.jobs);
           }
           if (Array.isArray(data.gallery)) {
             setGalleryItems(data.gallery);
+            safeSave('shh_gallery_v2', data.gallery);
           }
         }
       }
@@ -493,16 +539,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubs: (() => void)[] = [];
 
     // Helper to safely bind Firestore collection listeners
-    const bindCollection = <T,>(colName: string, setter: React.Dispatch<React.SetStateAction<T[]>>) => {
+    const bindCollection = <T extends { id?: string; email?: string }>(
+      colName: string, 
+      setter: React.Dispatch<React.SetStateAction<T[]>>,
+      storageKey?: string
+    ) => {
       try {
         const unsubscribe = onSnapshot(collection(db, colName), (snapshot) => {
           if (!snapshot.empty) {
             const rawItems = snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as T[];
-            const items = rawItems.filter(item => !isDemoRecord(item));
-            setter(items);
-          } else if (snapshot.metadata.fromCache === false && snapshot.docChanges().some(c => c.type === 'removed')) {
-            const rawItems = snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as T[];
-            setter(rawItems.filter(item => !isDemoRecord(item)));
+            const cleanItems = rawItems.filter(item => !isDemoRecord(item));
+            if (cleanItems.length > 0) {
+              setter(prev => {
+                const map = new Map<string, T>();
+                prev.forEach(item => {
+                  const key = item.id || (item as any).email || Math.random().toString();
+                  map.set(key, item);
+                });
+                cleanItems.forEach(item => {
+                  const key = item.id || (item as any).email || Math.random().toString();
+                  map.set(key, item);
+                });
+                const merged = Array.from(map.values()).filter(x => !isDemoRecord(x));
+                if (storageKey) safeSave(storageKey, merged);
+                return merged;
+              });
+            }
           }
         }, (err) => {
           console.debug(`Firestore listener notice for ${colName}:`, err.message);
@@ -513,22 +575,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
 
-    bindCollection('residents', setResidents);
-    bindCollection('staff', setStaff);
-    bindCollection('shifts', setShifts);
-    bindCollection('messages', setMessages);
-    bindCollection('activity_logs', setActivityLogs);
-    bindCollection('consultations', setConsultationBookings);
-    bindCollection('events', setEvents);
-    bindCollection('applications', setApplications);
-    bindCollection('users', setUsers);
+    bindCollection('residents', setResidents, 'shh_residents');
+    bindCollection('staff', setStaff, 'shh_staff');
+    bindCollection('shifts', setShifts, 'shh_shifts');
+    bindCollection('messages', setMessages, 'shh_messages');
+    bindCollection('activity_logs', setActivityLogs, 'shh_activity_logs');
+    bindCollection('consultations', setConsultationBookings, 'shh_consultations');
+    bindCollection('events', setEvents, 'shh_events');
+    bindCollection('applications', setApplications, 'shh_applications');
+    bindCollection('users', setUsers, 'shh_users');
 
     return () => {
       unsubs.forEach(unsub => {
         try { unsub(); } catch {}
       });
     };
-  }, []);
+  }, [currentUser]);
 
   // Listen to Firebase Authentication state
   useEffect(() => {
@@ -665,6 +727,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       localStorage.setItem('shh_last_activity', String(Date.now()));
     } catch {}
+    syncDatabase();
     showToast(`Welcome back, ${targetUser.name}! Signed in to ${targetUser.role} Portal.`);
     return true;
   };
