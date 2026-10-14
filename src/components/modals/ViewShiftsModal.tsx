@@ -192,12 +192,12 @@ export const ViewShiftsModal: React.FC<Props> = ({ isOpen, onClose, onEditShift 
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {filteredShifts.map(s => {
+                {filteredShifts.map((s, idx) => {
                   const staffMember = staff.find(st => st.id === s.staffId || st.name === s.staffName);
                   const roleText = staffMember ? staffMember.position : 'Care Specialist';
 
                   return (
-                    <div key={s.id} className="px-4 py-3.5 grid grid-cols-12 gap-2 items-center text-xs text-slate-700 hover:bg-slate-50/50 transition-colors">
+                    <div key={s.id && s.id !== 'local_user' ? s.id : `vshift-${idx}-${s.shiftType || 'sh'}`} className="px-4 py-3.5 grid grid-cols-12 gap-2 items-center text-xs text-slate-700 hover:bg-slate-50/50 transition-colors">
                       {/* Staff Member */}
                       <div className="col-span-3 flex items-center gap-2.5 font-bold text-slate-900 truncate">
                         <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center shrink-0">

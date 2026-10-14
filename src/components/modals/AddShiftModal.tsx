@@ -118,8 +118,8 @@ export const AddShiftModal: React.FC<Props> = ({ isOpen, onClose }) => {
               className="w-full px-4 py-3 text-sm font-semibold text-slate-800 bg-slate-50/70 border border-slate-200 rounded-2xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all cursor-pointer"
             >
               <option value="admin">User (admin)</option>
-              {staff.map(s => (
-                <option key={s.id} value={s.id}>
+              {staff.map((s, idx) => (
+                <option key={s.id && s.id !== 'local_user' ? `${s.id}-${idx}` : `staff-opt-${idx}`} value={s.id}>
                   {s.name} ({s.position})
                 </option>
               ))}

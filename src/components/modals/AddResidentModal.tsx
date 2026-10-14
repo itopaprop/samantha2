@@ -254,8 +254,8 @@ export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCate
                 onChange={e => setAssignedStaffId(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
               >
-                {staff.map(s => (
-                  <option key={s.id} value={s.id}>{s.name} ({s.position})</option>
+                {staff.map((s, idx) => (
+                  <option key={s.id && s.id !== 'local_user' ? `${s.id}-${idx}` : `addres-staff-opt-${idx}`} value={s.id}>{s.name} ({s.position})</option>
                 ))}
               </select>
             </div>

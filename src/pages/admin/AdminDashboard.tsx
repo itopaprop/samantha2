@@ -59,8 +59,7 @@ import {
   RotateCcw,
   FileText,
   Camera,
-  AlertTriangle,
-  RefreshCw
+  AlertTriangle
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
@@ -89,7 +88,6 @@ export const AdminDashboard: React.FC = () => {
     markMessageAsRead,
     showToast,
     purgeAllNonAdminUsers,
-    deduplicateDatabase,
     syncDatabase,
     logout 
   } = useApp();
@@ -97,7 +95,6 @@ export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'residents' | 'staff' | 'shifts' | 'messages' | 'events' | 'jobs' | 'gallery' | 'settings'>('overview');
   const [messagingTab, setMessagingTab] = useState<'inbox' | 'sent' | 'applications'>('inbox');
   const [deletingItem, setDeletingItem] = useState<{ type: 'message' | 'application'; id: string; title: string } | null>(null);
-  const [isDeduplicating, setIsDeduplicating] = useState(false);
 
   // Auto-sync live database on mount and tab change
   useEffect(() => {
@@ -526,11 +523,11 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Quick Action Trigger Bar & Clickable Inbox Notification */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Quick Action Trigger Bar & Clickable Inbox Notification - Strictly on the same line */}
+          <div className="flex items-center gap-2 flex-nowrap overflow-x-auto max-w-full py-1 shrink-0 scrollbar-none">
             <button
               onClick={() => setActiveTab('messages')}
-              className="relative flex items-center gap-2 px-3.5 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200/90 rounded-xl font-bold text-xs shadow-2xs transition-all cursor-pointer group"
+              className="shrink-0 whitespace-nowrap relative flex items-center gap-2 px-3.5 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200/90 rounded-xl font-bold text-xs shadow-2xs transition-all cursor-pointer group"
               title="Click to open Inbox Messages"
             >
               <Mail className="w-4 h-4 text-sky-700 group-hover:scale-110 transition-transform" />
@@ -547,27 +544,27 @@ export const AdminDashboard: React.FC = () => {
             </button>
             <button
               onClick={() => setIsAddResidentOpen(true)}
-              className="bg-sky-700 hover:bg-sky-800 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              className="shrink-0 whitespace-nowrap bg-sky-700 hover:bg-sky-800 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <UserPlus className="w-3.5 h-3.5" /> Add Resident
             </button>
             <button
               onClick={() => setIsAddStaffOpen(true)}
-              className="bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              className="shrink-0 whitespace-nowrap bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <UserCheck className="w-3.5 h-3.5" /> Add Staff
             </button>
             <button
-              onClick={() => setIsViewShiftsOpen(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
-            >
-              <Clock className="w-3.5 h-3.5" /> View Shifts
-            </button>
-            <button
               onClick={() => setIsAddShiftOpen(true)}
-              className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              className="shrink-0 whitespace-nowrap bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <Calendar className="w-3.5 h-3.5" /> Add Shift
+            </button>
+            <button
+              onClick={() => setIsViewShiftsOpen(true)}
+              className="shrink-0 whitespace-nowrap bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Clock className="w-3.5 h-3.5" /> View Shifts
             </button>
           </div>
         </div>
@@ -583,18 +580,6 @@ export const AdminDashboard: React.FC = () => {
                 Quick Category Registration Actions
               </div>
               <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setIsAddStaffOpen(true)}
-                  className="px-3 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Add Staff Member
-                </button>
-                <button
-                  onClick={() => triggerAddResidentWithCategory('Residential Elderly Care')}
-                  className="px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Add Resident
-                </button>
                 <button
                   onClick={() => triggerAddResidentWithCategory('Dementia Support')}
                   className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
@@ -618,19 +603,6 @@ export const AdminDashboard: React.FC = () => {
                   className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                 >
                   <Brain className="w-3.5 h-3.5" /> Add Vulnerable Client
-                </button>
-                <button
-                  onClick={async () => {
-                    setIsDeduplicating(true);
-                    await deduplicateDatabase();
-                    setIsDeduplicating(false);
-                  }}
-                  disabled={isDeduplicating}
-                  title="Scans all tables and Auth users for matching email or phone number, removes duplicates, cleans storage, and leaves 1 record."
-                  className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ml-auto"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isDeduplicating ? 'animate-spin' : ''}`} />
-                  {isDeduplicating ? 'Scanning & Deduplicating...' : 'Deduplicate Database (Verify Email & Phone)'}
                 </button>
               </div>
             </div>
@@ -716,8 +688,8 @@ export const AdminDashboard: React.FC = () => {
                 <div className="space-y-4">
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Recent Admissions</div>
                   <div className="space-y-2">
-                    {residents.slice(0, 3).map((r) => (
-                      <div key={r.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                    {residents.slice(0, 3).map((r, idx) => (
+                      <div key={r.id && r.id !== 'local_user' ? r.id : `res-rec-${idx}-${r.fullName}`} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
                         <div>
                           <div className="font-bold text-slate-900">{r.fullName}</div>
                           <div className="text-slate-500">{r.careCategory} • {r.roomNumber}</div>
@@ -731,8 +703,8 @@ export const AdminDashboard: React.FC = () => {
 
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-wider pt-2">New Staff Members</div>
                   <div className="space-y-2">
-                    {staff.slice(0, 2).map((s) => (
-                      <div key={s.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                    {staff.slice(0, 2).map((s, idx) => (
+                      <div key={s.id && s.id !== 'local_user' ? s.id : `staff-rec-${idx}-${s.name}`} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2.5">
                           <img src={s.avatar} alt={s.name} className="w-8 h-8 rounded-full object-cover" />
                           <div>
@@ -757,8 +729,8 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div className="space-y-4">
-                  {activityLogs.slice(0, 5).map((log) => (
-                    <div key={log.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                  {activityLogs.slice(0, 5).map((log, idx) => (
+                    <div key={log.id && log.id !== 'local_user' ? log.id : `act-rec-${idx}`} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
                       <div className="w-8 h-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center shrink-0 mt-0.5 font-bold">
                         <Clock className="w-4 h-4" />
                       </div>
@@ -840,8 +812,8 @@ export const AdminDashboard: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {filteredResidents.length > 0 ? (
-                    filteredResidents.map((r) => (
-                      <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                    filteredResidents.map((r, idx) => (
+                      <tr key={r.id && r.id !== 'local_user' ? r.id : `res-row-${idx}-${r.fullName}`} className="hover:bg-slate-50 transition-colors">
                         <td className="p-3 font-bold text-slate-900">
                           {r.fullName}
                           <div className="text-[10px] text-slate-400 font-normal">DOB: {r.dateOfBirth} ({r.gender})</div>
@@ -944,8 +916,8 @@ export const AdminDashboard: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {filteredStaff.length > 0 ? (
-                    filteredStaff.map((s) => (
-                      <tr key={s.id} className="hover:bg-slate-50 transition-colors">
+                    filteredStaff.map((s, idx) => (
+                      <tr key={s.id && s.id !== 'local_user' ? s.id : `staff-row-${idx}-${s.name}`} className="hover:bg-slate-50 transition-colors">
                         <td className="p-3 font-bold text-slate-900 flex items-center gap-2.5">
                           <img src={s.avatar} alt={s.name} className="w-8 h-8 rounded-full object-cover" />
                           <span>{s.name}</span>
@@ -1031,8 +1003,8 @@ export const AdminDashboard: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {shifts.map((sh) => (
-                <div key={sh.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 relative">
+              {shifts.map((sh, idx) => (
+                <div key={sh.id && sh.id !== 'local_user' ? `${sh.id}-${idx}` : `shift-${idx}`} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 relative">
                   <div className="absolute top-4 right-4 flex items-center gap-1">
                     <button
                       onClick={() => setEditingShift(sh)}
@@ -1129,9 +1101,9 @@ export const AdminDashboard: React.FC = () => {
                     No {messagingTab} messages found.
                   </div>
                 ) : (
-                  (messagingTab === 'inbox' ? inboxMessages : sentMessages).map((msg) => (
+                  (messagingTab === 'inbox' ? inboxMessages : sentMessages).map((msg, idx) => (
                     <div
-                      key={msg.id}
+                      key={msg.id && msg.id !== 'local_user' ? `${msg.id}-${idx}` : `msg-${idx}`}
                       onClick={() => markMessageAsRead(msg.id)}
                       className={`p-4 rounded-2xl border transition-all cursor-pointer relative group ${
                         !msg.isRead && messagingTab === 'inbox'
@@ -1288,8 +1260,8 @@ export const AdminDashboard: React.FC = () => {
                     <div>When job seekers or clients submit care applications, they will appear here with full details and image attachments.</div>
                   </div>
                 ) : (
-                  applications.map((app) => (
-                    <div key={app.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
+                  applications.map((app, idx) => (
+                    <div key={app.id && app.id !== 'local_user' ? `${app.id}-${idx}` : `app-${idx}`} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-200">
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
@@ -1443,8 +1415,8 @@ export const AdminDashboard: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {events.map((evt) => (
-                <div key={evt.id} className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden flex flex-col justify-between shadow-xs hover:shadow-md transition-all group">
+              {events.map((evt, idx) => (
+                <div key={evt.id && evt.id !== 'local_user' ? `${evt.id}-${idx}` : `evt-${idx}`} className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden flex flex-col justify-between shadow-xs hover:shadow-md transition-all group">
                   <div>
                     {/* Flyer Poster Preview Header */}
                     <div 
@@ -1556,8 +1528,8 @@ export const AdminDashboard: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {jobs.map((job) => (
-                <div key={job.id} className="bg-slate-50 rounded-2xl p-5 border border-slate-200 space-y-3 flex flex-col justify-between shadow-xs">
+              {jobs.map((job, idx) => (
+                <div key={job.id && job.id !== 'local_user' ? `${job.id}-${idx}` : `job-${idx}`} className="bg-slate-50 rounded-2xl p-5 border border-slate-200 space-y-3 flex flex-col justify-between shadow-xs">
                   <div className="space-y-2">
                     <div className="flex justify-between items-start">
                       <span className="text-[10px] font-bold bg-sky-100 text-sky-800 px-2.5 py-1 rounded-md uppercase tracking-wider">
@@ -1613,8 +1585,8 @@ export const AdminDashboard: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {galleryItems.map((item) => (
-                <div key={item.id} className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-200/90 shadow-xs relative aspect-[4/3] group">
+              {galleryItems.map((item, idx) => (
+                <div key={item.id && item.id !== 'local_user' ? `${item.id}-${idx}` : `gal-${idx}`} className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-200/90 shadow-xs relative aspect-[4/3] group">
                   {item.mediaType === 'video' && item.videoUrl ? (
                     <div className="relative w-full h-full bg-slate-950 flex items-center justify-center">
                       <img
@@ -2004,8 +1976,8 @@ export const AdminDashboard: React.FC = () => {
 
                 return (
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                    {assignedList.map((r) => (
-                      <div key={r.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                    {assignedList.map((r, idx) => (
+                      <div key={r.id && r.id !== 'local_user' ? r.id : `assign-res-${idx}-${r.fullName}`} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
                         <div className="flex items-center gap-3">
                           <img
                             src={r.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80'}

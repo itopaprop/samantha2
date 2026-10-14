@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
@@ -59,7 +60,14 @@ function getSupabaseAdmin(): any {
         listUsers: async () => ({ data: { users: [] }, error: null }),
         getUserById: async () => ({ data: { user: null }, error: null }),
         deleteUser: async () => ({ data: {}, error: null }),
-        createUser: async () => ({ data: { user: { id: 'local_user' } }, error: null }),
+        createUser: async () => ({ 
+          data: { 
+            user: { 
+              id: `usr_${Date.now()}_${Math.random().toString(36).slice(2, 9)}` 
+            } 
+          }, 
+          error: null 
+        }),
         updateUserById: async () => ({ data: { user: {} }, error: null }),
         generateLink: async () => ({ data: { properties: { action_link: '#' } }, error: null }),
       },
@@ -237,6 +245,7 @@ async function deleteFilesFromSupabaseStorage(urlsOrPaths: (string | null | unde
 
 async function startServer() {
   const app = express();
+  const httpServer = http.createServer(app);
   const PORT = 3000;
 
   // JSON Body Parser with high limits for base64 avatars
@@ -1130,7 +1139,7 @@ async function startServer() {
         console.warn('Auth admin exception in server:', authException);
       }
 
-      if (!effectiveUserId) {
+      if (!effectiveUserId || effectiveUserId === 'local_user') {
         effectiveUserId = `stf_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       }
 
@@ -1336,7 +1345,7 @@ async function startServer() {
         console.warn('Auth admin relative exception:', authException);
       }
 
-      if (!relativeUserId) {
+      if (!relativeUserId || relativeUserId === 'local_user') {
         relativeUserId = `rel_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       }
 
@@ -2546,7 +2555,10 @@ async function startServer() {
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { 
+        middlewareMode: true,
+        hmr: { server: httpServer },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -2558,7 +2570,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Samantha Sappy Care Fullstack Server running on http://0.0.0.0:${PORT}`);
     // Run database deduplication on startup to clean any legacy duplicates
     setTimeout(() => {

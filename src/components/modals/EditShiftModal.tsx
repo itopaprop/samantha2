@@ -83,8 +83,8 @@ export const EditShiftModal: React.FC<Props> = ({ isOpen, onClose, shift }) => {
               onChange={e => setStaffName(e.target.value)}
               className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-500"
             >
-              {staff.map(s => (
-                <option key={s.id} value={s.name}>{s.name} ({s.position})</option>
+              {staff.map((s, idx) => (
+                <option key={s.id && s.id !== 'local_user' ? `${s.id}-${idx}` : `shift-staff-opt-${idx}`} value={s.name}>{s.name} ({s.position})</option>
               ))}
             </select>
           </div>

@@ -245,8 +245,8 @@ export const ComposeMessageModal: React.FC<Props> = ({ isOpen, onClose, defaultR
               onChange={e => setReceiverId(e.target.value)}
               className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500 font-medium bg-slate-50/50"
             >
-              {availableReceivers.map(r => (
-                <option key={r.id} value={r.id}>
+              {availableReceivers.map((r, idx) => (
+                <option key={r.id && r.id !== 'local_user' ? `${r.id}-${idx}` : `recv-opt-${idx}`} value={r.id}>
                   {r.name}
                 </option>
               ))}

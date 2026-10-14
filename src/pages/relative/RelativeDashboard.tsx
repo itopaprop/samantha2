@@ -213,8 +213,8 @@ export const RelativeDashboard: React.FC = () => {
               </span>
             </div>
 
-            {linkedResidents.map((res) => (
-              <div key={res.id} className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-6">
+            {linkedResidents.map((res, idx) => (
+              <div key={res.id && res.id !== 'local_user' ? res.id : `rd-res-${idx}-${res.fullName}`} className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-6">
                 
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-6 border-b border-slate-100">
                   <div className="flex items-center gap-4">
@@ -332,9 +332,9 @@ export const RelativeDashboard: React.FC = () => {
                   No messages found. Click "Message Assigned Nurse" to start a discussion.
                 </div>
               ) : (
-                relativeMessages.map((msg) => (
+                relativeMessages.map((msg, idx) => (
                   <div
-                    key={msg.id}
+                    key={msg.id && msg.id !== 'local_user' ? msg.id : `rd-msg-${idx}`}
                     onClick={() => markMessageAsRead(msg.id)}
                     className={`p-4 rounded-2xl border cursor-pointer transition-all ${
                       msg.receiverId === currentUser.id && !msg.isRead

@@ -238,6 +238,19 @@ const generateTempPassword = (): string => {
   return `@${randomWord}${num}`;
 };
 
+// Helper to guarantee completely unique IDs and eliminate duplicate keys (e.g. legacy 'local_user' or placeholders)
+export const ensureUniqueKeys = <T extends { id?: string }>(items: any[], prefix: string): T[] => {
+  const seen = new Set<string>();
+  return (items || []).map((item, idx) => {
+    let id = item?.id;
+    if (!id || id === 'local_user' || id === '%s' || id === 'undefined' || id === 'null' || seen.has(id)) {
+      id = `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${idx}`;
+    }
+    seen.add(id);
+    return { ...item, id } as T;
+  });
+};
+
 const DEMO_CLEANUP_KEY = 'shh_demo_purge_v9_complete';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -269,12 +282,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const parsed = JSON.parse(saved);
       const list = Array.isArray(parsed) && parsed.length > 0 ? parsed.filter(u => !isDemoRecord(u)) : INITIAL_USERS;
-      return list.map(u => {
+      const formatted = list.map(u => {
         if (u.role === 'Admin' || u.email?.toLowerCase() === 'samanthasappy@gmail.com' || u.email?.toLowerCase() === 'itopaprop@gmail.com' || u.name?.includes('Sonyaolu') || u.name?.includes('Folashade')) {
           return { ...u, name: 'Folasade Sanyaolu' };
         }
         return u;
       });
+      return ensureUniqueKeys(formatted, 'usr');
     } catch {
       return INITIAL_USERS;
     }
@@ -301,7 +315,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!saved) return INITIAL_RESIDENTS;
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed.filter(r => !isDemoRecord(r)) : INITIAL_RESIDENTS;
+      const list = Array.isArray(parsed) ? parsed.filter(r => !isDemoRecord(r)) : INITIAL_RESIDENTS;
+      return ensureUniqueKeys(list, 'res');
     } catch {
       return INITIAL_RESIDENTS;
     }
@@ -312,7 +327,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!saved) return INITIAL_STAFF;
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed.filter(s => !isDemoRecord(s)) : INITIAL_STAFF;
+      const list = Array.isArray(parsed) ? parsed.filter(s => !isDemoRecord(s)) : INITIAL_STAFF;
+      return ensureUniqueKeys(list, 'stf');
     } catch {
       return INITIAL_STAFF;
     }
@@ -323,7 +339,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!saved) return INITIAL_SHIFTS;
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed.filter(sh => !isDemoRecord(sh)) : INITIAL_SHIFTS;
+      const list = Array.isArray(parsed) ? parsed.filter(sh => !isDemoRecord(sh)) : INITIAL_SHIFTS;
+      return ensureUniqueKeys(list, 'sh');
     } catch {
       return INITIAL_SHIFTS;
     }
@@ -334,7 +351,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!saved) return INITIAL_MESSAGES.filter(m => !isDemoRecord(m));
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed.filter(m => !isDemoRecord(m)) : INITIAL_MESSAGES.filter(m => !isDemoRecord(m));
+      const list = Array.isArray(parsed) ? parsed.filter(m => !isDemoRecord(m)) : INITIAL_MESSAGES.filter(m => !isDemoRecord(m));
+      return ensureUniqueKeys(list, 'msg');
     } catch {
       return INITIAL_MESSAGES.filter(m => !isDemoRecord(m));
     }
@@ -345,7 +363,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!saved) return INITIAL_ACTIVITY_LOGS;
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed : INITIAL_ACTIVITY_LOGS;
+      const list = Array.isArray(parsed) ? parsed : INITIAL_ACTIVITY_LOGS;
+      return ensureUniqueKeys(list, 'act');
     } catch {
       return INITIAL_ACTIVITY_LOGS;
     }
@@ -434,7 +453,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const data = await res.json();
         if (data) {
           if (Array.isArray(data.staff)) {
-            const cleanStaff = data.staff.filter((s: any) => !isDemoRecord(s));
+            const cleanStaff = ensureUniqueKeys<StaffMember>(data.staff.filter((s: any) => !isDemoRecord(s)), 'stf');
             setStaff(cleanStaff);
             safeSave('shh_staff', cleanStaff);
             cleanStaff.forEach((s: any) => {
@@ -444,7 +463,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
           }
           if (Array.isArray(data.users) && data.users.length > 0) {
-            const cleanUsers = data.users.filter((u: any) => !isDemoRecord(u));
+            const cleanUsers = ensureUniqueKeys<User>(data.users.filter((u: any) => !isDemoRecord(u)), 'usr');
             setUsers(cleanUsers);
             safeSave('shh_users', cleanUsers);
             cleanUsers.forEach((u: any) => {
@@ -454,7 +473,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
           }
           if (Array.isArray(data.residents)) {
-            const cleanResidents = data.residents.filter((r: any) => !isDemoRecord(r));
+            const cleanResidents = ensureUniqueKeys<Resident>(data.residents.filter((r: any) => !isDemoRecord(r)), 'res');
             setResidents(cleanResidents);
             safeSave('shh_residents', cleanResidents);
             cleanResidents.forEach((r: any) => {
@@ -464,7 +483,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
           }
           if (Array.isArray(data.shifts)) {
-            const cleanShifts = data.shifts.filter((sh: any) => !isDemoRecord(sh));
+            const cleanShifts = ensureUniqueKeys<Shift>(data.shifts.filter((sh: any) => !isDemoRecord(sh)), 'sh');
             setShifts(cleanShifts);
             safeSave('shh_shifts', cleanShifts);
             cleanShifts.forEach((sh: any) => {
@@ -474,12 +493,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
           }
           if (Array.isArray(data.messages)) {
-            const cleanMessages = data.messages.filter((m: any) => !isDemoRecord(m));
+            const cleanMessages = ensureUniqueKeys<Message>(data.messages.filter((m: any) => !isDemoRecord(m)), 'msg');
             setMessages(cleanMessages);
             safeSave('shh_messages', cleanMessages);
           }
           if (Array.isArray(data.activity_logs)) {
-            const cleanLogs = data.activity_logs.filter((l: any) => !isDemoRecord(l));
+            const cleanLogs = ensureUniqueKeys<ActivityLog>(data.activity_logs.filter((l: any) => !isDemoRecord(l)), 'act');
             setActivityLogs(cleanLogs);
             safeSave('shh_activity_logs', cleanLogs);
           }
@@ -560,7 +579,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   const key = item.id || (item as any).email || Math.random().toString();
                   map.set(key, item);
                 });
-                const merged = Array.from(map.values()).filter(x => !isDemoRecord(x));
+                const merged = ensureUniqueKeys<T>(Array.from(map.values()).filter(x => !isDemoRecord(x)), colName.slice(0, 3));
                 if (storageKey) safeSave(storageKey, merged);
                 return merged;
               });
@@ -1039,7 +1058,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     // Optimistic UI update for resident
-    setResidents(prev => [newResident, ...prev]);
+    setResidents(prev => ensureUniqueKeys([newResident, ...prev], 'res'));
 
     // Save to Firestore and Server API immediately
     setDoc(doc(db, 'residents', newResident.id), sanitizeForFirestore(newResident), { merge: true }).catch(() => {});
@@ -1083,8 +1102,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       if (edgeResult.success) {
-        if (edgeResult.resident?.id) newResident.id = edgeResult.resident.id;
-        if (edgeResult.relativeUser?.id) relativeUserId = edgeResult.relativeUser.id;
+        if (edgeResult.resident?.id && edgeResult.resident.id !== 'local_user') newResident.id = edgeResult.resident.id;
+        if (edgeResult.relativeUser?.id && edgeResult.relativeUser.id !== 'local_user') relativeUserId = edgeResult.relativeUser.id;
         setupPasswordUrl = edgeResult.setupPasswordUrl;
         emailDispatched = Boolean(edgeResult.emailDispatched);
       }
@@ -1104,7 +1123,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       password: relativePassword,
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
     };
-    setUsers(prev => [...prev, newRelativeUser]);
+    setUsers(prev => ensureUniqueKeys([...prev, newRelativeUser], 'usr'));
 
     // Provision relative account into Firebase Authentication
     try {
@@ -1354,7 +1373,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       if (edgeResult.success) {
-        if (edgeResult.user?.id) effectiveStaffUUID = edgeResult.user.id;
+        if (edgeResult.user?.id && edgeResult.user.id !== 'local_user') {
+          effectiveStaffUUID = edgeResult.user.id;
+        }
         setupPasswordUrl = edgeResult.setupPasswordUrl;
         emailDispatched = Boolean(edgeResult.emailDispatched);
       }
@@ -1370,7 +1391,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       avatar: avatarUrl,
       references: processedReferences,
     };
-    setStaff(prev => [newStaff, ...prev]);
+    setStaff(prev => ensureUniqueKeys([newStaff, ...prev], 'stf'));
 
     const newUser: User = {
       id: effectiveStaffUUID,
@@ -1382,7 +1403,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       avatar: newStaff.avatar,
       password: tempPassword,
     };
-    setUsers(prev => [...prev, newUser]);
+    setUsers(prev => ensureUniqueKeys([...prev, newUser], 'usr'));
 
     // Provision staff account into Firebase Authentication
     try {
@@ -1733,7 +1754,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...shiftData,
       id: shiftUUID,
     };
-    setShifts(prev => [newShift, ...prev]);
+    setShifts(prev => ensureUniqueKeys([newShift, ...prev], 'sh'));
 
     // Save to Firestore & backend server
     await Promise.allSettled([

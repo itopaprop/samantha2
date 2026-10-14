@@ -274,8 +274,8 @@ export const StaffDashboard: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {assignedResidents.map((r) => (
-                <div key={r.id} className="bg-slate-50 rounded-2xl p-5 border border-slate-200 space-y-4">
+              {assignedResidents.map((r, idx) => (
+                <div key={r.id && r.id !== 'local_user' ? r.id : `sd-res-${idx}-${r.fullName}`} className="bg-slate-50 rounded-2xl p-5 border border-slate-200 space-y-4">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                     <div className="flex items-center gap-3.5">
                       <img
@@ -372,8 +372,8 @@ export const StaffDashboard: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {staffShifts.map((sh) => (
-                <div key={sh.id} className="p-6 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-3xl space-y-4 shadow-md border border-slate-700 relative overflow-hidden">
+              {staffShifts.map((sh, idx) => (
+                <div key={sh.id && sh.id !== 'local_user' ? sh.id : `sd-shift-${idx}`} className="p-6 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-3xl space-y-4 shadow-md border border-slate-700 relative overflow-hidden">
                   <div className="flex justify-between items-start">
                     <span className="text-xs font-extrabold text-sky-300 bg-sky-950/80 border border-sky-800 px-3 py-1 rounded-lg">
                       {sh.shiftType} Shift
@@ -431,9 +431,9 @@ export const StaffDashboard: React.FC = () => {
                   No messages found in your inbox.
                 </div>
               ) : (
-                staffMessages.map((msg) => (
+                staffMessages.map((msg, idx) => (
                   <div
-                    key={msg.id}
+                    key={msg.id && msg.id !== 'local_user' ? msg.id : `sd-msg-${idx}`}
                     onClick={() => markMessageAsRead(msg.id)}
                     className={`p-4 rounded-2xl border cursor-pointer transition-all ${
                       msg.receiverId === currentUser.id && !msg.isRead

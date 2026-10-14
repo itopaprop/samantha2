@@ -192,8 +192,8 @@ export const EditResidentModal: React.FC<Props> = ({ isOpen, onClose, resident }
                 className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
               >
                 <option value="">-- Unassigned --</option>
-                {staff.map(s => (
-                  <option key={s.id} value={s.id}>{s.name} ({s.position})</option>
+                {staff.map((s, idx) => (
+                  <option key={s.id && s.id !== 'local_user' ? `${s.id}-${idx}` : `staff-opt-${idx}`} value={s.id}>{s.name} ({s.position})</option>
                 ))}
               </select>
             </div>
