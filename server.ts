@@ -1237,7 +1237,7 @@ async function startServer() {
   // 2. Register Resident & Relative Account & Dispatch Relative Welcome Email
   app.post('/api/functions/register-relative', async (req, res) => {
     try {
-      const { resident, relative, appUrl } = req.body;
+      const { resident, relative, appUrl, tempPassword: requestedTempPassword } = req.body;
 
       if (!resident?.fullName || !relative?.name) {
         res.status(400).json({ error: 'Resident fullName and relative name are required.' });
@@ -1253,6 +1253,8 @@ async function startServer() {
       const relativeEmail = (relative.email && relative.email.includes('@'))
         ? relative.email.trim().toLowerCase()
         : (relativePhoneClean ? `${relativePhoneClean.replace(/\D/g, '')}@relative.samanthasappy.com` : `${Date.now()}@relative.samanthasappy.com`);
+
+      const effectiveTempPassword = requestedTempPassword || `@Care${Math.floor(100 + Math.random() * 900)}`;
 
       // STRICT DUPLICATE CHECK: verify relative email & phone
       if (relativeEmail && !relativeEmail.endsWith('@relative.samanthasappy.com')) {
@@ -1283,6 +1285,7 @@ async function startServer() {
         emergency_contact_name: relative.name,
         emergency_contact_relationship: relative.relationship || 'Next of Kin',
         emergency_contact_phone: relative.phone || '+234 706 933 2193',
+        emergency_contact_email: relativeEmail,
         references: typeof resident.references === 'string' ? resident.references : JSON.stringify(resident.references || []),
         last_activity_update: 'Newly registered into care management portal.',
         vitals_blood_pressure: resident.vitals?.bloodPressure || '120/80 mmHg',
@@ -1300,10 +1303,9 @@ async function startServer() {
       let setupPasswordUrl: string | undefined;
 
       try {
-        const generatedPassword = `FamilyCare_${Math.random().toString(36).slice(2, 10)}!`;
         const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.createUser({
           email: relativeEmail,
-          password: generatedPassword,
+          password: effectiveTempPassword,
           email_confirm: true,
           user_metadata: {
             name: relative.name,
@@ -1378,6 +1380,7 @@ async function startServer() {
         relationship: relative.relationship || 'Next of Kin',
         residentLinkedId: residentId,
         phone: relative.phone || '+234 706 933 2193',
+        password: effectiveTempPassword,
         avatar: relative.photoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
       };
       const relIdx = serverUsersList.findIndex(u => u.email?.toLowerCase() === relativeEmail);
@@ -1392,6 +1395,7 @@ async function startServer() {
         residentName: resident.fullName,
         relationship: relative.relationship || 'Next of Kin',
         username: relativeEmail,
+        tempPassword: effectiveTempPassword,
         loginUrl,
         setupPasswordUrl: setupPasswordUrl || `${origin}/reset-password`,
         careCategory: resident.careCategory,
@@ -1426,7 +1430,7 @@ async function startServer() {
 
       res.status(200).json({
         success: true,
-        message: `Resident ${resident.fullName} and Relative account registered successfully. Confirmation email sent to ${relativeEmail} and Admin notified.`,
+        message: `Resident ${resident.fullName} and Relative account registered successfully. Temporary password and portal credentials sent to ${relativeEmail}.`,
         resident: {
           id: residentId,
           fullName: resident.fullName,
@@ -1440,6 +1444,7 @@ async function startServer() {
           relationship: relative.relationship || 'Next of Kin',
           residentLinkedId: residentId,
         },
+        tempPassword: effectiveTempPassword,
         emailDispatched: emailResult.sent,
         emailProvider: emailResult.provider,
         setupPasswordUrl: setupPasswordUrl || `${origin}/reset-password`,

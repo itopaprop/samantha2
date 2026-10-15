@@ -50,6 +50,7 @@ export interface Resident {
     name: string;
     relationship: string;
     phone: string;
+    email?: string;
   };
   admissionDate: string;
   healthStatus: 'Excellent' | 'Stable' | 'Requires Monitoring' | 'Critical Attention';

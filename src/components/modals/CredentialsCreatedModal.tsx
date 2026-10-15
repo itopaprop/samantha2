@@ -57,7 +57,7 @@ export const CredentialsCreatedModal: React.FC<Props> = ({ isOpen, onClose, cred
       `Username (Login Email): ${credentials.email}`,
     ];
     if (credentials.extraInfo) lines.push(credentials.extraInfo);
-    if (credentials.tempPassword && credentials.type === 'Staff') {
+    if (credentials.tempPassword) {
       lines.push(`Temporary Password: ${credentials.tempPassword}`);
     }
     if (credentials.setupPasswordUrl) {
@@ -116,8 +116,12 @@ export const CredentialsCreatedModal: React.FC<Props> = ({ isOpen, onClose, cred
                 </span>
               </div>
               <p className="text-emerald-800 text-[11px] leading-relaxed">
-                An automatic notification email with portal login instructions has been securely sent to{' '}
-                <strong className="text-emerald-950 font-bold break-all">{credentials.email}</strong>.
+                {credentials.type === 'Resident Relative' ? (
+                  <>An automatic notification email with portal login username (<strong>{credentials.email}</strong>) and temporary password has been securely sent to their inbox.</>
+                ) : (
+                  <>An automatic notification email with portal login instructions has been securely sent to{' '}
+                  <strong className="text-emerald-950 font-bold break-all">{credentials.email}</strong>.</>
+                )}
               </p>
             </div>
           </div>
@@ -169,12 +173,12 @@ export const CredentialsCreatedModal: React.FC<Props> = ({ isOpen, onClose, cred
               </div>
             </div>
 
-            {/* Password Setup Link (Secure flow - never emails raw permanent passwords to relatives) */}
+            {/* Password Setup Link (If provided) */}
             {credentials.setupPasswordUrl && (
               <div className="space-y-1">
                 <label className="text-[11px] font-bold text-sky-800 flex items-center gap-1.5">
                   <LinkIcon className="w-3.5 h-3.5 text-sky-600" />
-                  Secure Password Setup Link (Included in Email)
+                  Password Setup / Reset Link
                 </label>
                 <div className="flex items-center gap-2 bg-sky-50/70 p-2.5 rounded-xl border border-sky-200 shadow-2xs">
                   <code className="text-xs font-mono text-sky-950 flex-1 truncate">
@@ -193,13 +197,13 @@ export const CredentialsCreatedModal: React.FC<Props> = ({ isOpen, onClose, cred
               </div>
             )}
 
-            {/* Temporary Password Box (For Staff Initial Setup) */}
-            {credentials.tempPassword && credentials.type === 'Staff' && (
+            {/* Temporary Password Box */}
+            {credentials.tempPassword && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1.5">
                     <Key className="w-3.5 h-3.5 text-amber-600" />
-                    Temporary Password (First-Time Setup)
+                    Temporary Password (Sent to Email)
                   </label>
                   <button
                     type="button"
@@ -231,7 +235,7 @@ export const CredentialsCreatedModal: React.FC<Props> = ({ isOpen, onClose, cred
             <div className="p-2.5 bg-slate-100/80 rounded-xl border border-slate-200/60 text-[11px] text-slate-600">
               {credentials.type === 'Resident Relative' ? (
                 <p>
-                  <strong>🔒 Security Policy:</strong> Permanent passwords are never sent via email. The relative has been emailed a secure password setup link to choose their own private password.
+                  <strong>🔒 Relative Portal Access:</strong> The relative login username is their email (<strong>{credentials.email}</strong>). The temporary password has been generated and sent to their email. They can log in immediately by selecting the 'Relative' tab on the login screen.
                 </p>
               ) : (
                 <p>

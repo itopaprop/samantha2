@@ -14,6 +14,7 @@ export interface RelativeEmailData {
   relationship: string;
   username: string;
   loginUrl: string;
+  tempPassword?: string;
   setupPasswordUrl?: string;
   careCategory?: string;
   facilityName?: string;
@@ -201,12 +202,12 @@ export function generateRelativeWelcomeEmail(data: RelativeEmailData): { subject
               </p>
 
               <!-- Family Link Card -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px; margin-bottom: 24px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px; margin-bottom: 20px;">
                 <tr>
                   <td style="padding: 20px;">
                     <table width="100%" cellpadding="6" cellspacing="0" style="font-size: 13px;">
                       <tr>
-                        <td width="35%" style="color: #0369a1; font-weight: 600;">Relative Name:</td>
+                        <td width="38%" style="color: #0369a1; font-weight: 600;">Relative Name:</td>
                         <td style="color: #0f172a; font-weight: 700;">${data.relativeName}</td>
                       </tr>
                       <tr>
@@ -218,13 +219,38 @@ export function generateRelativeWelcomeEmail(data: RelativeEmailData): { subject
                         <td style="color: #0f172a; font-weight: 600;">${data.relationship}</td>
                       </tr>
                       <tr>
-                        <td style="color: #0369a1; font-weight: 600;">Username (Email):</td>
+                        <td style="color: #0369a1; font-weight: 600;">Login Username (Email):</td>
                         <td style="color: #0f172a; font-weight: 700; font-family: monospace;">${data.username}</td>
                       </tr>
+                      ${data.tempPassword ? `
+                      <tr>
+                        <td style="color: #0369a1; font-weight: 600;">Temporary Password:</td>
+                        <td style="color: #b45309; font-weight: 800; font-family: monospace; font-size: 14px;">${data.tempPassword}</td>
+                      </tr>
+                      ` : ''}
                     </table>
                   </td>
                 </tr>
               </table>
+
+              ${data.tempPassword ? `
+              <!-- Temporary Password Highlight Box -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #fefce8; border: 1.5px dashed #facc15; border-radius: 12px; margin-bottom: 24px;">
+                <tr>
+                  <td style="padding: 16px 20px;">
+                    <p style="margin: 0 0 6px 0; color: #854d0e; font-size: 13px; font-weight: 700;">
+                      🔑 Temporary Login Password:
+                    </p>
+                    <p style="margin: 0 0 8px 0; font-family: monospace; font-size: 20px; font-weight: 800; color: #713f12; letter-spacing: 1px;">
+                      ${data.tempPassword}
+                    </p>
+                    <p style="margin: 0; color: #a16207; font-size: 12px; line-height: 1.4;">
+                      Use your email (<strong>${data.username}</strong>) and this temporary password to log in. You may change your password once logged into your portal.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              ` : ''}
 
               <!-- Portal Features Highlights -->
               <div style="margin-bottom: 24px;">
@@ -242,12 +268,12 @@ export function generateRelativeWelcomeEmail(data: RelativeEmailData): { subject
               <!-- Call to Action Buttons -->
               <div style="text-align: center; margin: 28px 0 24px 0;">
                 <a href="${data.loginUrl}" style="display: inline-block; background-color: #0284c7; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 14px 28px; border-radius: 10px; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.2);">
-                  Open Family Care Portal
+                  Sign In to Family Care Portal
                 </a>
                 ${data.setupPasswordUrl ? `
                 <div style="margin-top: 12px;">
                   <a href="${data.setupPasswordUrl}" style="color: #0369a1; font-size: 12px; text-decoration: underline;">
-                    Click here to set your private password &rarr;
+                    Or click here to customize your private password &rarr;
                   </a>
                 </div>
                 ` : ''}
@@ -256,7 +282,7 @@ export function generateRelativeWelcomeEmail(data: RelativeEmailData): { subject
               <!-- Security Policy Notice -->
               <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-top: 24px;">
                 <p style="margin: 0; color: #64748b; font-size: 12px;">
-                  <strong>🔒 Privacy Protection:</strong> We never send permanent passwords via email. Please use the secure login or password setup link above to establish your secure password.
+                  <strong>🔒 Security & Privacy:</strong> Please keep your login credentials confidential. To access your portal, select the <strong>Relative</strong> tab on the sign-in page.
                 </p>
               </div>
 
@@ -288,21 +314,19 @@ Dear ${data.relativeName},
 
 Welcome to the Family Portal for ${data.residentName} at ${facility}!
 
-Portal Connection Details:
+Your Portal Login Credentials:
 - Relative Name: ${data.relativeName}
 - Linked Resident: ${data.residentName}
 - Relationship: ${data.relationship}
 - Username (Login Email): ${data.username}
-- Family Portal Login: ${data.loginUrl}
-${data.setupPasswordUrl ? `- Secure Password Setup Link: ${data.setupPasswordUrl}\n` : ''}
+${data.tempPassword ? `- Temporary Password: ${data.tempPassword}\n` : ''}
+- Family Portal Login Link: ${data.loginUrl}
+${data.setupPasswordUrl ? `- Password Setup / Reset Link: ${data.setupPasswordUrl}\n` : ''}
 
 Welcome Message:
-Your personal Family Care Portal account is now active. You can log in to view real-time health logs, monitor daily vitals, communicate with caregivers, and review special activity updates.
+Your personal Family Care Portal account is now active. You can log in using your registered email and temporary password to view real-time health logs, monitor daily vitals, communicate with caregivers, and review special activity updates.
 
-Security Note:
-We never send permanent passwords via email. Please use the secure password setup link or password reset flow to configure your private credentials.
-
-Warm regards,
+Best regards,
 ${facility} Administration
 samanthasappy@gmail.com
 `;

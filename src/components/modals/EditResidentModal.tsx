@@ -23,6 +23,7 @@ export const EditResidentModal: React.FC<Props> = ({ isOpen, onClose, resident }
   const [emergencyName, setEmergencyName] = useState('');
   const [emergencyRelationship, setEmergencyRelationship] = useState('');
   const [emergencyPhone, setEmergencyPhone] = useState('');
+  const [emergencyEmail, setEmergencyEmail] = useState('');
 
   useEffect(() => {
     if (resident) {
@@ -37,6 +38,7 @@ export const EditResidentModal: React.FC<Props> = ({ isOpen, onClose, resident }
       setEmergencyName(resident.emergencyContact?.name || '');
       setEmergencyRelationship(resident.emergencyContact?.relationship || '');
       setEmergencyPhone(resident.emergencyContact?.phone || '');
+      setEmergencyEmail(resident.emergencyContact?.email || '');
     }
   }, [resident, staff]);
 
@@ -60,6 +62,7 @@ export const EditResidentModal: React.FC<Props> = ({ isOpen, onClose, resident }
         name: emergencyName || 'Family Contact',
         relationship: emergencyRelationship || 'Next of Kin',
         phone: emergencyPhone || '+44 7700 900000',
+        email: emergencyEmail || undefined,
       },
     });
 
@@ -230,6 +233,16 @@ export const EditResidentModal: React.FC<Props> = ({ isOpen, onClose, resident }
                   type="text"
                   value={emergencyPhone}
                   onChange={e => setEmergencyPhone(e.target.value)}
+                  className="w-full p-2 border border-slate-200 rounded-lg"
+                />
+              </div>
+              <div className="sm:col-span-3">
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Relative Email (Login Username)</label>
+                <input
+                  type="email"
+                  value={emergencyEmail}
+                  onChange={e => setEmergencyEmail(e.target.value)}
+                  placeholder="relative@example.com"
                   className="w-full p-2 border border-slate-200 rounded-lg"
                 />
               </div>

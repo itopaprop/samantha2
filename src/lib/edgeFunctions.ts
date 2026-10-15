@@ -40,6 +40,7 @@ export interface RegisterRelativePayload {
     email?: string;
     photoUrl?: string | null;
   };
+  tempPassword?: string;
 }
 
 export interface EdgeFunctionResult<T = any> {

@@ -57,6 +57,7 @@ import {
   deleteMultipleFromStorage 
 } from '../lib/supabase';
 import { arePhonesEqual, areEmailsEqual } from '../utils/duplicateCheck';
+import { generateRelativeWelcomeEmail } from '../server/emailService';
 import { 
   invokeRegisterStaff, 
   invokeRegisterRelative, 
@@ -934,8 +935,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       body: JSON.stringify(newResident),
     }).catch(() => {});
 
-    const relativePhoneClean = residentData.emergencyContact.phone ? residentData.emergencyContact.phone.replace(/[^0-9]/g, '') : `${Date.now()}`;
-    const relativeEmail = `${relativePhoneClean}@relative.samanthasappy.com`;
+    const rawRelativeEmail = (
+      residentData.emergencyContact?.email ||
+      residentData.references?.[0]?.email ||
+      ''
+    ).trim().toLowerCase();
+
+    const relativePhoneClean = residentData.emergencyContact?.phone ? residentData.emergencyContact.phone.replace(/[^0-9]/g, '') : `${Date.now()}`;
+    const relativeEmail = (rawRelativeEmail && rawRelativeEmail.includes('@'))
+      ? rawRelativeEmail
+      : `${relativePhoneClean}@relative.samanthasappy.com`;
+
+    const tempPassword = generateTempPassword();
+
+    // STRICT DUPLICATE CHECK: verify relative email if a real email was supplied
+    if (relativeEmail && !relativeEmail.endsWith('@relative.samanthasappy.com')) {
+      const duplicateUser = users.find(u => areEmailsEqual(u.email, relativeEmail));
+      if (duplicateUser) {
+        const msg = `Registration Blocked: A relative or user with this email (${relativeEmail}) is already registered.`;
+        showToast(msg);
+        throw new Error(msg);
+      }
+    }
 
     // 2. Call Privileged Supabase Edge Function to create Family Portal Auth & Dispatch Welcome Email
     let relativeUserId = generateUUID();
@@ -965,6 +986,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           email: relativeEmail,
           photoUrl: processedReferences[0]?.photoUrl || null,
         },
+        tempPassword,
       });
 
       if (edgeResult.success) {
@@ -977,23 +999,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Edge Function relative registration note (falling back to client store):', edgeErr);
     }
 
-    const relativePassword = '@relative123';
     const newRelativeUser: User = {
       id: relativeUserId,
-      name: residentData.emergencyContact.name || 'Relative of ' + newResident.fullName,
+      name: residentData.emergencyContact?.name || 'Relative of ' + newResident.fullName,
       email: relativeEmail.toLowerCase(),
-      phone: residentData.emergencyContact.phone || '+234 706 933 2193',
+      phone: residentData.emergencyContact?.phone || '+234 706 933 2193',
       role: 'Resident Relative',
-      relationship: residentData.emergencyContact.relationship || 'Next of Kin',
+      relationship: residentData.emergencyContact?.relationship || 'Next of Kin',
       residentLinkedId: newResident.id,
-      password: relativePassword,
+      password: tempPassword,
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
     };
     setUsers(prev => ensureUniqueKeys([...prev, newRelativeUser], 'usr'));
 
     // Provision relative account into Firebase Authentication
     try {
-      await createFirebaseUserByAdmin(relativeEmail.toLowerCase(), relativePassword, newRelativeUser.name);
+      await createFirebaseUserByAdmin(relativeEmail.toLowerCase(), tempPassword, newRelativeUser.name);
     } catch (fbRelErr) {
       console.warn('Firebase Auth relative registration notice:', fbRelErr);
     }
@@ -1014,6 +1035,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }),
     ]);
 
+    // Guaranteed transactional email transmission to primary relative if not dispatched yet
+    if (!emailDispatched && relativeEmail.includes('@') && !relativeEmail.endsWith('@relative.samanthasappy.com')) {
+      try {
+        const welcomeEmailObj = generateRelativeWelcomeEmail({
+          relativeName: newRelativeUser.name,
+          residentName: newResident.fullName,
+          relationship: newRelativeUser.relationship || 'Next of Kin',
+          username: relativeEmail,
+          tempPassword,
+          loginUrl: `${window.location.origin}/login`,
+          setupPasswordUrl,
+          careCategory: newResident.careCategory,
+          facilityName: 'Samantha Sappy Care Home',
+        });
+        const directEmailRes = await fetch('/api/functions/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: relativeEmail,
+            subject: welcomeEmailObj.subject,
+            html: welcomeEmailObj.html,
+            text: welcomeEmailObj.text,
+          }),
+        });
+        if (directEmailRes.ok) emailDispatched = true;
+      } catch (emErr) {
+        console.warn('Direct relative email dispatch note:', emErr);
+      }
+    }
+
     // 3. Dispatch in-app Welcome Message to Relative
     const welcomeMsg: Message = {
       id: generateUUID(),
@@ -1024,7 +1075,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       receiverName: newRelativeUser.name,
       receiverRole: 'Resident Relative',
       subject: `🎉 Family Care Portal Access for ${newResident.fullName}`,
-      content: `Dear ${newRelativeUser.name},\n\nYour relative ${newResident.fullName} has been registered into Samanthasappy Home Care. An account has been created for you to track care updates, view health vitals, and communicate with caregivers.\n\nYour Portal Login Details:\n- Username (Registered Email): ${newRelativeUser.email}\n- Linked Resident: ${newResident.fullName}\n${setupPasswordUrl ? `- Password Setup Link: ${setupPasswordUrl}\n` : ''}\nPlease log in to access your family care dashboard.\n\nWarm regards,\nSamanthasappy Home Administration`,
+      content: `Dear ${newRelativeUser.name},\n\nYour relative ${newResident.fullName} has been registered into Samanthasappy Home Care. An account has been created for you to track care updates, view health vitals, and communicate with caregivers.\n\nYour Portal Login Details:\n- Username (Login Email): ${newRelativeUser.email}\n- Temporary Password: ${tempPassword}\n- Linked Resident: ${newResident.fullName}\n- Login Portal: ${window.location.origin}/login\n${setupPasswordUrl ? `- Password Setup Link: ${setupPasswordUrl}\n` : ''}\nPlease select the 'Relative' tab on the login screen to access your family care dashboard.\n\nWarm regards,\nSamanthasappy Home Administration`,
       isRead: false,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
     };
@@ -1041,7 +1092,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       receiverName: admin.name,
       receiverRole: 'Admin' as UserRole,
       subject: `🏡 New Resident Registered: ${newResident.fullName} (${newResident.careCategory})`,
-      content: `A new resident has been registered and their family portal account is activated.\n\nRESIDENT & RELATIVE DETAILS:\n• Resident Name: ${newResident.fullName}\n• Care Category: ${newResident.careCategory}\n• Room / Suite: ${newResident.roomNumber}\n• Next of Kin / Relative: ${newRelativeUser.name} (${newRelativeUser.relationship || 'Next of Kin'})\n• Relative Email: ${newRelativeUser.email}\n• Relative Phone: ${newRelativeUser.phone}\n\nAutomated onboarding confirmation email dispatched to: ${newRelativeUser.email}\nAdmin notification email dispatched to: samanthasappy@gmail.com`,
+      content: `A new resident has been registered and their family portal account is activated.\n\nRESIDENT & RELATIVE DETAILS:\n• Resident Name: ${newResident.fullName}\n• Care Category: ${newResident.careCategory}\n• Room / Suite: ${newResident.roomNumber}\n• Next of Kin / Relative: ${newRelativeUser.name} (${newRelativeUser.relationship || 'Next of Kin'})\n• Relative Email (Login Username): ${newRelativeUser.email}\n• Relative Phone: ${newRelativeUser.phone}\n• Temporary Password: ${tempPassword}\n\nAutomated onboarding confirmation email with temporary password dispatched to: ${newRelativeUser.email}\nAdmin notification email dispatched to: samanthasappy@gmail.com`,
       isRead: false,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
     }));
@@ -1072,7 +1123,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newLog: ActivityLog = {
       id: generateUUID(),
       title: 'New Resident & Relative Account Registered',
-      description: `Added ${newResident.fullName}. Relative credentials and welcome email dispatched to ${newRelativeUser.email}.`,
+      description: `Added ${newResident.fullName}. Relative credentials and temporary password dispatched to ${newRelativeUser.email}.`,
       category: 'Admission',
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
       performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'System Admin',
@@ -1090,10 +1141,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Supabase log insert notice:', err);
     }
 
-    showToast(`Resident ${newResident.fullName} registered & welcome email dispatched to relative.`);
+    showToast(`Resident ${newResident.fullName} registered & temporary password sent to ${newRelativeUser.email}.`);
     return {
       resident: newResident,
       relativeUser: newRelativeUser,
+      tempPassword,
       setupPasswordUrl,
       emailDispatched,
     };

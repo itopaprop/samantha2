@@ -13,7 +13,7 @@ interface Props {
 }
 
 export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCategory, onSuccessCredentials }) => {
-  const { addResident, staff } = useApp();
+  const { addResident, staff, showToast } = useApp();
 
   const [fullName, setFullName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('1945-06-20');
@@ -44,6 +44,11 @@ export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCate
     e.preventDefault();
     if (!fullName.trim() || isSubmitting) return;
 
+    if (!ref1.email.trim() || !ref1.email.includes('@')) {
+      showToast('Please provide a valid email address for the Primary Resident Relative (Reference 1). This is required as their login username and to send their temporary password.');
+      return;
+    }
+
     setIsSubmitting(true);
     const assignedStaffMember = staff.find(s => s.id === assignedStaffId);
     
@@ -63,6 +68,7 @@ export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCate
           name: ref1.name || 'Family Contact',
           relationship: ref1.relationship || 'Next of Kin',
           phone: ref1.phone || '+234 706 933 2193',
+          email: ref1.email.trim().toLowerCase(),
         },
         references: [ref1, ref2]
           .filter(r => r.name.trim() !== '')
@@ -88,6 +94,7 @@ export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCate
           type: 'Resident Relative',
           accountName: result.relativeUser.name || 'Relative of ' + (result.resident?.fullName || fullName),
           email: result.relativeUser.email,
+          tempPassword: result.tempPassword,
           setupPasswordUrl: result.setupPasswordUrl,
           emailDispatched: result.emailDispatched,
           extraInfo: `Linked Resident: ${result.resident?.fullName || fullName} (${careCategory})`,
@@ -376,11 +383,18 @@ export const AddResidentModal: React.FC<Props> = ({ isOpen, onClose, defaultCate
                 />
                 <input
                   type="email"
-                  placeholder="Email Address"
+                  required
+                  placeholder="Relative's Email (Used as Login Username) *"
                   value={ref1.email}
                   onChange={e => setRef1({ ...ref1, email: e.target.value })}
-                  className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
+                  className="px-3 py-1.5 text-xs border border-sky-300 bg-sky-50/40 rounded-lg focus:ring-1 focus:ring-sky-500 font-medium"
                 />
+              </div>
+              <div className="p-2 bg-sky-50/90 rounded-lg border border-sky-200/90 text-[11px] text-sky-950 flex items-start gap-2">
+                <span className="font-bold text-xs mt-0.5">🔑</span>
+                <p className="leading-tight">
+                  <strong>Relative Portal Access:</strong> This email will be their login username, and a secure temporary password will be dispatched directly to this email upon registration.
+                </p>
               </div>
             </div>
 
