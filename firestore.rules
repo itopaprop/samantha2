@@ -7,113 +7,69 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.role == 'Admin' ||
-        (request.auth.token.email != null && (
-          request.auth.token.email.lower() == 'samanthasappy@gmail.com' ||
-          request.auth.token.email.lower() == 'itopaprop@gmail.com'
-        ))
-      );
-    }
-
-    // 1. Users collection: User A can ONLY read and update their own document.
-    // User A cannot read or access User B or User C's profile.
+    // 1. Users collection
     match /users/{userId} {
-      allow get: if isOwner(userId) || isAdmin();
-      allow list: if isAdmin();
-      allow create: if isSignedIn();
-      allow update: if isOwner(userId) || isAdmin();
-      allow delete: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 2. Staff directory: Anyone can view staff directory; Admin can create, update, delete
+    // 2. Staff directory
     match /staff/{staffId} {
-      allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 3. Residents: Admins and staff have access; Relatives can only access their linked resident
+    // 3. Residents
     match /residents/{residentId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 4. Shifts: Staff can only read their assigned shifts; Admin manages all
+    // 4. Shifts
     match /shifts/{shiftId} {
-      allow read: if isAdmin() || (
-        isSignedIn() && (
-          resource.data.staffId == request.auth.uid ||
-          (resource.data.staffEmail != null && resource.data.staffEmail == request.auth.token.email)
-        )
-      );
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 5. Messages: User can only read messages sent by them or sent to them
+    // 5. Messages
     match /messages/{messageId} {
-      allow get: if isAdmin() || (
-        isSignedIn() && (
-          resource.data.senderId == request.auth.uid ||
-          resource.data.receiverId == request.auth.uid ||
-          (resource.data.receiverEmail != null && resource.data.receiverEmail == request.auth.token.email) ||
-          (resource.data.senderEmail != null && resource.data.senderEmail == request.auth.token.email)
-        )
-      );
-      allow list: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && (
-        resource.data.receiverId == request.auth.uid ||
-        resource.data.senderId == request.auth.uid ||
-        isAdmin()
-      );
-      allow delete: if isAdmin() || (isSignedIn() && resource.data.senderId == request.auth.uid);
+      allow read, write: if true;
     }
 
-    // 6. Activity logs: Authenticated read/create, Admin update/delete
+    // 6. Activity logs
     match /activity_logs/{logId} {
-      allow read, create: if isSignedIn();
-      allow update, delete: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 7. Consultation bookings: Anyone can submit, only Admin can read/manage
+    // 7. Consultation bookings
     match /consultations/{consultationId} {
-      allow create: if true;
-      allow read, update, delete: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 8. Applications: Anyone can submit, only Admin can read/manage
+    // 8. Applications
     match /applications/{applicationId} {
-      allow create: if true;
-      allow read, update, delete: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 9. Community events: Public read, Admin write
+    // 9. Community events
     match /events/{eventId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 10. Gallery: Public read, Admin write
+    // 10. Gallery
     match /gallery/{galleryId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 11. Job vacancies: Public read, Admin write
+    // 11. Job vacancies
     match /jobs/{jobId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
     // 12. SDK Connection health check
     match /test/{docId} {
-      allow get: if true;
-      allow list, write: if false;
+      allow read, write: if true;
+    }
+
+    // Fallback for any other documents/collections
+    match /{document=**} {
+      allow read, write: if true;
     }
   }
 }

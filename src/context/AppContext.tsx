@@ -254,21 +254,24 @@ export const ensureUniqueKeys = <T extends { id?: string }>(items: any[], prefix
 const DEMO_CLEANUP_KEY = 'shh_demo_purge_v9_complete';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Clear any existing cached demo records from previous sessions
-  if (typeof window !== 'undefined' && localStorage.getItem(DEMO_CLEANUP_KEY) !== 'purged') {
+  // Purge any stale client-side offline cache from previous sessions so Firestore is the sole source of truth
+  if (typeof window !== 'undefined') {
     try {
-      localStorage.removeItem('shh_residents');
-      localStorage.removeItem('shh_staff');
-      localStorage.removeItem('shh_shifts');
-      localStorage.removeItem('shh_messages');
-      localStorage.removeItem('shh_activity_logs');
-      localStorage.removeItem('shh_users');
-      localStorage.removeItem('shh_events');
-      localStorage.removeItem('shh_consultations');
-      localStorage.removeItem('shh_applications');
-      localStorage.setItem(DEMO_CLEANUP_KEY, 'purged');
+      [
+        'shh_residents',
+        'shh_staff',
+        'shh_shifts',
+        'shh_messages',
+        'shh_activity_logs',
+        'shh_users',
+        'shh_events',
+        'shh_jobs',
+        'shh_gallery_v2',
+        'shh_consultations',
+        'shh_applications',
+      ].forEach(k => localStorage.removeItem(k));
     } catch {
-      // Ignore localStorage access restrictions
+      // Ignore storage access notice
     }
   }
 
@@ -276,28 +279,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isAuthLoading, setIsAuthLoading] = useState(false);
 
   // Users & Current Auth User
-  const [users, setUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem('shh_users');
-    if (!saved) return INITIAL_USERS;
-    try {
-      const parsed = JSON.parse(saved);
-      const list = Array.isArray(parsed) && parsed.length > 0 ? parsed.filter(u => !isDemoRecord(u)) : INITIAL_USERS;
-      const formatted = list.map(u => {
-        if (u.role === 'Admin' || u.email?.toLowerCase() === 'samanthasappy@gmail.com' || u.email?.toLowerCase() === 'itopaprop@gmail.com' || u.name?.includes('Sonyaolu') || u.name?.includes('Folashade')) {
-          return { ...u, name: 'Folasade Sanyaolu' };
-        }
-        return u;
-      });
-      return ensureUniqueKeys(formatted, 'usr');
-    } catch {
-      return INITIAL_USERS;
-    }
-  });
+  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('shh_current_user');
-    if (!saved) return null;
     try {
+      const saved = sessionStorage.getItem('shh_current_user') || localStorage.getItem('shh_current_user');
+      if (!saved) return null;
       const parsed = JSON.parse(saved);
       if (isDemoRecord(parsed)) return null;
       if (parsed && (parsed.role === 'Admin' || parsed.email?.toLowerCase() === 'samanthasappy@gmail.com' || parsed.email?.toLowerCase() === 'itopaprop@gmail.com' || parsed.name?.includes('Sonyaolu') || parsed.name?.includes('Folashade'))) {
@@ -309,97 +296,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  // Database Collections
-  const [residents, setResidents] = useState<Resident[]>(() => {
-    const saved = localStorage.getItem('shh_residents');
-    if (!saved) return INITIAL_RESIDENTS;
-    try {
-      const parsed = JSON.parse(saved);
-      const list = Array.isArray(parsed) ? parsed.filter(r => !isDemoRecord(r)) : INITIAL_RESIDENTS;
-      return ensureUniqueKeys(list, 'res');
-    } catch {
-      return INITIAL_RESIDENTS;
-    }
-  });
-
-  const [staff, setStaff] = useState<StaffMember[]>(() => {
-    const saved = localStorage.getItem('shh_staff');
-    if (!saved) return INITIAL_STAFF;
-    try {
-      const parsed = JSON.parse(saved);
-      const list = Array.isArray(parsed) ? parsed.filter(s => !isDemoRecord(s)) : INITIAL_STAFF;
-      return ensureUniqueKeys(list, 'stf');
-    } catch {
-      return INITIAL_STAFF;
-    }
-  });
-
-  const [shifts, setShifts] = useState<Shift[]>(() => {
-    const saved = localStorage.getItem('shh_shifts');
-    if (!saved) return INITIAL_SHIFTS;
-    try {
-      const parsed = JSON.parse(saved);
-      const list = Array.isArray(parsed) ? parsed.filter(sh => !isDemoRecord(sh)) : INITIAL_SHIFTS;
-      return ensureUniqueKeys(list, 'sh');
-    } catch {
-      return INITIAL_SHIFTS;
-    }
-  });
-
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = localStorage.getItem('shh_messages');
-    if (!saved) return INITIAL_MESSAGES.filter(m => !isDemoRecord(m));
-    try {
-      const parsed = JSON.parse(saved);
-      const list = Array.isArray(parsed) ? parsed.filter(m => !isDemoRecord(m)) : INITIAL_MESSAGES.filter(m => !isDemoRecord(m));
-      return ensureUniqueKeys(list, 'msg');
-    } catch {
-      return INITIAL_MESSAGES.filter(m => !isDemoRecord(m));
-    }
-  });
-
-  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => {
-    const saved = localStorage.getItem('shh_activity_logs');
-    if (!saved) return INITIAL_ACTIVITY_LOGS;
-    try {
-      const parsed = JSON.parse(saved);
-      const list = Array.isArray(parsed) ? parsed : INITIAL_ACTIVITY_LOGS;
-      return ensureUniqueKeys(list, 'act');
-    } catch {
-      return INITIAL_ACTIVITY_LOGS;
-    }
-  });
-
-  const [consultationBookings, setConsultationBookings] = useState<ConsultationBooking[]>(() => {
-    const saved = localStorage.getItem('shh_consultations');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [events, setEvents] = useState<CommunityEvent[]>(() => {
-    const saved = localStorage.getItem('shh_events');
-    if (!saved) return INITIAL_COMMUNITY_EVENTS;
-    try {
-      const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed.filter(e => !isDemoRecord(e)) : INITIAL_COMMUNITY_EVENTS;
-    } catch {
-      return INITIAL_COMMUNITY_EVENTS;
-    }
-  });
-
-  const [jobs, setJobs] = useState<JobVacancy[]>(() => {
-    const saved = localStorage.getItem('shh_jobs');
-    return saved ? JSON.parse(saved) : INITIAL_JOB_VACANCIES;
-  });
-
-  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(() => {
-    const saved = localStorage.getItem('shh_gallery_v2');
-    return saved ? JSON.parse(saved) : INITIAL_GALLERY;
-  });
-
-  const [applications, setApplications] = useState<ApplicationSubmission[]>(() => {
-    const saved = localStorage.getItem('shh_applications');
-    return saved ? JSON.parse(saved) : [];
-  });
+  // Direct Firestore-Synchronized Database Collections (No Offline LocalStorage Cache)
+  const [residents, setResidents] = useState<Resident[]>([]);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [consultationBookings, setConsultationBookings] = useState<ConsultationBooking[]>([]);
+  const [events, setEvents] = useState<CommunityEvent[]>(INITIAL_COMMUNITY_EVENTS);
+  const [jobs, setJobs] = useState<JobVacancy[]>(INITIAL_JOB_VACANCIES);
+  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(INITIAL_GALLERY);
+  const [applications, setApplications] = useState<ApplicationSubmission[]>([]);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isConsultationModalOpen, setIsConsultationModalOpen] = useState(false);
@@ -413,33 +320,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, 4000);
   }, []);
 
-  // Helper for safe localStorage write fallback
-  const safeSave = (key: string, data: any) => {
-    try {
-      localStorage.setItem(key, JSON.stringify(data));
-    } catch (err) {
-      console.warn(`Failed to save ${key} to localStorage:`, err);
-    }
-  };
-
-  // Sync state to local storage backup
-  useEffect(() => { safeSave('shh_users', users); }, [users]);
+  // Maintain only current user auth session in sessionStorage
   useEffect(() => { 
-    if (currentUser) safeSave('shh_current_user', currentUser); 
-    else localStorage.removeItem('shh_current_user'); 
+    if (currentUser) {
+      try {
+        sessionStorage.setItem('shh_current_user', JSON.stringify(currentUser));
+        localStorage.setItem('shh_current_user', JSON.stringify(currentUser));
+      } catch {}
+    } else {
+      try {
+        sessionStorage.removeItem('shh_current_user');
+        localStorage.removeItem('shh_current_user');
+      } catch {}
+    }
   }, [currentUser]);
-  useEffect(() => { safeSave('shh_residents', residents); }, [residents]);
-  useEffect(() => { safeSave('shh_staff', staff); }, [staff]);
-  useEffect(() => { safeSave('shh_shifts', shifts); }, [shifts]);
-  useEffect(() => { safeSave('shh_messages', messages); }, [messages]);
-  useEffect(() => { safeSave('shh_activity_logs', activityLogs); }, [activityLogs]);
-  useEffect(() => { safeSave('shh_consultations', consultationBookings); }, [consultationBookings]);
-  useEffect(() => { safeSave('shh_events', events); }, [events]);
-  useEffect(() => { safeSave('shh_jobs', jobs); }, [jobs]);
-  useEffect(() => { safeSave('shh_gallery_v2', galleryItems); }, [galleryItems]);
-  useEffect(() => { safeSave('shh_applications', applications); }, [applications]);
 
-  // Universal Sync Engine: Synchronizes data across all devices, browsers, and tabs
+  // Universal Sync Engine: Synchronizes data with Server API fallback
+  // Universal Sync Engine: Synchronizes data with Server API fallback
   const syncDatabase = useCallback(async () => {
     try {
       const res = await fetch('/api/sync-all', {
@@ -452,138 +349,104 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (res.ok) {
         const data = await res.json();
         if (data) {
-          if (Array.isArray(data.staff)) {
-            const cleanStaff = ensureUniqueKeys<StaffMember>(data.staff.filter((s: any) => !isDemoRecord(s)), 'stf');
-            setStaff(cleanStaff);
-            safeSave('shh_staff', cleanStaff);
-            cleanStaff.forEach((s: any) => {
+          // If in-memory state is empty on initial cold boot, hydrate immediately
+          if (Array.isArray(data.staff) && data.staff.length > 0) {
+            setStaff(prev => (prev.length === 0 ? data.staff : prev));
+            data.staff.forEach((s: any) => {
               if (s?.id && db) {
                 setDoc(doc(db, 'staff', s.id), sanitizeForFirestore(s), { merge: true }).catch(() => {});
               }
             });
           }
           if (Array.isArray(data.users) && data.users.length > 0) {
-            const cleanUsers = ensureUniqueKeys<User>(data.users.filter((u: any) => !isDemoRecord(u)), 'usr');
-            setUsers(cleanUsers);
-            safeSave('shh_users', cleanUsers);
-            cleanUsers.forEach((u: any) => {
+            setUsers(prev => {
+              const combined = [...prev];
+              data.users.forEach((u: any) => {
+                if (!combined.some(existing => (existing?.email || '').toLowerCase() === (u?.email || '').toLowerCase())) {
+                  combined.push(u);
+                }
+              });
+              return combined;
+            });
+            data.users.forEach((u: any) => {
               if (u?.id && db) {
                 setDoc(doc(db, 'users', u.id), sanitizeForFirestore(u), { merge: true }).catch(() => {});
               }
             });
           }
-          if (Array.isArray(data.residents)) {
-            const cleanResidents = ensureUniqueKeys<Resident>(data.residents.filter((r: any) => !isDemoRecord(r)), 'res');
-            setResidents(cleanResidents);
-            safeSave('shh_residents', cleanResidents);
-            cleanResidents.forEach((r: any) => {
+          if (Array.isArray(data.residents) && data.residents.length > 0) {
+            setResidents(prev => (prev.length === 0 ? data.residents : prev));
+            data.residents.forEach((r: any) => {
               if (r?.id && db) {
                 setDoc(doc(db, 'residents', r.id), sanitizeForFirestore(r), { merge: true }).catch(() => {});
               }
             });
           }
-          if (Array.isArray(data.shifts)) {
-            const cleanShifts = ensureUniqueKeys<Shift>(data.shifts.filter((sh: any) => !isDemoRecord(sh)), 'sh');
-            setShifts(cleanShifts);
-            safeSave('shh_shifts', cleanShifts);
-            cleanShifts.forEach((sh: any) => {
-              if (sh?.id && db) {
-                setDoc(doc(db, 'shifts', sh.id), sanitizeForFirestore(sh), { merge: true }).catch(() => {});
-              }
-            });
+          if (Array.isArray(data.shifts) && data.shifts.length > 0) {
+            setShifts(prev => (prev.length === 0 ? data.shifts : prev));
           }
-          if (Array.isArray(data.messages)) {
-            const cleanMessages = ensureUniqueKeys<Message>(data.messages.filter((m: any) => !isDemoRecord(m)), 'msg');
-            setMessages(cleanMessages);
-            safeSave('shh_messages', cleanMessages);
+          if (Array.isArray(data.messages) && data.messages.length > 0) {
+            setMessages(prev => (prev.length === 0 ? data.messages : prev));
           }
-          if (Array.isArray(data.activity_logs)) {
-            const cleanLogs = ensureUniqueKeys<ActivityLog>(data.activity_logs.filter((l: any) => !isDemoRecord(l)), 'act');
-            setActivityLogs(cleanLogs);
-            safeSave('shh_activity_logs', cleanLogs);
+          if (Array.isArray(data.activity_logs) && data.activity_logs.length > 0) {
+            setActivityLogs(prev => (prev.length === 0 ? data.activity_logs : prev));
           }
-          if (Array.isArray(data.consultations)) {
-            const cleanConsultations = data.consultations.filter((c: any) => !isDemoRecord(c));
-            setConsultationBookings(cleanConsultations);
-            safeSave('shh_consultations', cleanConsultations);
+          if (Array.isArray(data.consultations) && data.consultations.length > 0) {
+            setConsultationBookings(prev => (prev.length === 0 ? data.consultations : prev));
           }
-          if (Array.isArray(data.applications)) {
-            const cleanApps = data.applications.filter((a: any) => !isDemoRecord(a));
-            setApplications(cleanApps);
-            safeSave('shh_applications', cleanApps);
-          }
-          if (Array.isArray(data.events)) {
-            const cleanEvents = data.events.filter((e: any) => !isDemoRecord(e));
-            setEvents(cleanEvents);
-            safeSave('shh_events', cleanEvents);
-          }
-          if (Array.isArray(data.jobs)) {
-            setJobs(data.jobs);
-            safeSave('shh_jobs', data.jobs);
-          }
-          if (Array.isArray(data.gallery)) {
-            setGalleryItems(data.gallery);
-            safeSave('shh_gallery_v2', data.gallery);
+          if (Array.isArray(data.applications) && data.applications.length > 0) {
+            setApplications(prev => (prev.length === 0 ? data.applications : prev));
           }
         }
       }
     } catch (err) {
-      console.warn('Sync database error:', err);
+      console.warn('Sync database notice:', err);
     }
   }, []);
 
-  // 1. Initial boot synchronization from Server API + periodic sync + on window focus
+  // 1. Initial boot check
   useEffect(() => {
     syncDatabase();
-
-    const interval = setInterval(() => {
-      syncDatabase();
-    }, 10000);
-
-    const onFocus = () => {
-      syncDatabase();
-    };
-    window.addEventListener('focus', onFocus);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('focus', onFocus);
-    };
   }, [syncDatabase]);
 
   // 2. Real-time Cloud Firestore synchronization across all devices and browsers
+  // Firestore is the single source of truth: additions, updates, and deletions reflect instantly
   useEffect(() => {
     if (!db) return;
 
     const unsubs: (() => void)[] = [];
 
-    // Helper to safely bind Firestore collection listeners
+    // Helper to safely bind Firestore collection listeners directly
     const bindCollection = <T extends { id?: string; email?: string }>(
       colName: string, 
       setter: React.Dispatch<React.SetStateAction<T[]>>,
-      storageKey?: string
+      fallbackDefault?: T[]
     ) => {
       try {
         const unsubscribe = onSnapshot(collection(db, colName), (snapshot) => {
           if (!snapshot.empty) {
             const rawItems = snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as T[];
             const cleanItems = rawItems.filter(item => !isDemoRecord(item));
-            if (cleanItems.length > 0) {
-              setter(prev => {
-                const map = new Map<string, T>();
-                prev.forEach(item => {
-                  const key = item.id || (item as any).email || Math.random().toString();
-                  map.set(key, item);
-                });
-                cleanItems.forEach(item => {
-                  const key = item.id || (item as any).email || Math.random().toString();
-                  map.set(key, item);
-                });
-                const merged = ensureUniqueKeys<T>(Array.from(map.values()).filter(x => !isDemoRecord(x)), colName.slice(0, 3));
-                if (storageKey) safeSave(storageKey, merged);
-                return merged;
+
+            if (colName === 'users') {
+              const merged = cleanItems.map(item => {
+                const initUser = INITIAL_USERS.find(iu => (iu.email || '').toLowerCase() === (item.email || '').toLowerCase());
+                return initUser ? ({ ...initUser, ...item, password: (item as any).password || initUser.password } as any) : item;
               });
+              INITIAL_USERS.forEach(iu => {
+                if (!merged.some(m => (m.email || '').toLowerCase() === (iu.email || '').toLowerCase())) {
+                  merged.push(iu as any);
+                }
+              });
+              setter(merged as any);
+              return;
             }
+
+            const formatted = ensureUniqueKeys<T>(cleanItems, colName.slice(0, 3));
+            setter(formatted);
+          } else {
+            // Collection is empty in Firestore (all documents deleted or none created yet)
+            setter(fallbackDefault || []);
           }
         }, (err) => {
           console.debug(`Firestore listener notice for ${colName}:`, err.message);
@@ -594,22 +457,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
 
-    bindCollection('residents', setResidents, 'shh_residents');
-    bindCollection('staff', setStaff, 'shh_staff');
-    bindCollection('shifts', setShifts, 'shh_shifts');
-    bindCollection('messages', setMessages, 'shh_messages');
-    bindCollection('activity_logs', setActivityLogs, 'shh_activity_logs');
-    bindCollection('consultations', setConsultationBookings, 'shh_consultations');
-    bindCollection('events', setEvents, 'shh_events');
-    bindCollection('applications', setApplications, 'shh_applications');
-    bindCollection('users', setUsers, 'shh_users');
+    // Bind real-time snapshot listeners to all collections
+    bindCollection('residents', setResidents);
+    bindCollection('staff', setStaff);
+    bindCollection('shifts', setShifts);
+    bindCollection('messages', setMessages);
+    bindCollection('activity_logs', setActivityLogs);
+    bindCollection('consultations', setConsultationBookings);
+    bindCollection('events', setEvents, INITIAL_COMMUNITY_EVENTS);
+    bindCollection('jobs', setJobs, INITIAL_JOB_VACANCIES);
+    bindCollection('gallery', setGalleryItems, INITIAL_GALLERY);
+    bindCollection('applications', setApplications);
+    bindCollection('users', setUsers, INITIAL_USERS);
 
     return () => {
       unsubs.forEach(unsub => {
         try { unsub(); } catch {}
       });
     };
-  }, [currentUser]);
+  }, []);
 
   // Listen to Firebase Authentication state
   useEffect(() => {

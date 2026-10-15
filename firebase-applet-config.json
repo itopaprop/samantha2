@@ -1,12 +1,12 @@
 {
   "projectId": "samanthasappy-984e1",
-  "appId": "1:464985984293:web:741fa92f5ee653a844decc",
+  "appId": "1:464985984293:web:b1639a568ed7508c44decc",
   "apiKey": "AIzaSyCZO_l6x6mV40EstawWrjMXhi-eRG-lkeE",
   "authDomain": "samanthasappy-984e1.firebaseapp.com",
-  "firestoreDatabaseId": "",
+  "firestoreDatabaseId": "ai-studio-samanthasappyhom-e751c061-d614-43a5-b34e-3cd8c73886de",
   "storageBucket": "samanthasappy-984e1.firebasestorage.app",
   "messagingSenderId": "464985984293",
   "measurementId": "",
-  "oAuthClientId": "",
+  "oAuthClientId": "464985984293-mqm2sdbroq6e7ongkh62ut8rff0fmani.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

@@ -39,7 +39,8 @@ export const firebaseConfig = {
   projectId: "samanthasappy-984e1",
   storageBucket: "samanthasappy-984e1.firebasestorage.app",
   messagingSenderId: "464985984293",
-  appId: "1:464985984293:web:741fa92f5ee653a844decc"
+  appId: "1:464985984293:web:b1639a568ed7508c44decc",
+  firestoreDatabaseId: "ai-studio-samanthasappyhom-e751c061-d614-43a5-b34e-3cd8c73886de"
 };
 
 // Initialize Primary Firebase App

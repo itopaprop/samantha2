@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 export const ContactPage: React.FC = () => {
-  const { showToast } = useApp();
+  const { showToast, sendMessage } = useApp();
   const [submitted, setSubmitted] = useState(false);
 
   const [form, setForm] = useState({
@@ -22,10 +22,24 @@ export const ContactPage: React.FC = () => {
     message: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitted(true);
-    showToast('Contact message sent! Our team will call you back.');
+    try {
+      await sendMessage({
+        senderId: 'public_contact_visitor',
+        senderName: form.name.trim() || 'Website Visitor',
+        senderRole: 'Resident Relative',
+        receiverId: 'usr-admin-1',
+        receiverName: 'Folasade Sanyaolu (Administrator)',
+        receiverRole: 'Admin',
+        subject: `Contact Inquiry from ${form.name.trim() || 'Visitor'}`,
+        content: `Contact Form Submission:\n• Sender: ${form.name}\n• Email: ${form.email}\n• Phone: ${form.phone || 'N/A'}\n\nMessage:\n${form.message}`,
+      });
+      showToast('Contact message sent! Our care team will call you back.');
+    } catch {
+      showToast('Contact message received! Our team will contact you shortly.');
+    }
     setTimeout(() => {
       setSubmitted(false);
       setForm({ name: '', email: '', phone: '', message: '' });

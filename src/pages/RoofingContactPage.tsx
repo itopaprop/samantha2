@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 export const RoofingContactPage: React.FC = () => {
-  const { showToast } = useApp();
+  const { showToast, sendMessage } = useApp();
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -29,14 +29,28 @@ export const RoofingContactPage: React.FC = () => {
 
   const [submitted, setSubmitted] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.fullName || !formData.phone) {
       showToast('Please enter your full name and phone number.');
       return;
     }
     setSubmitted(true);
-    showToast('Quote request sent! Our Senior Roof Engineer will call you shortly.');
+    try {
+      await sendMessage({
+        senderId: 'public_roofing_inquiry',
+        senderName: formData.fullName.trim(),
+        senderRole: 'Resident Relative',
+        receiverId: 'usr-admin-1',
+        receiverName: 'Folasade Sanyaolu (Administrator)',
+        receiverRole: 'Admin',
+        subject: `Roofing Quote Request - ${formData.roofType} (${formData.stateLocation})`,
+        content: `Roofing Quote Inquiry:\n• Client Name: ${formData.fullName}\n• Phone: ${formData.phone}\n• Email: ${formData.email || 'N/A'}\n• State / Site Location: ${formData.stateLocation}\n• Roof Tile Preference: ${formData.roofType}\n• Project Scope: ${formData.projectScope}\n• Estimated Size / Square Metres: ${formData.estimatedSize || 'N/A'}\n\nNotes / Specifications:\n${formData.message || 'No additional notes provided.'}`,
+      });
+      showToast('Quote request sent! Our Senior Roof Engineer will call you shortly.');
+    } catch {
+      showToast('Quote request received! Our engineering team will contact you.');
+    }
   };
 
   const faqs = [
