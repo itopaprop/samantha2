@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Image as ImageIcon
 } from 'lucide-react';
+import { compressImage } from '../../utils/imageCompressor';
 
 interface EditProfilePhotoModalProps {
   isOpen: boolean;
@@ -60,6 +61,7 @@ export const EditProfilePhotoModal: React.FC<EditProfilePhotoModalProps> = ({
   const [activeTab, setActiveTab] = useState<'upload' | 'url' | 'presets'>('upload');
   const [isSaving, setIsSaving] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -72,42 +74,56 @@ export const EditProfilePhotoModal: React.FC<EditProfilePhotoModalProps> = ({
 
   if (!isOpen || !activeUser) return null;
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
-      showToast('Image file size must be less than 10MB.');
+    if (file.size > 15 * 1024 * 1024) {
+      showToast('Image file size must be less than 15MB.');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setAvatarUrl(reader.result);
+    setIsCompressing(true);
+    try {
+      const optimized = await compressImage(file, 400, 400, 0.82);
+      if (optimized) {
+        setAvatarUrl(optimized);
+        showToast('Photo optimized for multi-device sync!');
+      } else {
+        showToast('Could not process photo.');
       }
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      showToast('Failed to optimize image, please try another file.');
+    } finally {
+      setIsCompressing(false);
+    }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
-      showToast('Image file size must be less than 10MB.');
+    if (file.size > 15 * 1024 * 1024) {
+      showToast('Image file size must be less than 15MB.');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setAvatarUrl(reader.result);
+    setIsCompressing(true);
+    try {
+      const optimized = await compressImage(file, 400, 400, 0.82);
+      if (optimized) {
+        setAvatarUrl(optimized);
+        showToast('Photo optimized for multi-device sync!');
+      } else {
+        showToast('Could not process photo.');
       }
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      showToast('Failed to optimize image, please try another file.');
+    } finally {
+      setIsCompressing(false);
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -116,14 +132,21 @@ export const EditProfilePhotoModal: React.FC<EditProfilePhotoModalProps> = ({
 
     setIsSaving(true);
     try {
+      let finalAvatar = avatarUrl.trim() || activeUser.avatar || '';
+      if (finalAvatar.startsWith('data:image')) {
+        finalAvatar = await compressImage(finalAvatar, 400, 400, 0.82);
+      }
+
       const updates: Partial<User> = {
-        avatar: avatarUrl.trim() || activeUser.avatar,
+        avatar: finalAvatar,
         name: userName.trim() || activeUser.name,
         phone: userPhone.trim() || activeUser.phone,
+        email: activeUser.email,
+        role: activeUser.role,
       };
 
       await updateUserProfile(activeUser.id, updates);
-      showToast('Profile photo updated successfully!');
+      showToast('Profile photo saved and synced to cloud storage across all devices!');
       onClose();
     } catch (err: any) {
       showToast(`Error updating profile: ${err?.message || 'Please try again'}`);
@@ -243,15 +266,28 @@ export const EditProfilePhotoModal: React.FC<EditProfilePhotoModalProps> = ({
               accept="image/*"
               className="hidden"
             />
-            <div className="w-12 h-12 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center mx-auto mb-3 font-bold">
-              <Upload className="w-6 h-6" />
-            </div>
-            <div className="text-sm font-bold text-slate-800">
-              Click to browse or drag & drop photo
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Supports JPG, PNG, WEBP, GIF (Max 10MB)
-            </p>
+            {isCompressing ? (
+              <div className="py-4 space-y-2">
+                <div className="w-10 h-10 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center mx-auto font-bold animate-spin">
+                  <RefreshCw className="w-5 h-5" />
+                </div>
+                <div className="text-xs font-bold text-sky-800">
+                  Optimizing photo for instant cloud synchronization...
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="w-12 h-12 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center mx-auto mb-3 font-bold">
+                  <Upload className="w-6 h-6" />
+                </div>
+                <div className="text-sm font-bold text-slate-800">
+                  Click to browse or drag & drop photo
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Supports JPG, PNG, WEBP, GIF (Max 15MB &bull; auto-compressed for cloud sync)
+                </p>
+              </>
+            )}
           </div>
         )}
 

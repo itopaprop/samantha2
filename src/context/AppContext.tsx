@@ -58,6 +58,7 @@ import {
 } from '../lib/supabase';
 import { arePhonesEqual, areEmailsEqual } from '../utils/duplicateCheck';
 import { generateRelativeWelcomeEmail } from '../server/emailService';
+import { compressImage } from '../utils/imageCompressor';
 import { 
   invokeRegisterStaff, 
   invokeRegisterRelative, 
@@ -363,12 +364,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setUsers(prev => {
               const combined = [...prev];
               data.users.forEach((u: any) => {
-                if (!combined.some(existing => (existing?.email || '').toLowerCase() === (u?.email || '').toLowerCase())) {
+                const uEmail = (u?.email || '').toLowerCase().trim();
+                const existingIdx = combined.findIndex(e => 
+                  (e.id && e.id === u.id) || 
+                  (uEmail && (e?.email || '').toLowerCase().trim() === uEmail)
+                );
+                if (existingIdx >= 0) {
+                  combined[existingIdx] = { 
+                    ...combined[existingIdx], 
+                    ...u,
+                    avatar: u.avatar || combined[existingIdx].avatar 
+                  };
+                } else {
                   combined.push(u);
                 }
               });
               return combined;
             });
+
+            // Synchronize active currentUser session across browsers
+            setCurrentUser(prevUser => {
+              if (!prevUser) return prevUser;
+              const prevEmail = (prevUser.email || '').toLowerCase().trim();
+              const matched = data.users.find((u: any) => 
+                (u.id && u.id === prevUser.id) ||
+                (prevEmail && (u.email || '').toLowerCase().trim() === prevEmail) ||
+                ((prevEmail === 'samanthasappy@gmail.com' || prevEmail === 'itopaprop@gmail.com') &&
+                 ((u.email || '').toLowerCase().trim() === 'samanthasappy@gmail.com' || (u.email || '').toLowerCase().trim() === 'itopaprop@gmail.com'))
+              );
+              if (matched && (matched.avatar !== prevUser.avatar || matched.name !== prevUser.name || matched.phone !== prevUser.phone)) {
+                const updatedCurrent: User = {
+                  ...prevUser,
+                  ...matched,
+                  avatar: matched.avatar || prevUser.avatar,
+                };
+                try {
+                  localStorage.setItem('shh_current_user', JSON.stringify(updatedCurrent));
+                  sessionStorage.setItem('shh_current_user', JSON.stringify(updatedCurrent));
+                } catch {}
+                return updatedCurrent;
+              }
+              return prevUser;
+            });
+
             data.users.forEach((u: any) => {
               if (u?.id && db) {
                 setDoc(doc(db, 'users', u.id), sanitizeForFirestore(u), { merge: true }).catch(() => {});
@@ -440,6 +478,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 }
               });
               setter(merged as any);
+
+              // CRITICAL: Synchronize active currentUser session in real-time across all devices/browsers
+              setCurrentUser(prevUser => {
+                if (!prevUser) return prevUser;
+                const prevEmail = (prevUser.email || '').toLowerCase().trim();
+                const matched = merged.find(u => 
+                  (u.id && u.id === prevUser.id) ||
+                  (prevEmail && (u.email || '').toLowerCase().trim() === prevEmail) ||
+                  ((prevEmail === 'samanthasappy@gmail.com' || prevEmail === 'itopaprop@gmail.com') &&
+                   ((u.email || '').toLowerCase().trim() === 'samanthasappy@gmail.com' || (u.email || '').toLowerCase().trim() === 'itopaprop@gmail.com'))
+                );
+                if (matched && (matched.avatar !== prevUser.avatar || matched.name !== prevUser.name || matched.phone !== prevUser.phone)) {
+                  const updatedCurrent: User = {
+                    ...prevUser,
+                    ...matched,
+                    avatar: matched.avatar || prevUser.avatar,
+                  };
+                  try {
+                    localStorage.setItem('shh_current_user', JSON.stringify(updatedCurrent));
+                    sessionStorage.setItem('shh_current_user', JSON.stringify(updatedCurrent));
+                  } catch {}
+                  return updatedCurrent;
+                }
+                return prevUser;
+              });
               return;
             }
 
@@ -487,7 +550,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const match = prev.find(u => (u?.email || '').toLowerCase() === cleanEmail) ||
                         INITIAL_USERS.find(u => (u?.email || '').toLowerCase() === cleanEmail);
           if (match) {
-            setCurrentUser(prevUser => prevUser ? prevUser : match);
+            setCurrentUser(prevUser => {
+              if (!prevUser) return match;
+              return {
+                ...prevUser,
+                ...match,
+                avatar: match.avatar || prevUser.avatar,
+              };
+            });
           }
           return prev;
         });
@@ -606,6 +676,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       setUsers(prev => [...prev, targetUser!]);
     }
+
+    // Incorporate latest cloud database profile info (e.g. updated avatar) immediately
+    try {
+      const serverRes = await fetch('/api/users', { cache: 'no-store' });
+      if (serverRes.ok) {
+        const sUsers = await serverRes.json();
+        if (Array.isArray(sUsers)) {
+          const cloudMatch = sUsers.find((u: any) => 
+            (u.email || '').trim().toLowerCase() === cleanEmail ||
+            (u.id && u.id === targetUser?.id) ||
+            ((cleanEmail === 'samanthasappy@gmail.com' || cleanEmail === 'itopaprop@gmail.com') &&
+             ((u.email || '').trim().toLowerCase() === 'samanthasappy@gmail.com' || (u.email || '').trim().toLowerCase() === 'itopaprop@gmail.com'))
+          );
+          if (cloudMatch && targetUser) {
+            targetUser = {
+              ...targetUser,
+              avatar: cloudMatch.avatar || targetUser.avatar,
+              name: cloudMatch.name || targetUser.name,
+              phone: cloudMatch.phone || targetUser.phone,
+            };
+          }
+        }
+      }
+    } catch {}
 
     // Grant access
     setCurrentUser(targetUser);
@@ -776,9 +870,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateUserProfile = async (userId: string, updates: Partial<User>): Promise<boolean> => {
     let finalAvatar = updates.avatar;
-    if (updates.avatar?.startsWith('data:')) {
-      const { url } = await uploadToStorage('avatars', 'profiles', updates.avatar, `${userId}_avatar.jpg`);
-      if (url) finalAvatar = url;
+    if (finalAvatar) {
+      try {
+        finalAvatar = await compressImage(finalAvatar, 400, 400, 0.82);
+      } catch (cErr) {
+        console.warn('Avatar compression notice:', cErr);
+      }
     }
 
     const sanitizedUpdates: Partial<User> = {
@@ -786,17 +883,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       avatar: finalAvatar,
     };
 
-    // 1. Update State
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...sanitizedUpdates } : u));
-    if (currentUser?.id === userId) {
-      const updatedCurrent: User = { ...currentUser, ...sanitizedUpdates };
-      setCurrentUser(updatedCurrent);
-      localStorage.setItem('shh_current_user', JSON.stringify(updatedCurrent));
+    const existingUser = users.find(u => u.id === userId) || currentUser;
+    const targetEmail = (updates.email || existingUser?.email || currentUser?.email || '').trim().toLowerCase();
+    const targetRole = updates.role || existingUser?.role || currentUser?.role || 'Staff';
+    const isAdmin = targetRole === 'Admin' || targetEmail === 'samanthasappy@gmail.com' || targetEmail === 'itopaprop@gmail.com';
+
+    // 1. Update In-Memory Users State
+    setUsers(prev => prev.map(u => {
+      const uEmail = (u?.email || '').toLowerCase().trim();
+      const isMatch = u.id === userId || (targetEmail && uEmail === targetEmail) ||
+        (isAdmin && (uEmail === 'samanthasappy@gmail.com' || uEmail === 'itopaprop@gmail.com' || u.role === 'Admin'));
+      return isMatch ? { ...u, ...sanitizedUpdates, avatar: finalAvatar || u.avatar } : u;
+    }));
+
+    // 2. Update Active Current User Session in Memory & Browser Storage
+    if (currentUser) {
+      const curEmail = (currentUser.email || '').toLowerCase().trim();
+      const isCurrentMatch = currentUser.id === userId || (targetEmail && curEmail === targetEmail) ||
+        (isAdmin && (curEmail === 'samanthasappy@gmail.com' || curEmail === 'itopaprop@gmail.com' || currentUser.role === 'Admin'));
+      if (isCurrentMatch) {
+        const updatedCurrent: User = { 
+          ...currentUser, 
+          ...sanitizedUpdates,
+          avatar: finalAvatar || currentUser.avatar 
+        };
+        setCurrentUser(updatedCurrent);
+        try {
+          localStorage.setItem('shh_current_user', JSON.stringify(updatedCurrent));
+          sessionStorage.setItem('shh_current_user', JSON.stringify(updatedCurrent));
+        } catch {}
+      }
     }
 
-    // 2. If staff member, sync with staff list
+    // 3. If staff member, sync with staff list
     setStaff(prev => prev.map(s => {
-      if (s.id === userId || s.email.toLowerCase() === (sanitizedUpdates.email || currentUser?.email || '').toLowerCase()) {
+      const sEmail = (s?.email || '').toLowerCase().trim();
+      if (s.id === userId || (targetEmail && sEmail === targetEmail)) {
         return {
           ...s,
           name: sanitizedUpdates.name || s.name,
@@ -808,20 +930,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return s;
     }));
 
-    // 3. Update Firestore
-    setDoc(doc(db, 'users', userId), sanitizeForFirestore(sanitizedUpdates), { merge: true }).catch(() => {});
-    if (currentUser?.role === 'Staff' || updates.role === 'Staff') {
-      setDoc(doc(db, 'staff', userId), sanitizeForFirestore({
-        name: sanitizedUpdates.name,
-        avatar: finalAvatar,
-        phone: sanitizedUpdates.phone,
-        position: sanitizedUpdates.position,
-      }), { merge: true }).catch(() => {});
+    // 4. Multi-Device Server REST API Sync (Guarantees multi-browser persistence)
+    try {
+      await fetch('/api/users/profile-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          email: targetEmail,
+          avatar: finalAvatar,
+          name: sanitizedUpdates.name,
+          phone: sanitizedUpdates.phone,
+          position: sanitizedUpdates.position,
+          role: targetRole,
+        }),
+      });
+    } catch (apiErr) {
+      console.warn('Backend server profile-photo sync note:', apiErr);
     }
 
-    // 4. Update Supabase Database Profiles & Staff Tables
+    // 5. Cloud Firestore Synchronization (Cross-device real-time sync)
     try {
-      const existingUser = users.find(u => u.id === userId) || currentUser;
+      const fsPayload = sanitizeForFirestore({
+        ...sanitizedUpdates,
+        avatar: finalAvatar,
+      });
+
+      // Update primary user document in Firestore
+      if (userId) {
+        await setDoc(doc(db, 'users', userId), fsPayload, { merge: true });
+      }
+
+      // If Administrator, ensure BOTH admin records in Firestore are kept in sync
+      if (isAdmin) {
+        await Promise.allSettled([
+          setDoc(doc(db, 'users', 'usr-admin-1'), fsPayload, { merge: true }),
+          setDoc(doc(db, 'users', 'usr-admin-2'), fsPayload, { merge: true }),
+        ]);
+      }
+
+      // If staff member, also sync Firestore staff document
+      if (targetRole === 'Staff' || currentUser?.role === 'Staff') {
+        const staffPayload = sanitizeForFirestore({
+          name: sanitizedUpdates.name,
+          avatar: finalAvatar,
+          phone: sanitizedUpdates.phone,
+          position: sanitizedUpdates.position,
+        });
+        await setDoc(doc(db, 'staff', userId), staffPayload, { merge: true });
+      }
+    } catch (fsErr) {
+      console.error('Firestore profile photo sync notice:', fsErr);
+    }
+
+    // 6. Supabase Database Profiles & Staff Tables Sync
+    try {
       const mergedUser: User = {
         id: userId,
         name: sanitizedUpdates.name || existingUser?.name || 'User',
@@ -849,18 +1012,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Supabase profile update note:', err);
     }
 
-    // 5. Update Server REST API
-    fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: userId, ...sanitizedUpdates }),
-    }).catch(() => {});
-
-    // 6. Register Activity Log
+    // 7. Register Activity Log
     const newLog: ActivityLog = {
       id: generateUUID(),
       title: 'Profile Updated',
-      description: `User profile for ${sanitizedUpdates.name || currentUser?.name || userId} (${currentUser?.role || 'User'}) was updated.`,
+      description: `User profile for ${sanitizedUpdates.name || currentUser?.name || userId} (${targetRole}) was updated.`,
       category: 'General',
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
       performer: currentUser ? `${currentUser.name} (${currentUser.role})` : 'User',
@@ -896,20 +1052,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const residentUUID = generateUUID();
 
-    // 1. Upload Avatar if base64/data
+    // 1. Upload/Compress Avatar if base64/data
     let avatarUrl = residentData.avatar || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80';
     if (residentData.avatar?.startsWith('data:')) {
-      const { url } = await uploadToStorage('avatars', 'residents', residentData.avatar, `${residentUUID}_avatar.jpg`);
-      if (url) avatarUrl = url;
+      try {
+        avatarUrl = await compressImage(residentData.avatar, 400, 400, 0.82);
+      } catch {
+        // Fallback
+      }
     }
 
-    // Process reference photos if any
+    // Process reference photos if any (compressed for Firestore compatibility)
     const processedReferences = await Promise.all(
-      (residentData.references || []).map(async (ref, idx) => {
+      (residentData.references || []).map(async (ref) => {
         let photoUrl = ref.photoUrl;
         if (ref.photoUrl?.startsWith('data:')) {
-          const { url } = await uploadToStorage('documents', 'resident-contacts', ref.photoUrl, `${residentUUID}_ref_${idx + 1}.jpg`);
-          if (url) photoUrl = url;
+          try {
+            photoUrl = await compressImage(ref.photoUrl, 400, 400, 0.82);
+          } catch {
+            // Keep original
+          }
         }
         return { ...ref, photoUrl };
       })
@@ -1252,19 +1414,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const tempPassword = generateTempPassword();
     const staffUUID = generateUUID();
 
+    // 1. Upload/Compress Avatar if base64/data
     let avatarUrl = staffData.avatar || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80';
     if (staffData.avatar?.startsWith('data:')) {
-      const { url } = await uploadToStorage('avatars', 'staff', staffData.avatar, `${staffUUID}_avatar.jpg`);
-      if (url) avatarUrl = url;
+      try {
+        avatarUrl = await compressImage(staffData.avatar, 400, 400, 0.82);
+      } catch {
+        // Fallback
+      }
     }
 
-    // Process reference photos if any
+    // Process reference photos if any (compressed for Firestore compatibility)
     const processedReferences = await Promise.all(
-      (staffData.references || []).map(async (ref, idx) => {
+      (staffData.references || []).map(async (ref) => {
         let photoUrl = ref.photoUrl;
         if (ref.photoUrl?.startsWith('data:')) {
-          const { url } = await uploadToStorage('documents', 'staff-guarantors', ref.photoUrl, `${staffUUID}_guarantor_${idx + 1}.jpg`);
-          if (url) photoUrl = url;
+          try {
+            photoUrl = await compressImage(ref.photoUrl, 400, 400, 0.82);
+          } catch {
+            // Keep original
+          }
         }
         return { ...ref, photoUrl };
       })

@@ -292,6 +292,45 @@ async function startServer() {
     }
   ];
 
+  const defaultInitialJobs: any[] = [
+    {
+      id: 'job-1',
+      title: 'Senior Care Assistant',
+      type: 'Full-time',
+      department: 'Residential Elderly Care',
+      location: 'Samanthasappy Home, Main Campus',
+      description: 'We are seeking an empathetic, qualified Senior Care Assistant to lead daily care routines, administer medication safely, and foster a warm home environment.',
+      requirements: ['NVQ Level 3 in Health & Social Care or equivalent', 'Minimum 2 years experience in elderly care', 'Valid First Aid and Safeguarding certification', 'Excellent compassionate communication skills']
+    },
+    {
+      id: 'job-2',
+      title: 'Registered Nurse (RN)',
+      type: 'Full-time',
+      department: 'Medical Services',
+      location: 'Samanthasappy Home, Main Campus',
+      description: 'Join our dedicated nursing team providing clinical leadership, health monitoring, and personalized care planning for our elderly residents.',
+      requirements: ['Current Active Nursing License (NMC / State Board)', 'Strong clinical assessment & wound care skills', 'Passion for geriatric and rehabilitative care', 'Ability to work shift rotations']
+    },
+    {
+      id: 'job-3',
+      title: 'Early Years Child Care Assistant',
+      type: 'Full-time',
+      department: 'Child Care Services',
+      location: 'Samanthasappy Home, Sunshine Suite',
+      description: 'Supervise and nurture young children in our bright daycare center, creating engaging educational activities and ensuring safety.',
+      requirements: ['Early Years Educator qualification (Level 2/3)', 'Pediatric First Aid certified', 'DBS / Enhanced Background Clearance', 'Enthusiastic and creative approach to child development']
+    },
+    {
+      id: 'job-4',
+      title: 'Domiciliary Care Worker',
+      type: 'Part-time',
+      department: 'Community Care Services',
+      location: 'Local Community Visits',
+      description: 'Provide essential daily living support, companionship, and medication reminders to clients in their own private homes.',
+      requirements: ['Care Certificate or willingness to complete training', 'Valid driving license and reliable vehicle', 'Compassionate nature and dependability']
+    }
+  ];
+
   interface ServerStore {
     staff: any[];
     users: any[];
@@ -304,6 +343,9 @@ async function startServer() {
     events: any[];
     jobs: any[];
     gallery: any[];
+    deleted_job_ids?: string[];
+    deleted_event_ids?: string[];
+    jobs_initialized?: boolean;
   }
 
   function loadServerDb(): ServerStore {
@@ -311,6 +353,16 @@ async function startServer() {
       if (fs.existsSync(DB_FILE)) {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
+        const deletedJobIds: string[] = Array.isArray(parsed.deleted_job_ids) ? parsed.deleted_job_ids : [];
+        const deletedEventIds: string[] = Array.isArray(parsed.deleted_event_ids) ? parsed.deleted_event_ids : [];
+        const isJobsInit = Boolean(parsed.jobs_initialized);
+        let jobsList: any[] = [];
+        if (Array.isArray(parsed.jobs) && parsed.jobs.length > 0) {
+          jobsList = parsed.jobs.filter((j: any) => !deletedJobIds.includes(j.id));
+        } else if (!isJobsInit) {
+          jobsList = defaultInitialJobs.filter((j: any) => !deletedJobIds.includes(j.id));
+        }
+
         return {
           staff: Array.isArray(parsed.staff) ? parsed.staff : [],
           users: Array.isArray(parsed.users) && parsed.users.length > 0 ? parsed.users : defaultAdminUsers,
@@ -320,9 +372,12 @@ async function startServer() {
           activity_logs: Array.isArray(parsed.activity_logs) ? parsed.activity_logs : [],
           consultations: Array.isArray(parsed.consultations) ? parsed.consultations : [],
           applications: Array.isArray(parsed.applications) ? parsed.applications : [],
-          events: Array.isArray(parsed.events) ? parsed.events : [],
-          jobs: Array.isArray(parsed.jobs) ? parsed.jobs : [],
+          events: Array.isArray(parsed.events) ? parsed.events.filter((e: any) => !deletedEventIds.includes(e.id)) : [],
+          jobs: jobsList,
           gallery: Array.isArray(parsed.gallery) ? parsed.gallery : [],
+          deleted_job_ids: deletedJobIds,
+          deleted_event_ids: deletedEventIds,
+          jobs_initialized: true,
         };
       }
     } catch (e) {
@@ -338,8 +393,11 @@ async function startServer() {
       consultations: [],
       applications: [],
       events: [],
-      jobs: [],
+      jobs: [...defaultInitialJobs],
       gallery: [],
+      deleted_job_ids: [],
+      deleted_event_ids: [],
+      jobs_initialized: true,
     };
   }
 
@@ -427,27 +485,9 @@ async function startServer() {
 
   // REST API routes for multi-device sync fallback
   app.get('/api/events', async (req, res) => {
-    try {
-      const supabaseAdmin = getSupabaseAdmin();
-      const { data: dbEvents, error } = await supabaseAdmin.from('community_events').select('*');
-      if (!error && dbEvents && dbEvents.length > 0) {
-        const converted = dbEvents.map(e => ({
-          id: e.id,
-          title: e.title,
-          date: e.date,
-          time: e.time || undefined,
-          location: e.location || 'Main Campus',
-          description: e.description || '',
-          category: e.category || 'Community Celebration',
-          imageUrl: e.image_url || undefined,
-          status: e.status || 'Upcoming',
-          organizer: e.organizer || undefined,
-        }));
-        return res.json(converted);
-      }
-    } catch (err) {
-      console.warn('Note on fetching events from Supabase:', err);
-    }
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.json(serverEventsList);
   });
 
@@ -458,13 +498,18 @@ async function startServer() {
         return res.status(400).json({ error: 'Valid event object with title required' });
       }
 
-      // Add to server memory
+      if (evt.id && serverStore.deleted_event_ids) {
+        serverStore.deleted_event_ids = serverStore.deleted_event_ids.filter(id => id !== evt.id);
+      }
+
+      // Add or update in server memory
       const idx = serverEventsList.findIndex(e => e.id === evt.id || (e.title === evt.title && e.date === evt.date));
       if (idx >= 0) {
         serverEventsList[idx] = { ...serverEventsList[idx], ...evt };
       } else {
         serverEventsList.unshift(evt);
       }
+      saveServerDb();
 
       // Upsert to Supabase
       try {
@@ -487,6 +532,7 @@ async function startServer() {
         console.warn('Supabase community_events upsert notice:', sbErr);
       }
 
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       res.json({ success: true, event: evt });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Failed to save event' });
@@ -500,6 +546,7 @@ async function startServer() {
       const idx = serverEventsList.findIndex(e => e.id === id);
       if (idx >= 0) {
         serverEventsList[idx] = { ...serverEventsList[idx], ...updates };
+        saveServerDb();
       }
 
       try {
@@ -520,6 +567,7 @@ async function startServer() {
         console.warn('Supabase community_events update notice:', sbErr);
       }
 
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Failed to update event' });
@@ -543,11 +591,16 @@ async function startServer() {
   app.delete('/api/events/:id', async (req, res) => {
     try {
       const { id } = req.params;
+      if (!serverStore.deleted_event_ids) serverStore.deleted_event_ids = [];
+      if (!serverStore.deleted_event_ids.includes(id)) {
+        serverStore.deleted_event_ids.push(id);
+      }
       let imageUrlToDelete: string | null = null;
       const idx = serverEventsList.findIndex(e => e.id === id);
       if (idx >= 0) {
         imageUrlToDelete = serverEventsList[idx]?.imageUrl || null;
         serverEventsList.splice(idx, 1);
+        saveServerDb();
       }
 
       try {
@@ -566,6 +619,7 @@ async function startServer() {
         deleteFilesFromSupabaseStorage([imageUrlToDelete]).catch(() => {});
       }
 
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Failed to delete event' });
@@ -612,6 +666,8 @@ async function startServer() {
       events: serverEventsList,
       jobs: serverJobsList,
       gallery: serverGalleryList,
+      deleted_job_ids: serverStore.deleted_job_ids || [],
+      deleted_event_ids: serverStore.deleted_event_ids || [],
     });
   });
 
@@ -632,10 +688,81 @@ async function startServer() {
       } else {
         serverUsersList.push(user);
       }
-      saveServerDb();
       res.json({ success: true, user });
     } else {
       res.status(400).json({ error: 'Valid user object with email required' });
+    }
+  });
+
+  // Dedicated Profile Photo & User Info Synchronization Endpoint (Cross-browser Cloud Sync)
+  app.post('/api/users/profile-photo', async (req, res) => {
+    try {
+      const { userId, email, avatar, name, phone, position, role } = req.body;
+      const cleanEmail = (email || '').trim().toLowerCase();
+      
+      let updatedUser: any = null;
+
+      // Update matching user(s) in serverUsersList
+      let matchedAny = false;
+      serverUsersList.forEach((u, idx) => {
+        const uEmail = (u.email || '').trim().toLowerCase();
+        const matchesId = Boolean(userId && u.id === userId);
+        const matchesEmail = Boolean(cleanEmail && uEmail === cleanEmail);
+        const matchesAdmin = (cleanEmail === 'samanthasappy@gmail.com' || cleanEmail === 'itopaprop@gmail.com' || role === 'Admin') &&
+                             (uEmail === 'samanthasappy@gmail.com' || uEmail === 'itopaprop@gmail.com' || u.role === 'Admin');
+
+        if (matchesId || matchesEmail || matchesAdmin) {
+          matchedAny = true;
+          serverUsersList[idx] = {
+            ...serverUsersList[idx],
+            avatar: avatar !== undefined ? avatar : serverUsersList[idx].avatar,
+            name: name || serverUsersList[idx].name,
+            phone: phone !== undefined ? phone : serverUsersList[idx].phone,
+            position: position !== undefined ? position : serverUsersList[idx].position,
+          };
+          if (!updatedUser || matchesEmail) {
+            updatedUser = serverUsersList[idx];
+          }
+        }
+      });
+
+      // If user wasn't in serverUsersList, add them
+      if (!matchedAny && (userId || cleanEmail)) {
+        updatedUser = {
+          id: userId || `usr_${Date.now()}`,
+          name: name || 'User',
+          email: cleanEmail,
+          phone: phone || '',
+          role: role || 'Staff',
+          avatar: avatar || '',
+          position: position || '',
+        };
+        serverUsersList.push(updatedUser);
+      }
+
+      // Also sync with serverStaffList if user exists in staff
+      serverStaffList.forEach((s, idx) => {
+        const sEmail = (s.email || '').trim().toLowerCase();
+        if ((userId && s.id === userId) || (cleanEmail && sEmail === cleanEmail)) {
+          serverStaffList[idx] = {
+            ...serverStaffList[idx],
+            avatar: avatar !== undefined ? avatar : serverStaffList[idx].avatar,
+            name: name || serverStaffList[idx].name,
+            phone: phone !== undefined ? phone : serverStaffList[idx].phone,
+            position: position !== undefined ? position : serverStaffList[idx].position,
+          };
+        }
+      });
+
+      saveServerDb();
+
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.json({ success: true, user: updatedUser });
+    } catch (err: any) {
+      console.error('Error in /api/users/profile-photo:', err);
+      res.status(500).json({ error: err?.message || 'Failed to update profile photo' });
     }
   });
 
@@ -733,12 +860,17 @@ async function startServer() {
   });
 
   app.get('/api/jobs', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.json(serverJobsList);
   });
 
   app.post('/api/jobs', (req, res) => {
     const job = req.body;
     if (job && job.id) {
+      if (!serverStore.deleted_job_ids) serverStore.deleted_job_ids = [];
+      serverStore.deleted_job_ids = serverStore.deleted_job_ids.filter(id => id !== job.id);
       const idx = serverJobsList.findIndex(j => j.id === job.id);
       if (idx >= 0) {
         serverJobsList[idx] = { ...serverJobsList[idx], ...job };
@@ -746,19 +878,37 @@ async function startServer() {
         serverJobsList.unshift(job);
       }
       saveServerDb();
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       res.json({ success: true, job });
     } else {
       res.status(400).json({ error: 'Valid job object required' });
     }
   });
 
+  app.put('/api/jobs/:id', (req, res) => {
+    const { id } = req.params;
+    const updates = req.body;
+    const idx = serverJobsList.findIndex(j => j.id === id);
+    if (idx >= 0) {
+      serverJobsList[idx] = { ...serverJobsList[idx], ...updates };
+      saveServerDb();
+    }
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.json({ success: true, id });
+  });
+
   app.delete('/api/jobs/:id', (req, res) => {
     const { id } = req.params;
+    if (!serverStore.deleted_job_ids) serverStore.deleted_job_ids = [];
+    if (!serverStore.deleted_job_ids.includes(id)) {
+      serverStore.deleted_job_ids.push(id);
+    }
     const idx = serverJobsList.findIndex(j => j.id === id);
     if (idx >= 0) {
       serverJobsList.splice(idx, 1);
-      saveServerDb();
     }
+    saveServerDb();
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.json({ success: true, id });
   });
 

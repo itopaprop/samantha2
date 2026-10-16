@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, Calendar, Upload, Sparkles } from 'lucide-react';
+import { X, Calendar, Upload, Sparkles, Loader2 } from 'lucide-react';
+import { compressImage } from '../../utils/imageCompressor';
 
 interface Props {
   isOpen: boolean;
@@ -8,7 +9,7 @@ interface Props {
 }
 
 export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
-  const { addEvent } = useApp();
+  const { addEvent, showToast } = useApp();
 
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -17,19 +18,29 @@ export const AddEventModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [category, setCategory] = useState<any>('Community Celebration');
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [isCompressing, setIsCompressing] = useState(false);
   const [status, setStatus] = useState<'Upcoming' | 'Ongoing' | 'Completed'>('Upcoming');
   const [organizer, setOrganizer] = useState('Samanthasappy Events Committee');
 
   if (!isOpen) return null;
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImageUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      if (file.size > 15 * 1024 * 1024) {
+        showToast('Image file size must be less than 15MB.');
+        return;
+      }
+      setIsCompressing(true);
+      try {
+        const compressed = await compressImage(file, 800, 600, 0.82);
+        setImageUrl(compressed);
+        showToast('Event poster optimized for multi-device sync!');
+      } catch {
+        showToast('Could not process photo, please try another image.');
+      } finally {
+        setIsCompressing(false);
+      }
     }
   };
 
