@@ -426,6 +426,31 @@ async function startServer() {
   const serverJobsList: any[] = serverStore.jobs;
   const serverGalleryList: any[] = serverStore.gallery;
 
+  function refreshServerStoreFromDisk() {
+    try {
+      if (fs.existsSync(DB_FILE)) {
+        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed.events)) {
+          serverEventsList.length = 0;
+          parsed.events.forEach((e: any) => serverEventsList.push(e));
+        }
+        if (Array.isArray(parsed.jobs)) {
+          serverJobsList.length = 0;
+          parsed.jobs.forEach((j: any) => serverJobsList.push(j));
+        }
+        if (Array.isArray(parsed.deleted_event_ids)) {
+          serverStore.deleted_event_ids = parsed.deleted_event_ids;
+        }
+        if (Array.isArray(parsed.deleted_job_ids)) {
+          serverStore.deleted_job_ids = parsed.deleted_job_ids;
+        }
+      }
+    } catch (e) {
+      console.warn('refreshServerStoreFromDisk notice:', e);
+    }
+  }
+
   // One-time startup sync for admin name in Supabase
   (async () => {
     try {
@@ -485,6 +510,7 @@ async function startServer() {
 
   // REST API routes for multi-device sync fallback
   app.get('/api/events', async (req, res) => {
+    refreshServerStoreFromDisk();
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -651,6 +677,7 @@ async function startServer() {
 
   // Universal Sync Endpoint: delivers all persisted server data to any connecting browser
   app.get('/api/sync-all', (req, res) => {
+    refreshServerStoreFromDisk();
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -860,6 +887,7 @@ async function startServer() {
   });
 
   app.get('/api/jobs', (req, res) => {
+    refreshServerStoreFromDisk();
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');

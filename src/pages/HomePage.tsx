@@ -23,7 +23,9 @@ import {
   Star,
   ChevronLeft,
   ChevronRight,
-  X
+  X,
+  MapPin,
+  Eye
 } from 'lucide-react';
 import { INITIAL_FACILITIES } from '../data/initialData';
 
@@ -37,7 +39,14 @@ interface HeroSlide {
 }
 
 export const HomePage: React.FC = () => {
-  const { setCurrentPage, setIsApplyModalOpen, setSelectedFacilityId } = useApp();
+  const { setCurrentPage, setIsApplyModalOpen, setSelectedFacilityId, events, syncDatabase } = useApp();
+
+  // Auto-fetch latest live database on mount so front-end displays newest community events
+  React.useEffect(() => {
+    if (syncDatabase) {
+      syncDatabase().catch(() => {});
+    }
+  }, [syncDatabase]);
 
   // Hero carousel images
   const heroSlides: HeroSlide[] = [
@@ -437,11 +446,123 @@ export const HomePage: React.FC = () => {
         </div>
       </section>
 
+      {/* Upcoming Community Events Showcase (Front-end live display) */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        <div className="bg-white rounded-3xl p-6 sm:p-10 border border-slate-200/90 shadow-xs space-y-8">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 pb-6 border-b border-slate-100">
+            <div>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200/60">
+                <Calendar className="w-3.5 h-3.5 text-amber-600" /> Community Life & Activities
+              </span>
+              <h2 className="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight mt-2">
+                Upcoming Events & Gatherings
+              </h2>
+              <p className="text-slate-600 text-sm max-w-2xl mt-1">
+                Stay connected with resident wellness workshops, memory support groups, family visitation teas, and community celebrations.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setCurrentPage('events');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="inline-flex items-center gap-2 bg-slate-900 hover:bg-amber-500 hover:text-slate-950 text-white font-bold text-xs px-5 py-3 rounded-xl transition-all shadow-xs cursor-pointer group shrink-0"
+            >
+              <span>Explore All Events</span>
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </button>
+          </div>
 
+          {events.length === 0 ? (
+            <div className="text-center py-12 px-4 rounded-2xl bg-slate-50 border border-dashed border-slate-200 space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+                <Calendar className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-slate-800">New Gatherings Coming Soon</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Our care coordinators are finalizing the next schedule of resident activities and family socials. Check back soon or contact us for details.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {events.slice(0, 6).map((evt, idx) => (
+                <div
+                  key={evt.id || idx}
+                  className="bg-slate-50/70 rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs hover:shadow-lg transition-all duration-300 flex flex-col justify-between group"
+                >
+                  <div>
+                    <div 
+                      onClick={() => {
+                        setCurrentPage('events');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className="relative h-48 bg-slate-900 overflow-hidden cursor-pointer"
+                    >
+                      <img
+                        src={evt.imageUrl || 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80'}
+                        alt={evt.title}
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          if (!target.dataset.fallback) {
+                            target.dataset.fallback = 'true';
+                            target.src = 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80';
+                          }
+                        }}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-90"
+                      />
+                      <div className="absolute top-3 left-3">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-1 rounded-lg shadow-md">
+                          {evt.category || 'Event'}
+                        </span>
+                      </div>
+                    </div>
 
+                    <div className="p-5 space-y-3">
+                      <h3
+                        onClick={() => {
+                          setCurrentPage('events');
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="font-extrabold text-slate-900 text-base leading-snug hover:text-amber-600 transition-colors cursor-pointer line-clamp-1"
+                      >
+                        {evt.title}
+                      </h3>
+                      <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                        {evt.description || 'Join our care community for this upcoming gathering.'}
+                      </p>
+                      <div className="text-xs text-slate-600 space-y-1.5 pt-2 border-t border-slate-200/60">
+                        <div className="flex items-center gap-2 font-medium">
+                          <Calendar className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span>{evt.date || 'Upcoming'}</span>
+                          {evt.time && <span className="text-slate-400">({evt.time})</span>}
+                        </div>
+                        <div className="flex items-center gap-2 text-slate-500">
+                          <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                          <span className="truncate">{evt.location || 'Samanthasappy Care Home'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
-
-      {/* Testimonials Section */}
+                  <div className="p-5 pt-0">
+                    <button
+                      onClick={() => {
+                        setCurrentPage('events');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-slate-900 hover:bg-amber-500 hover:text-slate-950 text-white transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-amber-400" />
+                      <span>View Event Flyer</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
       <section className="bg-slate-50 py-16 border-y border-slate-200/80 overflow-hidden">
         <style>{`
           @keyframes testimonialMarquee {

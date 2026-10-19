@@ -207,15 +207,14 @@ export const isDemoRecord = (item: any): boolean => {
   ];
   if (demoIds.includes(id)) return true;
 
-  // Known demo resident names & event titles
+  // Known demo resident names
   const demoNames = [
     'eleanor miller', 'thomas wright', 'arthur pendelton', 'clara & leo bennett',
     'clara bennett', 'leo bennett', 'sophia lee', 'george harris',
     'sarah jenkins', 'marcus vance', 'emily watson', 'robert taylor',
-    'david miller', 'rebecca wright',
-    'annual grandparents', 'dementia & memory care', 'staff health, wellness'
+    'david miller', 'rebecca wright'
   ];
-  if (demoNames.some(dn => name.includes(dn) || String(item.title || '').toLowerCase().includes(dn))) return true;
+  if (demoNames.some(dn => name.includes(dn))) return true;
 
   // Known demo emails
   if (
@@ -315,6 +314,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
   const [selectedFacilityId, setSelectedFacilityId] = useState<string | null>(null);
 
+  // References to permanently track deleted IDs across tabs and server cycles
+  const deletedJobIdsRef = useRef<Set<string>>(new Set());
+  const deletedEventIdsRef = useRef<Set<string>>(new Set());
+
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => {
@@ -338,7 +341,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [currentUser]);
 
   // Universal Sync Engine: Synchronizes data with Server API fallback
-  // Universal Sync Engine: Synchronizes data with Server API fallback
   const syncDatabase = useCallback(async () => {
     try {
       const res = await fetch('/api/sync-all', {
@@ -351,6 +353,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (res.ok) {
         const data = await res.json();
         if (data) {
+          // Track deleted IDs from server
+          if (Array.isArray(data.deleted_job_ids)) {
+            data.deleted_job_ids.forEach((id: string) => deletedJobIdsRef.current.add(id));
+          }
+          if (Array.isArray(data.deleted_event_ids)) {
+            data.deleted_event_ids.forEach((id: string) => deletedEventIdsRef.current.add(id));
+          }
+
           // If in-memory state is empty on initial cold boot, hydrate immediately
           if (Array.isArray(data.staff) && data.staff.length > 0) {
             setStaff(prev => (prev.length === 0 ? data.staff : prev));
@@ -436,6 +446,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (Array.isArray(data.applications) && data.applications.length > 0) {
             setApplications(prev => (prev.length === 0 ? data.applications : prev));
           }
+
+          // Cross-browser Events Synchronization
+          if (Array.isArray(data.events)) {
+            const validEvents = data.events.filter((e: any) => e?.id && !deletedEventIdsRef.current.has(e.id));
+            setEvents(prev => {
+              const map = new Map<string, any>();
+              (prev || []).forEach(e => {
+                if (e?.id && !deletedEventIdsRef.current.has(e.id)) {
+                  map.set(e.id, e);
+                }
+              });
+              validEvents.forEach((e: any) => {
+                if (e?.id && !deletedEventIdsRef.current.has(e.id)) {
+                  map.set(e.id, { ...(map.get(e.id) || {}), ...e });
+                }
+              });
+              return Array.from(map.values());
+            });
+            validEvents.forEach((evt: any) => {
+              if (evt?.id && db) {
+                setDoc(doc(db, 'events', evt.id), sanitizeForFirestore(evt), { merge: true }).catch(() => {});
+              }
+            });
+          }
+
+          // Cross-browser Jobs Synchronization
+          if (Array.isArray(data.jobs)) {
+            const validJobs = data.jobs.filter((j: any) => j?.id && !deletedJobIdsRef.current.has(j.id));
+            setJobs(prev => {
+              const map = new Map<string, any>();
+              (prev || []).forEach(j => {
+                if (j?.id && !deletedJobIdsRef.current.has(j.id)) {
+                  map.set(j.id, j);
+                }
+              });
+              validJobs.forEach((j: any) => {
+                if (j?.id && !deletedJobIdsRef.current.has(j.id)) {
+                  map.set(j.id, { ...(map.get(j.id) || {}), ...j });
+                }
+              });
+              return Array.from(map.values());
+            });
+            validJobs.forEach((job: any) => {
+              if (job?.id && db) {
+                setDoc(doc(db, 'jobs', job.id), sanitizeForFirestore(job), { merge: true }).catch(() => {});
+              }
+            });
+          }
+
+          // Gallery Synchronization
+          if (Array.isArray(data.gallery) && data.gallery.length > 0) {
+            setGalleryItems(data.gallery);
+          }
         }
       }
     } catch (err) {
@@ -443,9 +506,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  // 1. Initial boot check
+  // 1. Initial boot check & continuous cross-browser focus listener
   useEffect(() => {
     syncDatabase();
+
+    const handleSyncOnVisible = () => {
+      if (document.visibilityState === 'visible') {
+        syncDatabase();
+      }
+    };
+    document.addEventListener('visibilitychange', handleSyncOnVisible);
+    window.addEventListener('focus', handleSyncOnVisible);
+
+    const intervalId = setInterval(() => {
+      syncDatabase();
+    }, 15000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleSyncOnVisible);
+      window.removeEventListener('focus', handleSyncOnVisible);
+      clearInterval(intervalId);
+    };
   }, [syncDatabase]);
 
   // 2. Real-time Cloud Firestore synchronization across all devices and browsers
@@ -506,11 +587,86 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               return;
             }
 
+            if (colName === 'events') {
+              const cleanEvents = (cleanItems as any[]).filter(e => e?.id && !deletedEventIdsRef.current.has(e.id || ''));
+              setter(prev => {
+                const map = new Map<string, any>();
+                (prev || []).forEach(e => {
+                  if (e?.id && !deletedEventIdsRef.current.has(e.id)) {
+                    map.set(e.id, e);
+                  }
+                });
+                cleanEvents.forEach(e => {
+                  if (e?.id && !deletedEventIdsRef.current.has(e.id)) {
+                    map.set(e.id, { ...(map.get(e.id) || {}), ...e });
+                  }
+                });
+                const merged = Array.from(map.values());
+                // Synchronize any Firestore events back to server so server DB remains up-to-date
+                cleanEvents.forEach(evt => {
+                  fetch('/api/events', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(evt),
+                  }).catch(() => {});
+                });
+                return merged as any;
+              });
+              return;
+            }
+
+            if (colName === 'jobs') {
+              const cleanJobs = (cleanItems as any[]).filter(j => j?.id && !deletedJobIdsRef.current.has(j.id || ''));
+              setter(prev => {
+                const map = new Map<string, any>();
+                (prev || []).forEach(j => {
+                  if (j?.id && !deletedJobIdsRef.current.has(j.id)) {
+                    map.set(j.id, j);
+                  }
+                });
+                cleanJobs.forEach(j => {
+                  if (j?.id && !deletedJobIdsRef.current.has(j.id)) {
+                    map.set(j.id, { ...(map.get(j.id) || {}), ...j });
+                  }
+                });
+                return Array.from(map.values()) as any;
+              });
+              return;
+            }
+
             const formatted = ensureUniqueKeys<T>(cleanItems, colName.slice(0, 3));
             setter(formatted);
           } else {
             // Collection is empty in Firestore (all documents deleted or none created yet)
-            setter(fallbackDefault || []);
+            if (colName === 'events') {
+              setter(prev => {
+                // If in-memory/server state already has events, push them to Firestore rather than wiping to empty!
+                if (Array.isArray(prev) && prev.length > 0 && db) {
+                  prev.forEach((evt: any) => {
+                    if (evt?.id) {
+                      setDoc(doc(db, 'events', evt.id), sanitizeForFirestore(evt), { merge: true }).catch(() => {});
+                    }
+                  });
+                  return prev;
+                }
+                return [];
+              });
+            } else if (colName === 'jobs') {
+              setter(prev => {
+                const filtered = (fallbackDefault || []).filter(j => !deletedJobIdsRef.current.has(j.id || ''));
+                const chosen = prev.length === 0 ? filtered : prev;
+                if (Array.isArray(chosen) && chosen.length > 0 && db) {
+                  chosen.forEach((job: any) => {
+                    if (job?.id) {
+                      setDoc(doc(db, 'jobs', job.id), sanitizeForFirestore(job), { merge: true }).catch(() => {});
+                    }
+                  });
+                }
+                return chosen;
+              });
+            } else {
+              setter(fallbackDefault || []);
+            }
           }
         }, (err) => {
           console.debug(`Firestore listener notice for ${colName}:`, err.message);
@@ -2116,9 +2272,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addEvent = async (eventData: Omit<CommunityEvent, 'id'>) => {
     const eventUUID = generateUUID();
     let imageUrl = eventData.imageUrl;
-    if (eventData.imageUrl?.startsWith('data:')) {
-      const { url } = await uploadToStorage('public-media', 'events', eventData.imageUrl, `${eventUUID}_event.jpg`);
-      if (url) imageUrl = url;
+    if (imageUrl && imageUrl.startsWith('data:')) {
+      try {
+        imageUrl = await compressImage(imageUrl, 800, 600, 0.82);
+      } catch (e) {
+        console.warn('Event image compress notice:', e);
+      }
     }
 
     const newEvent: CommunityEvent = {
@@ -2126,7 +2285,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       imageUrl,
       id: eventUUID,
     };
-    setEvents(prev => [newEvent, ...prev]);
+    deletedEventIdsRef.current.delete(eventUUID);
+    setEvents(prev => [newEvent, ...prev.filter(e => e.id !== newEvent.id)]);
 
     // Save to Firestore & backend server
     await Promise.allSettled([
@@ -2175,9 +2335,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateEvent = async (id: string, updated: Partial<CommunityEvent>) => {
     let imageUrl = updated.imageUrl;
-    if (updated.imageUrl?.startsWith('data:')) {
-      const { url } = await uploadToStorage('public-media', 'events', updated.imageUrl, `${id}_event.jpg`);
-      if (url) imageUrl = url;
+    if (imageUrl && imageUrl.startsWith('data:')) {
+      try {
+        imageUrl = await compressImage(imageUrl, 800, 600, 0.82);
+      } catch (e) {
+        console.warn('Event image update compress notice:', e);
+      }
     }
     const cleanUpdated = { ...updated, imageUrl };
     setEvents(prev => prev.map(e => e.id === id ? { ...e, ...cleanUpdated } : e));
@@ -2203,6 +2366,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteEvent = async (id: string) => {
+    deletedEventIdsRef.current.add(id);
     const target = events.find(e => e.id === id);
     setEvents(prev => prev.filter(e => e.id !== id));
 
@@ -2237,7 +2401,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...jobData,
       id: jobUUID,
     };
-    setJobs(prev => [newJob, ...prev]);
+    deletedJobIdsRef.current.delete(jobUUID);
+    setJobs(prev => [newJob, ...prev.filter(j => j.id !== newJob.id)]);
 
     await Promise.allSettled([
       setDoc(doc(db, 'jobs', newJob.id), sanitizeForFirestore(newJob), { merge: true }),
@@ -2290,8 +2455,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     await Promise.allSettled([
       setDoc(doc(db, 'jobs', id), sanitizeForFirestore(updated), { merge: true }),
-      fetch('/api/jobs', {
-        method: 'POST',
+      fetch(`/api/jobs/${id}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(merged),
       }),
@@ -2306,6 +2471,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteJob = async (id: string) => {
+    deletedJobIdsRef.current.add(id);
     const target = jobs.find(j => j.id === id);
     setJobs(prev => prev.filter(j => j.id !== id));
 

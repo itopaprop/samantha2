@@ -25,13 +25,20 @@ import {
 } from 'lucide-react';
 
 export const EventsPage: React.FC = () => {
-  const { events, setIsConsultationModalOpen, showToast } = useApp();
+  const { events, setIsConsultationModalOpen, showToast, syncDatabase } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedEventIndex, setSelectedEventIndex] = useState<number | null>(null);
   const [zoomScale, setZoomScale] = useState<number>(1);
   const [sharingEvent, setSharingEvent] = useState<CommunityEvent | null>(null);
+
+  // Auto-fetch latest live database on mount so front-end displays newest community events
+  useEffect(() => {
+    if (syncDatabase) {
+      syncDatabase().catch(() => {});
+    }
+  }, [syncDatabase]);
 
   const categories = [
     { id: 'all', label: 'All Events' },
@@ -43,13 +50,21 @@ export const EventsPage: React.FC = () => {
   ];
 
   const filteredEvents = events.filter(evt => {
+    if (!evt) return false;
+    const title = (evt.title || '').toLowerCase();
+    const description = (evt.description || '').toLowerCase();
+    const location = (evt.location || '').toLowerCase();
+    const search = searchTerm.toLowerCase().trim();
+
     const matchesSearch = 
-      evt.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      evt.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      evt.location.toLowerCase().includes(searchTerm.toLowerCase());
+      !search ||
+      title.includes(search) ||
+      description.includes(search) ||
+      location.includes(search);
     
     const matchesCategory = selectedCategory === 'all' || evt.category === selectedCategory;
-    const matchesStatus = selectedStatus === 'all' || evt.status === selectedStatus;
+    const matchesStatus = selectedStatus === 'all' || 
+      (selectedStatus === 'Upcoming' ? (evt.status === 'Upcoming' || evt.status === 'Ongoing' || !evt.status) : evt.status === selectedStatus);
 
     return matchesSearch && matchesCategory && matchesStatus;
   });
@@ -135,6 +150,14 @@ export const EventsPage: React.FC = () => {
                   }`}
                 >
                   Upcoming
+                </button>
+                <button
+                  onClick={() => setSelectedStatus('Ongoing')}
+                  className={`px-3 py-1.5 rounded-lg transition-all ${
+                    selectedStatus === 'Ongoing' ? 'bg-emerald-600 text-white font-extrabold shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Ongoing
                 </button>
                 <button
                   onClick={() => setSelectedStatus('Completed')}

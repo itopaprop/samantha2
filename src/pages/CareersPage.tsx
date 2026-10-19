@@ -19,7 +19,14 @@ import {
 } from 'lucide-react';
 
 export const CareersPage: React.FC = () => {
-  const { showToast, jobs, submitApplication } = useApp();
+  const { showToast, jobs, submitApplication, syncDatabase } = useApp();
+
+  // Auto-fetch latest live jobs on mount
+  React.useEffect(() => {
+    if (syncDatabase) {
+      syncDatabase().catch(() => {});
+    }
+  }, [syncDatabase]);
   const [selectedPosition, setSelectedPosition] = useState<string>('Senior Care Assistant');
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
