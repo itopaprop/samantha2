@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useApp } from '../../context/AppContext';
+import { useApp, deduplicateMessages } from '../../context/AppContext';
 import { ComposeMessageModal } from '../../components/modals/ComposeMessageModal';
 import { EditProfilePhotoModal } from '../../components/modals/EditProfilePhotoModal';
 import { 
@@ -56,8 +56,8 @@ export const StaffDashboard: React.FC = () => {
   // Filter shifts for this staff member
   const staffShifts = shifts.filter(s => s.staffId === currentUser.id || s.staffName === currentUser.name);
 
-  // Filter messages for this staff member
-  const staffMessages = messages.filter(m => m.receiverId === currentUser.id || m.senderId === currentUser.id);
+  // Filter messages for this staff member (strictly deduplicated)
+  const staffMessages = deduplicateMessages(messages.filter(m => m.receiverId === currentUser.id || m.senderId === currentUser.id));
   const unreadStaffMessagesCount = staffMessages.filter(m => m.receiverId === currentUser.id && !m.isRead).length;
 
   const handleLogCareAction = (residentId: string) => {

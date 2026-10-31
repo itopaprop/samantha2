@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useApp } from '../../context/AppContext';
+import { useApp, deduplicateMessages } from '../../context/AppContext';
+export { deduplicateMessages };
 import { AddResidentModal } from '../../components/modals/AddResidentModal';
 import { AddStaffModal } from '../../components/modals/AddStaffModal';
 import { AddShiftModal } from '../../components/modals/AddShiftModal';
@@ -89,6 +90,7 @@ export const AdminDashboard: React.FC = () => {
     markMessageAsRead,
     showToast,
     purgeAllNonAdminUsers,
+    deduplicateDatabase,
     syncDatabase,
     logout 
   } = useApp();
@@ -231,11 +233,11 @@ export const AdminDashboard: React.FC = () => {
   const dailyCareClients = residents.filter(r => r.careCategory === 'Daily Living Assistance' || r.careCategory === 'Residential Elderly Care').length;
   const vulnerableClients = residents.filter(r => r.careCategory === 'Vulnerable Adult Support').length;
   const activeShiftsCount = shifts.length;
-  const inboxMessages = messages.filter(m => 
+  const inboxMessages = deduplicateMessages(messages.filter(m => 
     m.receiverId === currentUser.id || 
     (currentUser.role === 'Admin' && (m.receiverRole === 'Admin' || m.receiverId === 'usr-admin-1' || !m.receiverId))
-  );
-  const sentMessages = messages.filter(m => m.senderId === currentUser.id);
+  ));
+  const sentMessages = deduplicateMessages(messages.filter(m => m.senderId === currentUser.id));
   const unreadMessagesCount = inboxMessages.filter(m => !m.isRead).length;
 
   // Quick Action Helper
@@ -560,7 +562,7 @@ export const AdminDashboard: React.FC = () => {
               onClick={() => setIsAddShiftOpen(true)}
               className="shrink-0 whitespace-nowrap bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <Calendar className="w-3.5 h-3.5" /> Add Shift
+              <Calendar className="w-3.5 h-3.5" /> Assign Shift
             </button>
             <button
               onClick={() => setIsViewShiftsOpen(true)}
@@ -575,39 +577,6 @@ export const AdminDashboard: React.FC = () => {
         {/* TAB 1: OVERVIEW DASHBOARD */}
         {activeTab === 'overview' && (
           <div className="space-y-8">
-            
-            {/* Quick Category Addition Bar */}
-            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-3">
-              <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Quick Category Registration Actions
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => triggerAddResidentWithCategory('Dementia Support')}
-                  className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Brain className="w-3.5 h-3.5" /> Add Dementia Support
-                </button>
-                <button
-                  onClick={() => triggerAddResidentWithCategory('Domiciliary Care')}
-                  className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <HomeIcon className="w-3.5 h-3.5" /> Add Domiciliary Client
-                </button>
-                <button
-                  onClick={() => triggerAddResidentWithCategory('Daily Living Assistance')}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Activity className="w-3.5 h-3.5" /> Add Daily Care Client
-                </button>
-                <button
-                  onClick={() => triggerAddResidentWithCategory('Vulnerable Adult Support')}
-                  className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Brain className="w-3.5 h-3.5" /> Add Vulnerable Client
-                </button>
-              </div>
-            </div>
 
             {/* Statistics Cards Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -1070,7 +1039,7 @@ export const AdminDashboard: React.FC = () => {
                   onClick={() => setIsAddShiftOpen(true)}
                   className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Calendar className="w-4 h-4" /> Add New Shift
+                  <Calendar className="w-4 h-4" /> Assign Shift
                 </button>
               </div>
             </div>
@@ -1125,12 +1094,25 @@ export const AdminDashboard: React.FC = () => {
                 <h2 className="text-2xl font-bold text-slate-900">Internal Communication Hub</h2>
                 <p className="text-xs text-slate-500">Secure messaging between Admin, Staff, and Resident Relatives</p>
               </div>
-              <button
-                onClick={() => setIsComposeMessageOpen(true)}
-                className="bg-sky-700 hover:bg-sky-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                <Send className="w-4 h-4" /> Compose Message
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await deduplicateDatabase();
+                  }}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-2.5 px-3 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border border-slate-200"
+                  title="Purge duplicate internal notifications and registrations"
+                >
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" /> Clean Duplicate Notifications
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsComposeMessageOpen(true)}
+                  className="bg-sky-700 hover:bg-sky-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Send className="w-4 h-4" /> Compose Message
+                </button>
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">

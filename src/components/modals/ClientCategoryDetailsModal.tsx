@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { 
   X, 
   Users, 
-  UserPlus, 
   Heart, 
   ShieldAlert, 
   Brain, 
@@ -31,7 +30,7 @@ interface Props {
   residents: Resident[];
   onSelectResident: (resident: Resident) => void;
   onEditResident: (resident: Resident) => void;
-  onAddNewResident: (presetCategory: CareCategory) => void;
+  onAddNewResident?: (presetCategory: CareCategory) => void;
   onFilterTable?: (categoryFilter: string) => void;
 }
 
@@ -240,17 +239,6 @@ export const ClientCategoryDetailsModal: React.FC<Props> = ({
             <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => {
-                  onAddNewResident(config.presetCategory);
-                  onClose();
-                }}
-                className={`hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer ${config.theme.accentBtn}`}
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>Register Client</span>
-              </button>
-              <button
-                type="button"
                 onClick={onClose}
                 className="text-slate-400 hover:text-slate-700 p-2 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
                 aria-label="Close details"
@@ -328,17 +316,6 @@ export const ClientCategoryDetailsModal: React.FC<Props> = ({
               <Filter className="w-3.5 h-3.5 text-slate-600" />
               <span>Filter Main Table</span>
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                onAddNewResident(config.presetCategory);
-                onClose();
-              }}
-              className={`sm:hidden inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold shadow-xs ${config.theme.accentBtn}`}
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>Add</span>
-            </button>
           </div>
         </div>
 
@@ -367,20 +344,6 @@ export const ClientCategoryDetailsModal: React.FC<Props> = ({
                     <span>{h}</span>
                   </div>
                 ))}
-              </div>
-
-              <div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onAddNewResident(config.presetCategory);
-                    onClose();
-                  }}
-                  className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer ${config.theme.accentBtn}`}
-                >
-                  <UserPlus className="w-4 h-4" />
-                  <span>Register First {config.presetCategory} Client</span>
-                </button>
               </div>
             </div>
           ) : filteredResidents.length === 0 ? (
@@ -530,17 +493,6 @@ export const ClientCategoryDetailsModal: React.FC<Props> = ({
               className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
             >
               Close
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onAddNewResident(config.presetCategory);
-                onClose();
-              }}
-              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer ${config.theme.accentBtn}`}
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>Add New Client</span>
             </button>
           </div>
         </div>

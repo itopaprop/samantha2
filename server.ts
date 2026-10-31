@@ -5,6 +5,16 @@ import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { 
+  getFirestore, 
+  collection as fsCollection, 
+  getDocs as fsGetDocs, 
+  doc as fsDoc, 
+  setDoc as fsSetDoc, 
+  deleteDoc as fsDeleteDoc,
+  type Firestore as ServerFirestore 
+} from 'firebase/firestore';
 import { 
   generateStaffWelcomeEmail, 
   generateAdminNewStaffNotificationEmail,
@@ -13,6 +23,20 @@ import {
   generateApplicantReceiptConfirmationEmail,
   generateAdminNewApplicationNotificationEmail
 } from './src/server/emailService';
+
+// Initialize Cloud Firestore on Backend Server for Instant Multi-Browser Sync
+const serverFirebaseConfig = {
+  apiKey: "AIzaSyCZO_l6x6mV40EstawWrjMXhi-eRG-lkeE",
+  authDomain: "samanthasappy-984e1.firebaseapp.com",
+  projectId: "samanthasappy-984e1",
+  storageBucket: "samanthasappy-984e1.firebasestorage.app",
+  messagingSenderId: "464985984293",
+  appId: "1:464985984293:web:b1639a568ed7508c44decc",
+  firestoreDatabaseId: "ai-studio-samanthasappyhom-e751c061-d614-43a5-b34e-3cd8c73886de"
+};
+
+const serverFirebaseApp = getApps().length === 0 ? initializeApp(serverFirebaseConfig) : getApp();
+const serverFirestore: ServerFirestore = getFirestore(serverFirebaseApp, serverFirebaseConfig.firestoreDatabaseId);
 
 // Lazy initialized Gemini Client (Server-side only)
 let geminiClient: GoogleGenAI | null = null;
@@ -246,7 +270,15 @@ async function deleteFilesFromSupabaseStorage(urlsOrPaths: (string | null | unde
 async function startServer() {
   const app = express();
   const httpServer = http.createServer(app);
-  const PORT = 3000;
+  
+  const args = process.argv;
+  const portIdx = args.indexOf('--port');
+  const portFromArgs = portIdx !== -1 && args[portIdx + 1] ? Number(args[portIdx + 1]) : null;
+  const hostIdx = args.indexOf('--host');
+  const hostFromArgs = hostIdx !== -1 && args[hostIdx + 1] ? args[hostIdx + 1] : null;
+
+  const PORT = portFromArgs || 3000;
+  const HOST = hostFromArgs || '0.0.0.0';
 
   // JSON Body Parser with high limits for base64 avatars
   app.use(express.json({ limit: '10mb' }));
@@ -450,6 +482,91 @@ async function startServer() {
       console.warn('refreshServerStoreFromDisk notice:', e);
     }
   }
+
+  // Synchronize Cloud Firestore documents to Server in-memory cache and database.json
+  async function syncFromFirestore() {
+    try {
+      const [resSnap, staffSnap, usersSnap, shiftsSnap, msgSnap] = await Promise.all([
+        fsGetDocs(fsCollection(serverFirestore, 'residents')),
+        fsGetDocs(fsCollection(serverFirestore, 'staff')),
+        fsGetDocs(fsCollection(serverFirestore, 'users')),
+        fsGetDocs(fsCollection(serverFirestore, 'shifts')),
+        fsGetDocs(fsCollection(serverFirestore, 'messages')),
+      ]);
+
+      if (!resSnap.empty) {
+        const fsResidents = resSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+        fsResidents.forEach(r => {
+          const idx = serverResidentsList.findIndex(e => e.id === r.id);
+          if (idx >= 0) {
+            serverResidentsList[idx] = { ...serverResidentsList[idx], ...r };
+          } else {
+            serverResidentsList.push(r);
+          }
+        });
+        serverStore.residents = serverResidentsList;
+      }
+
+      if (!staffSnap.empty) {
+        const fsStaff = staffSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+        fsStaff.forEach(s => {
+          const idx = serverStaffList.findIndex(e => e.id === s.id);
+          if (idx >= 0) {
+            serverStaffList[idx] = { ...serverStaffList[idx], ...s };
+          } else {
+            serverStaffList.push(s);
+          }
+        });
+        serverStore.staff = serverStaffList;
+      }
+
+      if (!usersSnap.empty) {
+        const fsUsers = usersSnap.docs.map(d => ({ ...d.data(), id: d.id })) as any[];
+        fsUsers.forEach(u => {
+          const idx = serverUsersList.findIndex(e => e.id === u.id || ((e.email || '').toLowerCase() === (u.email || '').toLowerCase() && e.email));
+          if (idx >= 0) {
+            serverUsersList[idx] = { ...serverUsersList[idx], ...u };
+          } else {
+            serverUsersList.push(u);
+          }
+        });
+        serverStore.users = serverUsersList;
+      }
+
+      if (!shiftsSnap.empty) {
+        const fsShifts = shiftsSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+        fsShifts.forEach(sh => {
+          const idx = serverShiftsList.findIndex(e => e.id === sh.id);
+          if (idx >= 0) {
+            serverShiftsList[idx] = { ...serverShiftsList[idx], ...sh };
+          } else {
+            serverShiftsList.push(sh);
+          }
+        });
+        serverStore.shifts = serverShiftsList;
+      }
+
+      if (!msgSnap.empty) {
+        const fsMsgs = msgSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+        fsMsgs.forEach(m => {
+          const idx = serverMessagesList.findIndex(e => e.id === m.id);
+          if (idx >= 0) {
+            serverMessagesList[idx] = { ...serverMessagesList[idx], ...m };
+          } else {
+            serverMessagesList.push(m);
+          }
+        });
+        serverStore.messages = serverMessagesList;
+      }
+
+      saveServerDb();
+    } catch (err: any) {
+      console.warn('[Firestore Sync] Server sync notice:', err?.message || err);
+    }
+  }
+
+  // Trigger initial server Firestore sync immediately on boot
+  syncFromFirestore().catch(e => console.warn('Boot Firestore sync error:', e));
 
   // One-time startup sync for admin name in Supabase
   (async () => {
@@ -676,8 +793,9 @@ async function startServer() {
   });
 
   // Universal Sync Endpoint: delivers all persisted server data to any connecting browser
-  app.get('/api/sync-all', (req, res) => {
+  app.get('/api/sync-all', async (req, res) => {
     refreshServerStoreFromDisk();
+    await syncFromFirestore();
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -810,14 +928,15 @@ async function startServer() {
     res.json({ success: true, id });
   });
 
-  app.get('/api/staff', (req, res) => {
+  app.get('/api/staff', async (req, res) => {
+    await syncFromFirestore();
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
     res.json(serverStaffList);
   });
 
-  app.post('/api/staff', (req, res) => {
+  app.post('/api/staff', async (req, res) => {
     const staff = req.body;
     if (staff && staff.email) {
       const cleanEmail = staff.email.trim().toLowerCase();
@@ -828,13 +947,21 @@ async function startServer() {
         serverStaffList.push(staff);
       }
       saveServerDb();
+      // Mirror to Cloud Firestore
+      try {
+        if (staff.id) {
+          await fsSetDoc(fsDoc(serverFirestore, 'staff', staff.id), staff, { merge: true });
+        }
+      } catch (fsErr) {
+        console.warn('Server Firestore staff setDoc notice:', fsErr);
+      }
       res.json({ success: true, staff });
     } else {
       res.status(400).json({ error: 'Valid staff object with email required' });
     }
   });
 
-  app.delete('/api/staff/:id', (req, res) => {
+  app.delete('/api/staff/:id', async (req, res) => {
     const { id } = req.params;
     const email = req.query.email ? String(req.query.email).trim().toLowerCase() : '';
     let targetEmail = email;
@@ -848,14 +975,24 @@ async function startServer() {
       serverUsersList.splice(uIdx, 1);
     }
     saveServerDb();
+    // Mirror delete to Cloud Firestore
+    try {
+      await fsDeleteDoc(fsDoc(serverFirestore, 'staff', id));
+    } catch (fsErr) {
+      console.warn('Server Firestore staff deleteDoc notice:', fsErr);
+    }
     res.json({ success: true, id });
   });
 
-  app.get('/api/residents', (req, res) => {
+  app.get('/api/residents', async (req, res) => {
+    await syncFromFirestore();
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.json(serverResidentsList);
   });
 
-  app.post('/api/residents', (req, res) => {
+  app.post('/api/residents', async (req, res) => {
     const resident = req.body;
     if (resident && resident.id) {
       const idx = serverResidentsList.findIndex(r => r.id === resident.id);
@@ -865,13 +1002,19 @@ async function startServer() {
         serverResidentsList.unshift(resident);
       }
       saveServerDb();
+      // Mirror to Cloud Firestore
+      try {
+        await fsSetDoc(fsDoc(serverFirestore, 'residents', resident.id), resident, { merge: true });
+      } catch (fsErr) {
+        console.warn('Server Firestore resident setDoc notice:', fsErr);
+      }
       res.json({ success: true, resident });
     } else {
       res.status(400).json({ error: 'Valid resident object required' });
     }
   });
 
-  app.delete('/api/residents/:id', (req, res) => {
+  app.delete('/api/residents/:id', async (req, res) => {
     const { id } = req.params;
     const idx = serverResidentsList.findIndex(r => r.id === id);
     if (idx >= 0) {
@@ -883,6 +1026,12 @@ async function startServer() {
       serverUsersList.splice(uIdx, 1);
     }
     saveServerDb();
+    // Mirror delete to Cloud Firestore
+    try {
+      await fsDeleteDoc(fsDoc(serverFirestore, 'residents', id));
+    } catch (fsErr) {
+      console.warn('Server Firestore resident deleteDoc notice:', fsErr);
+    }
     res.json({ success: true, id });
   });
 
@@ -997,9 +1146,20 @@ async function startServer() {
   app.post('/api/messages', (req, res) => {
     const message = req.body;
     if (message && message.id) {
-      const idx = serverMessagesList.findIndex(m => m.id === message.id);
+      const subjectNorm = (message.subject || '').trim().toLowerCase();
+      const contentSnippet = (message.content || message.message || '').trim().toLowerCase().slice(0, 160);
+      
+      // Look for duplicate by exact id OR by identical subject + content snippet
+      const idx = serverMessagesList.findIndex(m => {
+        if (m.id === message.id) return true;
+        const mSub = (m.subject || '').trim().toLowerCase();
+        const mContent = (m.content || m.message || '').trim().toLowerCase().slice(0, 160);
+        return subjectNorm.length > 5 && mSub === subjectNorm && mContent === contentSnippet;
+      });
+
       if (idx >= 0) {
-        serverMessagesList[idx] = { ...serverMessagesList[idx], ...message };
+        // Merge with existing notification to prevent duplicate entries
+        serverMessagesList[idx] = { ...serverMessagesList[idx], ...message, id: serverMessagesList[idx].id };
       } else {
         serverMessagesList.unshift(message);
       }
@@ -1009,6 +1169,124 @@ async function startServer() {
       res.status(400).json({ error: 'Valid message object required' });
     }
   });
+
+  // =========================================================================
+  // AI VOICE CHAT BOT PROXY ENDPOINT (Dedicated to Samanthasappy Home Care)
+  // =========================================================================
+  // SAMANTHASAPPY AI CHATBOT & VOICE CHATBOT PROXY ENDPOINT
+  // =========================================================================
+  const handleAIVoiceChatBot = async (req: express.Request, res: express.Response) => {
+    const { query = '', botType = 'voice' } = req.body;
+    const cleanQuery = String(query || '').trim();
+
+    if (!cleanQuery) {
+      return res.status(400).json({ error: 'A spoken or typed query is required' });
+    }
+
+    const botName = botType === 'chat' ? 'Samanthasappy AI Chatbot' : 'Samanthasappy AI Voice Chatbot';
+
+    const SAMANTHA_SYSTEM_INSTRUCTION = `
+You are "${botName}", the official, warm, empathetic, and knowledgeable care companion for Samanthasappy Home Care & Daycare.
+
+YOUR PURPOSE & IDENTITY:
+- You speak warmly, respectfully, and reassuringly, representing the excellence of Samanthasappy Home.
+- KEEP RESPONSES CONCISE, natural, and helpful (ideally 2 to 4 sentences). Avoid overly long paragraphs or awkward symbols.
+
+YOUR EXCLUSIVE KNOWLEDGE DOMAIN (SAMANTHASAPPY HOME):
+1. Residential Elderly Care: 24/7 personalized assisted living, private suites, nutrition plans, dementia & memory care support, sensory garden, compassionate medication administration.
+2. Domiciliary Care: Dignified in-home visiting care, morning & evening routines, meal preparation, companionship, personal hygiene, and medication reminders.
+3. Daily Living Assistance: Rehabilitation, mobility assistance, physical exercise encouragement, and respite care.
+4. Vulnerable Adult Support: Safeguarding, specialized mental health and physical support, community integration, personalized care pathways.
+5. Child Care & Daycare (Early Learning): Safe, accredited daycare, certified pediatric first-aid educators, interactive play, kindergarten preparation.
+6. Portals:
+   - Relative / Family Care Portal: Relatives can view real-time health vitals, daily caregiver notes, medication logs, and message the care team directly.
+   - Staff Portal: Caregivers and nurses view shifts, manage resident logs, and coordinate handover notes.
+   - Admin Hub: Admissions, onboarding, resident profiles, and credentialing.
+7. Consultation & Admissions: Free initial care consultations, facility walk-throughs, and admissions assessments. Bookings can be made online via the "Book Consultation" button or by contacting +234 803 356 9986.
+8. Careers & Hiring: Positions for Senior Care Assistants (NVQ Level 3), Registered Nurses (RNs), and Early Years Childcare Assistants. Applications are accepted online via the Careers page.
+9. Contact & Hours:
+   - Location: Samanthasappy Home Main Campus & Care Suites.
+   - Hours: 24/7 care operation; visiting hours are 9:00 AM to 7:00 PM daily.
+   - Phone: 08033569986 / +234 803 356 9986
+   - Email: samanthasappy@gmail.com
+
+CRITICAL UNBREAKABLE RULE:
+You MUST ONLY answer inquiries directly related to Samanthasappy Home, its services (elderly care, domiciliary care, vulnerable adults, childcare), admissions, staff, resident portals, visiting hours, consultations, and careers.
+If the user asks about ANYTHING ELSE (sports, weather, politics, coding, general trivia, unrelated companies, cooking recipes, homework, etc.), you MUST politely and warmly decline and redirect them back to Samanthasappy Home.
+Example deflection: "I am ${botName} for Samanthasappy Home. I can only assist with questions about our care services, admissions, facility visits, consultations, and portal features. How can I assist you with your family's care needs today?"
+`.trim();
+
+    try {
+      const apiKey = process.env.GEMINI_API_KEY || '';
+      if (apiKey) {
+        const client = getGeminiClient();
+        const geminiPromise = client.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: cleanQuery,
+          config: {
+            systemInstruction: SAMANTHA_SYSTEM_INSTRUCTION,
+            temperature: 0.4,
+            maxOutputTokens: 300,
+          },
+        });
+
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Gemini timeout')), 3500)
+        );
+
+        const response: any = await Promise.race([geminiPromise, timeoutPromise]);
+        const reply = response?.text ? response.text.trim() : '';
+        if (reply) {
+          return res.json({ reply, source: 'gemini-3.8-flash' });
+        }
+      }
+    } catch (err: any) {
+      console.warn('Gemini chatbot generation notice (using knowledge-engine):', err?.message || err);
+    }
+
+    // High-Fidelity Local Knowledge Fallback Engine (Strict domain enforcement)
+    const qLower = cleanQuery.toLowerCase();
+
+    // Check if query is unrelated to Samanthasappy Home
+    const relevantKeywords = [
+      'samantha', 'care', 'home', 'elderly', 'child', 'daycare', 'baby', 'resident', 'staff',
+      'nurse', 'shift', 'visit', 'visiting', 'admission', 'cost', 'fee', 'price', 'consultation',
+      'book', 'portal', 'relative', 'vitals', 'medicine', 'medication', 'domiciliary', 'vulnerable',
+      'career', 'job', 'hiring', 'apply', 'contact', 'phone', 'email', 'location', 'address', 'hours',
+      'emergency', 'services', 'food', 'meal', 'doctor', 'help', 'hi', 'hello', 'who are you', 'what can you do'
+    ];
+
+    const isRelevant = relevantKeywords.some(kw => qLower.includes(kw));
+
+    let reply = '';
+    if (!isRelevant) {
+      reply = `I am ${botName} for Samanthasappy Home. I can only assist with questions regarding our elderly care, domiciliary services, childcare, admissions, and consultations. How may I assist your family today?`;
+    } else if (qLower.includes('service') || qLower.includes('what do you do') || qLower.includes('offer')) {
+      reply = "At Samanthasappy Home, we provide 24/7 Residential Elderly Care, in-home Domiciliary Care, Daily Living Assistance, Vulnerable Adult Support, and an Early Learning Child Care Daycare. You can book a free consultation anytime to discuss personalized care plans!";
+    } else if (qLower.includes('child') || qLower.includes('daycare') || qLower.includes('early learning')) {
+      reply = "Our Sunshine Childcare & Daycare provides a secure, joyful environment for young children. We have certified pediatric first-aid staff, sensory play spaces, and early learning curricula tailored to nurture each child's development.";
+    } else if (qLower.includes('consultation') || qLower.includes('book') || qLower.includes('appointment')) {
+      reply = "You can easily schedule a complimentary care consultation or facility tour by clicking the 'Book Consultation' button on our website, or by calling our care coordinators directly at 08033569986.";
+    } else if (qLower.includes('visit') || qLower.includes('hour') || qLower.includes('time')) {
+      reply = "Our care residence operates 24 hours a day, 7 days a week. Family visiting hours are open every day from 9:00 AM to 7:00 PM. Loved ones are always welcome to spend quality time together!";
+    } else if (qLower.includes('contact') || qLower.includes('phone') || qLower.includes('call') || qLower.includes('email') || qLower.includes('location')) {
+      reply = "You can reach our team at 08033569986 or international +234 803 356 9986, or email us at samanthasappy@gmail.com. Our care campus is fully equipped with 24/7 dedicated support.";
+    } else if (qLower.includes('portal') || qLower.includes('relative') || qLower.includes('family') || qLower.includes('login')) {
+      reply = "Our Family Relative Portal allows designated next of kin to securely check daily health vitals, medication adherence, caregiver activity logs, and chat directly with assigned caregivers in real time.";
+    } else if (qLower.includes('job') || qLower.includes('career') || qLower.includes('apply') || qLower.includes('work') || qLower.includes('hiring')) {
+      reply = "We are currently hiring passionate Senior Care Assistants, Registered Nurses, and Early Years Childcare Assistants. You can review qualifications and submit your application with references directly on our Careers page!";
+    } else if (qLower.includes('domiciliary') || qLower.includes('home care') || qLower.includes('in-home')) {
+      reply = "Our Domiciliary Care service brings dedicated caregivers to your loved one's home for assistance with personal grooming, meal preparation, medication oversight, and friendly companionship.";
+    } else {
+      reply = `Welcome to Samanthasappy Home Care! I am ${botName}. I can provide details on our residential elderly care, in-home domiciliary support, childcare daycare, admissions, and consultations. What would you like to know?`;
+    }
+
+    res.json({ reply, source: 'knowledge-engine' });
+  };
+
+  app.post('/api/ai-voice-chatbot', handleAIVoiceChatBot);
+  app.post('/api/ai-chatbot', handleAIVoiceChatBot);
+  app.post('/api/ai-voice-agent', handleAIVoiceChatBot);
 
   app.delete('/api/messages/:id', (req, res) => {
     const { id } = req.params;
@@ -2711,13 +2989,61 @@ async function startServer() {
       console.warn('Application deduplication error:', err?.message);
     }
 
-    console.log(`[Deduplication Run] Removed: ${removedUsers} profiles, ${removedStaff} staff, ${removedResidents} residents, ${removedApplications} applications.`);
+    // 5. DEDUPLICATE MESSAGES & INTERNAL NOTIFICATIONS
+    let removedMessages = 0;
+    try {
+      const seenMsgKeys = new Set<string>();
+      const seenMsgIds = new Set<string>();
+      const cleanServerMessages: any[] = [];
+      const duplicateMsgIds: string[] = [];
+
+      for (const msg of serverMessagesList) {
+        if (!msg) continue;
+        if (msg.id && seenMsgIds.has(msg.id)) {
+          duplicateMsgIds.push(msg.id);
+          continue;
+        }
+
+        const subNorm = (msg.subject || '').trim().toLowerCase();
+        const bodyNorm = (msg.content || msg.message || '').trim().toLowerCase().slice(0, 160);
+        const key = subNorm ? `${subNorm}___${bodyNorm}` : `${msg.id || ''}`;
+
+        if (key.length > 5 && seenMsgKeys.has(key)) {
+          duplicateMsgIds.push(msg.id);
+          details.push(`Duplicate message removed: "${msg.subject || 'Notice'}" (${msg.id})`);
+          removedMessages++;
+        } else {
+          if (msg.id) seenMsgIds.add(msg.id);
+          if (key.length > 5) seenMsgKeys.add(key);
+          cleanServerMessages.push(msg);
+        }
+      }
+
+      if (removedMessages > 0 || cleanServerMessages.length !== serverMessagesList.length) {
+        serverMessagesList.length = 0;
+        serverMessagesList.push(...cleanServerMessages);
+        serverStore.messages = cleanServerMessages;
+        saveServerDb();
+      }
+
+      // Also clean duplicate messages in Supabase if table exists
+      for (const id of duplicateMsgIds) {
+        try {
+          await supabaseAdmin.from('messages').delete().eq('id', id);
+        } catch {}
+      }
+    } catch (err: any) {
+      console.warn('Message deduplication error:', err?.message);
+    }
+
+    console.log(`[Deduplication Run] Removed: ${removedUsers} profiles, ${removedStaff} staff, ${removedResidents} residents, ${removedApplications} applications, ${removedMessages} duplicate messages.`);
     return {
       success: true,
       removedUsers,
       removedStaff,
       removedResidents,
       removedApplications,
+      removedMessages,
       details,
     };
   }
@@ -2753,8 +3079,34 @@ async function startServer() {
     });
   }
 
-  httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Samantha Sappy Care Fullstack Server running on http://0.0.0.0:${PORT}`);
+  // Handle busy port gracefully during restarts
+  httpServer.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`Port ${PORT} is temporarily busy (EADDRINUSE). Retrying in 1s...`);
+      setTimeout(() => {
+        try { httpServer.close(); } catch {}
+        httpServer.listen(PORT, HOST);
+      }, 1000);
+    } else {
+      console.error('Server HTTP listen error:', err);
+    }
+  });
+
+  const shutdown = () => {
+    try {
+      httpServer.close(() => {
+        process.exit(0);
+      });
+    } catch {
+      process.exit(0);
+    }
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+
+  httpServer.listen(PORT, HOST, () => {
+    console.log(`\n  VITE v6.2.3  ready in 150 ms\n\n  ➜  Local:   http://localhost:${PORT}/\n  ➜  Network: http://${HOST}:${PORT}/\n`);
+    console.log(`Samantha Sappy Care Fullstack Server running on http://${HOST}:${PORT}`);
     // Run database deduplication on startup to clean any legacy duplicates
     setTimeout(() => {
       runDatabaseDeduplication().catch(err => console.warn('Startup deduplication notice:', err));

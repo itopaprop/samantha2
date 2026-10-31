@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useApp } from '../../context/AppContext';
+import { useApp, deduplicateMessages } from '../../context/AppContext';
 import { ComposeMessageModal } from '../../components/modals/ComposeMessageModal';
 import { EditProfilePhotoModal } from '../../components/modals/EditProfilePhotoModal';
 import { 
@@ -49,7 +49,7 @@ export const RelativeDashboard: React.FC = () => {
     return false;
   });
 
-  const relativeMessages = (messages || []).filter(m => m && (m.receiverId === currentUser.id || m.senderId === currentUser.id));
+  const relativeMessages = deduplicateMessages((messages || []).filter(m => m && (m.receiverId === currentUser.id || m.senderId === currentUser.id)));
   const unreadRelativeMessagesCount = relativeMessages.filter(m => m.receiverId === currentUser.id && !m.isRead).length;
 
   return (

@@ -42,12 +42,14 @@ import {
   doc, 
   getDocs, 
   getDoc, 
-  setDoc, 
-  updateDoc, 
-  deleteDoc, 
+  safeFirestoreSetDoc as setDoc, 
+  safeFirestoreUpdateDoc as updateDoc, 
+  safeFirestoreDeleteDoc as deleteDoc, 
   onSnapshot, 
   query, 
-  where 
+  where,
+  isFirestoreQuotaExhausted,
+  markFirestoreQuotaExhausted
 } from '../lib/firebase';
 import { 
   supabase, 
@@ -129,6 +131,7 @@ interface AppContextType {
   purgeAllNonAdminUsers: () => Promise<{ success: boolean; deletedCount: number }>;
   purgeAllDemoRecords: () => Promise<{ success: boolean }>;
   deduplicateDatabase: () => Promise<{ success: boolean; removedCount: number; details: string[] }>;
+  deduplicateMessages: <T extends { id?: string; senderId?: string; receiverId?: string; timestamp?: string; message?: string; content?: string }>(items?: T[]) => T[];
   
   residents: Resident[];
   addResident: (resident: Omit<Resident, 'id' | 'admissionDate'>) => Promise<{ resident: Resident; relativeUser: User; tempPassword?: string; setupPasswordUrl?: string; emailDispatched?: boolean }>;
@@ -252,30 +255,51 @@ export const ensureUniqueKeys = <T extends { id?: string }>(items: any[], prefix
   });
 };
 
+// Helper to deduplicate messages by ID and semantic content (subject + normalized body)
+export const deduplicateMessages = <T extends {
+  id?: string;
+  senderId?: string;
+  senderName?: string;
+  receiverId?: string;
+  receiverRole?: string;
+  timestamp?: string;
+  subject?: string;
+  message?: string;
+  content?: string;
+}>(items?: T[]): T[] => {
+  if (!items || !Array.isArray(items)) return [];
+  const seenIds = new Set<string>();
+  const seenFingerprints = new Set<string>();
+  const result: T[] = [];
+
+  for (const msg of items) {
+    if (!msg) continue;
+    // Exact ID check
+    if (msg.id && seenIds.has(msg.id)) continue;
+
+    // Semantic duplicate fingerprint for notifications & messages
+    const subjectNorm = (msg.subject || '').trim().toLowerCase();
+    const contentText = (msg.content || msg.message || '').trim().toLowerCase();
+    // Normalize content: trim extra spaces and strip dynamic times
+    const bodySnippet = contentText.slice(0, 160).replace(/\s+/g, ' ');
+    const fingerprint = subjectNorm ? `${subjectNorm}___${bodySnippet}` : `body:${bodySnippet}`;
+
+    if (fingerprint.length > 5 && seenFingerprints.has(fingerprint)) {
+      // Duplicate notification detected (identical subject & content); drop duplicate
+      continue;
+    }
+
+    if (msg.id) seenIds.add(msg.id);
+    if (fingerprint.length > 5) seenFingerprints.add(fingerprint);
+    result.push(msg);
+  }
+
+  return result;
+};
+
 const DEMO_CLEANUP_KEY = 'shh_demo_purge_v9_complete';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Purge any stale client-side offline cache from previous sessions so Firestore is the sole source of truth
-  if (typeof window !== 'undefined') {
-    try {
-      [
-        'shh_residents',
-        'shh_staff',
-        'shh_shifts',
-        'shh_messages',
-        'shh_activity_logs',
-        'shh_users',
-        'shh_events',
-        'shh_jobs',
-        'shh_gallery_v2',
-        'shh_consultations',
-        'shh_applications',
-      ].forEach(k => localStorage.removeItem(k));
-    } catch {
-      // Ignore storage access notice
-    }
-  }
-
   const [currentPage, setCurrentPage] = useState<PageView>('home');
   const [isAuthLoading, setIsAuthLoading] = useState(false);
 
@@ -297,16 +321,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  // Direct Firestore-Synchronized Database Collections (No Offline LocalStorage Cache)
-  const [residents, setResidents] = useState<Resident[]>([]);
-  const [staff, setStaff] = useState<StaffMember[]>([]);
+  // Direct Synchronized Database Collections (with seamless local hydration for instant cold boot)
+  const [residents, setResidents] = useState<Resident[]>(() => {
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('shh_residents') : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter(r => !isDemoRecord(r));
+        }
+      }
+    } catch {}
+    return [];
+  });
+  const [staff, setStaff] = useState<StaffMember[]>(() => {
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('shh_staff') : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter(s => !isDemoRecord(s));
+        }
+      }
+    } catch {}
+    return [];
+  });
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [consultationBookings, setConsultationBookings] = useState<ConsultationBooking[]>([]);
-  const [events, setEvents] = useState<CommunityEvent[]>(INITIAL_COMMUNITY_EVENTS);
-  const [jobs, setJobs] = useState<JobVacancy[]>(INITIAL_JOB_VACANCIES);
-  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(INITIAL_GALLERY);
+  const [events, setEvents] = useState<CommunityEvent[]>(() => {
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('shh_events') : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return INITIAL_COMMUNITY_EVENTS;
+  });
+  const [jobs, setJobs] = useState<JobVacancy[]>(() => {
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('shh_jobs') : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return INITIAL_JOB_VACANCIES;
+  });
+  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(() => {
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('shh_gallery_v2') : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return INITIAL_GALLERY;
+  });
   const [applications, setApplications] = useState<ApplicationSubmission[]>([]);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -361,13 +434,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             data.deleted_event_ids.forEach((id: string) => deletedEventIdsRef.current.add(id));
           }
 
-          // If in-memory state is empty on initial cold boot, hydrate immediately
+          // Merge Staff from Server/Firestore & persist locally
           if (Array.isArray(data.staff) && data.staff.length > 0) {
-            setStaff(prev => (prev.length === 0 ? data.staff : prev));
-            data.staff.forEach((s: any) => {
-              if (s?.id && db) {
-                setDoc(doc(db, 'staff', s.id), sanitizeForFirestore(s), { merge: true }).catch(() => {});
-              }
+            const cleanStaff = data.staff.filter((s: any) => !isDemoRecord(s));
+            setStaff(prev => {
+              const map = new Map<string, StaffMember>();
+              cleanStaff.forEach((s: any) => { if (s?.id) map.set(s.id, s); });
+              (prev || []).forEach(s => { if (s?.id && !map.has(s.id) && !isDemoRecord(s)) map.set(s.id, s); });
+              const merged = Array.from(map.values());
+              try { localStorage.setItem('shh_staff', JSON.stringify(merged)); } catch {}
+              return merged;
             });
           }
           if (Array.isArray(data.users) && data.users.length > 0) {
@@ -416,26 +492,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
               return prevUser;
             });
-
-            data.users.forEach((u: any) => {
-              if (u?.id && db) {
-                setDoc(doc(db, 'users', u.id), sanitizeForFirestore(u), { merge: true }).catch(() => {});
-              }
-            });
           }
+          // Merge Residents from Server/Firestore & persist locally
           if (Array.isArray(data.residents) && data.residents.length > 0) {
-            setResidents(prev => (prev.length === 0 ? data.residents : prev));
-            data.residents.forEach((r: any) => {
-              if (r?.id && db) {
-                setDoc(doc(db, 'residents', r.id), sanitizeForFirestore(r), { merge: true }).catch(() => {});
-              }
+            const cleanResidents = data.residents.filter((r: any) => !isDemoRecord(r));
+            setResidents(prev => {
+              const map = new Map<string, Resident>();
+              cleanResidents.forEach((r: any) => { if (r?.id) map.set(r.id, r); });
+              (prev || []).forEach(r => { if (r?.id && !map.has(r.id) && !isDemoRecord(r)) map.set(r.id, r); });
+              const merged = Array.from(map.values());
+              try { localStorage.setItem('shh_residents', JSON.stringify(merged)); } catch {}
+              return merged;
             });
           }
           if (Array.isArray(data.shifts) && data.shifts.length > 0) {
-            setShifts(prev => (prev.length === 0 ? data.shifts : prev));
+            const cleanShifts = data.shifts.filter((sh: any) => !isDemoRecord(sh));
+            setShifts(prev => {
+              const map = new Map<string, Shift>();
+              cleanShifts.forEach((sh: any) => { if (sh?.id) map.set(sh.id, sh); });
+              (prev || []).forEach(sh => { if (sh?.id && !map.has(sh.id)) map.set(sh.id, sh); });
+              const merged = Array.from(map.values());
+              try { localStorage.setItem('shh_shifts', JSON.stringify(merged)); } catch {}
+              return merged;
+            });
           }
           if (Array.isArray(data.messages) && data.messages.length > 0) {
-            setMessages(prev => (prev.length === 0 ? data.messages : prev));
+            setMessages(prev => {
+              const combined = [...(prev || []), ...data.messages];
+              const deduplicated = deduplicateMessages(combined);
+              try { localStorage.setItem('shh_messages', JSON.stringify(deduplicated)); } catch {}
+              return deduplicated;
+            });
           }
           if (Array.isArray(data.activity_logs) && data.activity_logs.length > 0) {
             setActivityLogs(prev => (prev.length === 0 ? data.activity_logs : prev));
@@ -462,12 +549,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   map.set(e.id, { ...(map.get(e.id) || {}), ...e });
                 }
               });
-              return Array.from(map.values());
-            });
-            validEvents.forEach((evt: any) => {
-              if (evt?.id && db) {
-                setDoc(doc(db, 'events', evt.id), sanitizeForFirestore(evt), { merge: true }).catch(() => {});
-              }
+              const merged = Array.from(map.values()) as CommunityEvent[];
+              try {
+                localStorage.setItem('shh_events', JSON.stringify(merged));
+              } catch {}
+              return merged;
             });
           }
 
@@ -486,18 +572,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   map.set(j.id, { ...(map.get(j.id) || {}), ...j });
                 }
               });
-              return Array.from(map.values());
-            });
-            validJobs.forEach((job: any) => {
-              if (job?.id && db) {
-                setDoc(doc(db, 'jobs', job.id), sanitizeForFirestore(job), { merge: true }).catch(() => {});
-              }
+              const merged = Array.from(map.values()) as JobVacancy[];
+              try {
+                localStorage.setItem('shh_jobs', JSON.stringify(merged));
+              } catch {}
+              return merged;
             });
           }
 
           // Gallery Synchronization
           if (Array.isArray(data.gallery) && data.gallery.length > 0) {
             setGalleryItems(data.gallery);
+            try {
+              localStorage.setItem('shh_gallery_v2', JSON.stringify(data.gallery));
+            } catch {}
           }
         }
       }
@@ -543,6 +631,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fallbackDefault?: T[]
     ) => {
       try {
+        // Direct proactive getDocs fetch to immediately hydrate on cold boot across browsers
+        getDocs(collection(db, colName)).then(snapshot => {
+          if (!snapshot.empty) {
+            const rawItems = snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as T[];
+            const cleanItems = rawItems.filter(item => !isDemoRecord(item));
+            if (colName === 'residents') {
+              setter(cleanItems as any);
+              try { localStorage.setItem('shh_residents', JSON.stringify(cleanItems)); } catch {}
+            } else if (colName === 'staff') {
+              setter(cleanItems as any);
+              try { localStorage.setItem('shh_staff', JSON.stringify(cleanItems)); } catch {}
+            }
+          }
+        }).catch(err => {
+          console.debug(`Initial getDocs fetch for ${colName} notice:`, err?.message || err);
+        });
+
         const unsubscribe = onSnapshot(collection(db, colName), (snapshot) => {
           if (!snapshot.empty) {
             const rawItems = snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as T[];
@@ -601,16 +706,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     map.set(e.id, { ...(map.get(e.id) || {}), ...e });
                   }
                 });
-                const merged = Array.from(map.values());
-                // Synchronize any Firestore events back to server so server DB remains up-to-date
-                cleanEvents.forEach(evt => {
-                  fetch('/api/events', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(evt),
-                  }).catch(() => {});
-                });
-                return merged as any;
+                const merged = Array.from(map.values()) as any;
+                try {
+                  localStorage.setItem('shh_events', JSON.stringify(merged));
+                } catch {}
+                return merged;
               });
               return;
             }
@@ -629,8 +729,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     map.set(j.id, { ...(map.get(j.id) || {}), ...j });
                   }
                 });
-                return Array.from(map.values()) as any;
+                const merged = Array.from(map.values()) as any;
+                try {
+                  localStorage.setItem('shh_jobs', JSON.stringify(merged));
+                } catch {}
+                return merged;
               });
+              return;
+            }
+
+            if (colName === 'messages') {
+              const deduplicated = deduplicateMessages(cleanItems as any[]);
+              setter(deduplicated as any);
+              try {
+                localStorage.setItem('shh_messages', JSON.stringify(deduplicated));
+              } catch {}
+              return;
+            }
+
+            if (colName === 'residents') {
+              setter(cleanItems as any);
+              try {
+                localStorage.setItem('shh_residents', JSON.stringify(cleanItems));
+              } catch {}
+              return;
+            }
+
+            if (colName === 'staff') {
+              setter(cleanItems as any);
+              try {
+                localStorage.setItem('shh_staff', JSON.stringify(cleanItems));
+              } catch {}
               return;
             }
 
@@ -639,37 +768,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } else {
             // Collection is empty in Firestore (all documents deleted or none created yet)
             if (colName === 'events') {
-              setter(prev => {
-                // If in-memory/server state already has events, push them to Firestore rather than wiping to empty!
-                if (Array.isArray(prev) && prev.length > 0 && db) {
-                  prev.forEach((evt: any) => {
-                    if (evt?.id) {
-                      setDoc(doc(db, 'events', evt.id), sanitizeForFirestore(evt), { merge: true }).catch(() => {});
-                    }
-                  });
-                  return prev;
-                }
-                return [];
-              });
+              setter(prev => (Array.isArray(prev) && prev.length > 0 ? prev : []));
             } else if (colName === 'jobs') {
               setter(prev => {
                 const filtered = (fallbackDefault || []).filter(j => !deletedJobIdsRef.current.has(j.id || ''));
-                const chosen = prev.length === 0 ? filtered : prev;
-                if (Array.isArray(chosen) && chosen.length > 0 && db) {
-                  chosen.forEach((job: any) => {
-                    if (job?.id) {
-                      setDoc(doc(db, 'jobs', job.id), sanitizeForFirestore(job), { merge: true }).catch(() => {});
-                    }
-                  });
-                }
-                return chosen;
+                return prev.length === 0 ? filtered : prev;
               });
             } else {
               setter(fallbackDefault || []);
             }
           }
         }, (err) => {
-          console.debug(`Firestore listener notice for ${colName}:`, err.message);
+          const errCode = String(err?.code || '').toLowerCase();
+          const errMsg = String(err?.message || err || '').toLowerCase();
+          if (
+            errCode === 'resource-exhausted' || 
+            errMsg.includes('quota limit exceeded') || 
+            errMsg.includes('quota exceeded') ||
+            errMsg.includes('resource-exhausted') ||
+            errMsg.includes('free daily write units')
+          ) {
+            markFirestoreQuotaExhausted();
+            syncDatabase().catch(() => {});
+          } else {
+            console.debug(`Firestore listener notice for ${colName}:`, err?.message || err);
+          }
         });
         unsubs.push(unsubscribe);
       } catch (e) {
@@ -1398,24 +1521,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
     };
 
-    // 3b. Dispatch Dashboard Inbox Notification to Admin
-    const adminUsers = users.filter(u => u.role === 'Admin');
-    const adminTargets = adminUsers.length > 0 ? adminUsers : [{ id: 'usr-admin-1', name: 'Managing Director & Admin', role: 'Admin' as UserRole }];
-    const adminResidentNotifications: Message[] = adminTargets.map(admin => ({
-      id: generateUUID(),
+    // 3b. Dispatch Exactly One Dashboard Inbox Notification to Admin (Deterministic ID prevents duplicates)
+    const adminNotifId = `notif_resident_${newResident.id || newResident.fullName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+    const adminResidentNotification: Message = {
+      id: adminNotifId,
       senderId: 'usr-system',
       senderName: 'Admissions System',
       senderRole: 'Admin' as UserRole,
-      receiverId: admin.id,
-      receiverName: admin.name,
+      receiverId: 'usr-admin-1',
+      receiverName: 'Managing Director & Admin',
       receiverRole: 'Admin' as UserRole,
       subject: `🏡 New Resident Registered: ${newResident.fullName} (${newResident.careCategory})`,
       content: `A new resident has been registered and their family portal account is activated.\n\nRESIDENT & RELATIVE DETAILS:\n• Resident Name: ${newResident.fullName}\n• Care Category: ${newResident.careCategory}\n• Room / Suite: ${newResident.roomNumber}\n• Next of Kin / Relative: ${newRelativeUser.name} (${newRelativeUser.relationship || 'Next of Kin'})\n• Relative Email (Login Username): ${newRelativeUser.email}\n• Relative Phone: ${newRelativeUser.phone}\n• Temporary Password: ${tempPassword}\n\nAutomated onboarding confirmation email with temporary password dispatched to: ${newRelativeUser.email}\nAdmin notification email dispatched to: samanthasappy@gmail.com`,
       isRead: false,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
-    }));
+    };
 
-    setMessages(prev => [welcomeMsg, ...adminResidentNotifications, ...prev]);
+    setMessages(prev => deduplicateMessages([welcomeMsg, adminResidentNotification, ...prev]));
     setDoc(doc(db, 'messages', welcomeMsg.id), sanitizeForFirestore(welcomeMsg), { merge: true }).catch(() => {});
     fetch('/api/messages', {
       method: 'POST',
@@ -1423,16 +1545,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       body: JSON.stringify(welcomeMsg),
     }).catch(() => {});
 
-    adminResidentNotifications.forEach(m => {
-      setDoc(doc(db, 'messages', m.id), sanitizeForFirestore(m), { merge: true }).catch(() => {});
-      fetch('/api/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(m),
-      }).catch(() => {});
-    });
+    setDoc(doc(db, 'messages', adminResidentNotification.id), sanitizeForFirestore(adminResidentNotification), { merge: true }).catch(() => {});
+    fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(adminResidentNotification),
+    }).catch(() => {});
     try {
-      await supabase.from('messages').insert([messageToRow(welcomeMsg), ...adminResidentNotifications.map(messageToRow)]);
+      await supabase.from('messages').insert([messageToRow(welcomeMsg), messageToRow(adminResidentNotification)]);
     } catch (err) {
       console.warn('Supabase message insert notice:', err);
     }
@@ -1687,23 +1807,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     // 2b. Dispatch Dashboard Inbox Notification to Admin
-    const adminUsers = users.filter(u => u.role === 'Admin');
-    const adminTargets = adminUsers.length > 0 ? adminUsers : [{ id: 'usr-admin-1', name: 'Managing Director & Admin', role: 'Admin' as UserRole }];
-    const adminStaffNotifications: Message[] = adminTargets.map(admin => ({
-      id: generateUUID(),
+    // 2b. Dispatch Exactly One Dashboard Inbox Notification to Admin (Deterministic ID prevents duplicates)
+    const adminNotifId = `notif_staff_${newStaff.id || cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const adminStaffNotification: Message = {
+      id: adminNotifId,
       senderId: 'usr-system',
       senderName: 'Staff Onboarding System',
       senderRole: 'Admin' as UserRole,
-      receiverId: admin.id,
-      receiverName: admin.name,
+      receiverId: 'usr-admin-1',
+      receiverName: 'Managing Director & Admin',
       receiverRole: 'Admin' as UserRole,
       subject: `🔔 New Staff Registered: ${newStaff.name} (${newStaff.position})`,
       content: `A new staff member has been registered and provisioned in the care management system.\n\nSTAFF DETAILS:\n• Full Name: ${newStaff.name}\n• Position / Role: ${newStaff.position}\n• Registered Email: ${cleanEmail}\n• Phone Number: ${newStaff.phone}\n• Qualification: ${newStaff.qualification || 'N/A'}\n• Assigned Shift: ${newStaff.shift || 'N/A'}\n\nAutomated onboarding confirmation email dispatched to: ${cleanEmail}\nAdmin notification email dispatched to: samanthasappy@gmail.com`,
       isRead: false,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
-    }));
+    };
 
-    setMessages(prev => [welcomeMsg, ...adminStaffNotifications, ...prev]);
+    setMessages(prev => deduplicateMessages([welcomeMsg, adminStaffNotification, ...prev]));
     setDoc(doc(db, 'messages', welcomeMsg.id), sanitizeForFirestore(welcomeMsg), { merge: true }).catch(() => {});
     fetch('/api/messages', {
       method: 'POST',
@@ -1711,16 +1831,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       body: JSON.stringify(welcomeMsg),
     }).catch(() => {});
 
-    adminStaffNotifications.forEach(m => {
-      setDoc(doc(db, 'messages', m.id), sanitizeForFirestore(m), { merge: true }).catch(() => {});
-      fetch('/api/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(m),
-      }).catch(() => {});
-    });
+    setDoc(doc(db, 'messages', adminStaffNotification.id), sanitizeForFirestore(adminStaffNotification), { merge: true }).catch(() => {});
+    fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(adminStaffNotification),
+    }).catch(() => {});
     try {
-      await supabase.from('messages').insert([messageToRow(welcomeMsg), ...adminStaffNotifications.map(messageToRow)]);
+      await supabase.from('messages').insert([messageToRow(welcomeMsg), messageToRow(adminStaffNotification)]);
     } catch (err) {
       console.warn('Supabase message insert notice:', err);
     }
@@ -1904,15 +2022,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deduplicateDatabase = async (): Promise<{ success: boolean; removedCount: number; details: string[] }> => {
     try {
-      showToast('Scanning database for duplicate registrations (email & phone)...');
+      showToast('Scanning database for duplicate registrations and notifications...');
+
+      // Deduplicate local messages state and purge redundant Firestore docs
+      setMessages(prev => {
+        const clean = deduplicateMessages(prev);
+        const cleanIds = new Set(clean.map(c => c.id));
+        const dupIds = prev.filter(p => p?.id && !cleanIds.has(p.id)).map(p => p.id);
+        dupIds.forEach(dupId => {
+          deleteDoc(doc(db, 'messages', dupId)).catch(() => {});
+          fetch(`/api/messages/${dupId}`, { method: 'DELETE' }).catch(() => {});
+        });
+        return clean;
+      });
+
       const res = await fetch('/api/admin/deduplicate-database', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        const totalRemoved = (data.removedUsers || 0) + (data.removedStaff || 0) + (data.removedResidents || 0) + (data.removedApplications || 0);
+        const totalRemoved = (data.removedUsers || 0) + (data.removedStaff || 0) + (data.removedResidents || 0) + (data.removedApplications || 0) + (data.removedMessages || 0);
         if (totalRemoved > 0) {
-          showToast(`Cleanup complete: Removed ${totalRemoved} duplicate registration(s) (leaving 1 of each).`);
+          showToast(`Cleanup complete: Removed ${totalRemoved} duplicate entry/entries (leaving 1 of each).`);
         } else {
-          showToast('Database verified clean: No duplicate registrations found.');
+          showToast('Database verified clean: No duplicate registrations or notifications found.');
         }
         await syncDatabase();
         return { success: true, removedCount: totalRemoved, details: data.details || [] };
@@ -2286,7 +2417,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: eventUUID,
     };
     deletedEventIdsRef.current.delete(eventUUID);
-    setEvents(prev => [newEvent, ...prev.filter(e => e.id !== newEvent.id)]);
+    setEvents(prev => {
+      const updated = [newEvent, ...prev.filter(e => e.id !== newEvent.id)];
+      try {
+        localStorage.setItem('shh_events', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
 
     // Save to Firestore & backend server
     await Promise.allSettled([
@@ -2343,7 +2480,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
     const cleanUpdated = { ...updated, imageUrl };
-    setEvents(prev => prev.map(e => e.id === id ? { ...e, ...cleanUpdated } : e));
+    setEvents(prev => {
+      const list = prev.map(e => e.id === id ? { ...e, ...cleanUpdated } : e);
+      try {
+        localStorage.setItem('shh_events', JSON.stringify(list));
+      } catch {}
+      return list;
+    });
 
     const target = events.find(e => e.id === id);
     const merged = { ...(target || {}), ...cleanUpdated, id };
@@ -2368,7 +2511,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteEvent = async (id: string) => {
     deletedEventIdsRef.current.add(id);
     const target = events.find(e => e.id === id);
-    setEvents(prev => prev.filter(e => e.id !== id));
+    setEvents(prev => {
+      const list = prev.filter(e => e.id !== id);
+      try {
+        localStorage.setItem('shh_events', JSON.stringify(list));
+      } catch {}
+      return list;
+    });
 
     // Immediately clean up event image from Supabase Storage
     if (target?.imageUrl) {
@@ -2810,56 +2959,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Supabase application insert notice:', err);
     }
 
-    // 8. Dispatch high-priority Message / Notification to Admin users
-    const adminUsers = users.filter(u => u.role === 'Admin');
-    const knownAdmins: User[] = [
-      { id: 'usr-admin-1', name: 'Folasade Sanyaolu (MD)', email: 'samanthasappy@gmail.com', phone: '+2347069332193', role: 'Admin' },
-      { id: 'usr-admin-2', name: 'Folasade Sanyaolu (Admin)', email: 'itopaprop@gmail.com', phone: '+2347069332193', role: 'Admin' }
-    ];
-    const adminTargets = [...adminUsers];
-    for (const ka of knownAdmins) {
-      if (!adminTargets.some(a => (a.email || '').toLowerCase() === ka.email.toLowerCase())) {
-        adminTargets.push(ka);
-      }
-    }
-
+    // 8. Dispatch Exactly One Dashboard Inbox Notification to Admin (Deterministic ID prevents duplicates)
     const refsFormatted = processedReferences
       .map((r, idx) => `• Reference ${idx + 1}: ${r.name || 'N/A'} (${r.relationship || 'N/A'})\n  Phone: ${r.phone || 'N/A'} | Email: ${r.email || 'N/A'}${r.photoUrl ? ' | [Document Photo Attached]' : ''}`)
       .join('\n\n');
 
     const appTitle = appData.type === 'caregiver' ? 'Caregiver / Staff Job Application' : 'Resident Care Admission Application';
+    const adminAppNotifId = `notif_app_${newSubmission.id || (appData.email || 'app').replace(/[^a-zA-Z0-9]/g, '_')}`;
 
-    const adminMessages: Message[] = adminTargets.map(admin => ({
-      id: generateUUID(),
+    const adminAppNotification: Message = {
+      id: adminAppNotifId,
       senderId: 'usr-system',
       senderName: 'Care Application Portal',
       senderRole: 'Admin' as UserRole,
-      receiverId: admin.id,
-      receiverName: admin.name,
+      receiverId: 'usr-admin-1',
+      receiverName: 'Managing Director & Admin',
       receiverRole: 'Admin' as UserRole,
       subject: `📥 NEW CARE APPLICATION: ${appData.fullName} (${appData.type === 'caregiver' ? 'Caregiver Applicant' : 'Resident Admission Request'})`,
-      content: `A new ${appTitle} has been submitted through the web portal.\n\nAPPLICANT FULL DETAILS:\n• Full Name: ${appData.fullName}\n• Email: ${appData.email}\n• Phone: ${appData.phone}\n• Care Category / Position: ${appData.positionOrCategory}\n${appData.sponsorName ? `• Sponsor / Next of Kin: ${appData.sponsorName}\n` : ''}${appData.notesOrStatement ? `• Medical / Qualification Notes: ${appData.notesOrStatement}\n` : ''}${photoUrl ? '• Applicant Photo: Attached\n' : ''}${receiptUrl ? `• Payment Receipt: Attached (${appData.receiptName || 'Bank Transfer Proof'})\n` : ''}\n\nATTACHED REFERENCES & GUARANTOR DOCUMENTS:\n${refsFormatted || 'None attached'}\n\nNotification dispatched to: ${adminTargets.map(a => a.email).filter(Boolean).join(', ')}\nSubmitted on: ${createdAt}`,
+      content: `A new ${appTitle} has been submitted through the web portal.\n\nAPPLICANT FULL DETAILS:\n• Full Name: ${appData.fullName}\n• Email: ${appData.email}\n• Phone: ${appData.phone}\n• Care Category / Position: ${appData.positionOrCategory}\n${appData.sponsorName ? `• Sponsor / Next of Kin: ${appData.sponsorName}\n` : ''}${appData.notesOrStatement ? `• Medical / Qualification Notes: ${appData.notesOrStatement}\n` : ''}${photoUrl ? '• Applicant Photo: Attached\n' : ''}${receiptUrl ? `• Payment Receipt: Attached (${appData.receiptName || 'Bank Transfer Proof'})\n` : ''}\n\nATTACHED REFERENCES & GUARANTOR DOCUMENTS:\n${refsFormatted || 'None attached'}\n\nSubmitted on: ${createdAt}`,
       attachmentUrl: receiptUrl || photoUrl || processedReferences[0]?.photoUrl,
       attachmentName: receiptUrl ? (appData.receiptName || `${appData.fullName.replace(/\s+/g, '_')}_Payment_Receipt.jpg`) : (photoUrl ? `${appData.fullName.replace(/\s+/g, '_')}_ID.jpg` : undefined),
       applicantPhotoUrl: photoUrl,
       references: processedReferences,
       isRead: false,
       timestamp: createdAt,
-    }));
+    };
 
-    setMessages(prev => [...adminMessages, ...prev]);
-    adminMessages.forEach(m => {
-      setDoc(doc(db, 'messages', m.id), sanitizeForFirestore(m), { merge: true }).catch(() => {});
-      fetch('/api/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(m),
-      }).catch(() => {});
-    });
+    setMessages(prev => deduplicateMessages([adminAppNotification, ...prev]));
+    setDoc(doc(db, 'messages', adminAppNotification.id), sanitizeForFirestore(adminAppNotification), { merge: true }).catch(() => {});
+    fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(adminAppNotification),
+    }).catch(() => {});
     try {
-      await supabase.from('messages').insert(adminMessages.map(messageToRow));
+      await supabase.from('messages').insert([messageToRow(adminAppNotification)]);
     } catch (err) {
-      console.warn('Supabase admin messages insert notice:', err);
+      console.warn('Supabase admin message insert notice:', err);
     }
 
     // 9. Dispatch automated Email Notification and Receipt Confirmation
@@ -2920,6 +3056,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       purgeAllNonAdminUsers,
       purgeAllDemoRecords,
       deduplicateDatabase,
+      deduplicateMessages,
       residents,
       addResident,
       updateResident,

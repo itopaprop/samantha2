@@ -31,6 +31,9 @@ export const Navbar: React.FC = () => {
   const [logoSrc, setLogoSrc] = useState('https://lh3.googleusercontent.com/d/1sUJpAFMzsPRgNuvKDSyRU01sgnLK41Fg');
 
   const isRoofingPage = currentPage === 'roofing' || currentPage === 'roofing-gallery' || currentPage === 'roofing-contact';
+  const isAdminOrStaffSignedIn = Boolean(
+    currentUser && (currentUser.role === 'Admin' || currentUser.role === 'Staff')
+  );
 
   // Standard navbar links for Caregiver site (Roofing Solutions removed as requested)
   const navLinks: { label: string; page: PageView }[] = [
@@ -238,13 +241,15 @@ export const Navbar: React.FC = () => {
                 </button>
               )}
 
-              <button
-                onClick={() => setIsApplyModalOpen(true)}
-                className="flex items-center gap-2 bg-gradient-to-r from-sky-700 via-teal-700 to-sky-800 hover:from-sky-800 hover:to-teal-800 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-sm transition-all hover:shadow-md cursor-pointer"
-              >
-                <Heart className="w-4 h-4 text-rose-300" />
-                Apply Now
-              </button>
+              {!isAdminOrStaffSignedIn && (
+                <button
+                  onClick={() => setIsApplyModalOpen(true)}
+                  className="flex items-center gap-2 bg-gradient-to-r from-sky-700 via-teal-700 to-sky-800 hover:from-sky-800 hover:to-teal-800 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-sm transition-all hover:shadow-md cursor-pointer"
+                >
+                  <Heart className="w-4 h-4 text-rose-300" />
+                  Apply Now
+                </button>
+              )}
             </div>
           )}
 
@@ -258,7 +263,7 @@ export const Navbar: React.FC = () => {
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>Caregiver Home</span>
               </button>
-            ) : (
+            ) : !isAdminOrStaffSignedIn ? (
               <button
                 onClick={() => setIsApplyModalOpen(true)}
                 className="bg-sky-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
@@ -266,7 +271,7 @@ export const Navbar: React.FC = () => {
                 <Heart className="w-3.5 h-3.5 text-rose-200" />
                 <span>Apply Now</span>
               </button>
-            )}
+            ) : null}
 
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

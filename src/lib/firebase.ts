@@ -30,6 +30,7 @@ import {
   orderBy,
   limit,
   serverTimestamp,
+  setLogLevel,
   type Firestore,
 } from 'firebase/firestore';
 
@@ -54,6 +55,11 @@ export const googleProvider = new GoogleAuthProvider();
 export const db: Firestore = (firebaseConfig as any).firestoreDatabaseId
   ? getFirestore(app, (firebaseConfig as any).firestoreDatabaseId)
   : getFirestore(app);
+
+// Silence internal Firestore SDK transport warnings (e.g. backoff retries when free quota is reached)
+try {
+  setLogLevel('silent');
+} catch {}
 
 // Secondary Firebase Auth instance dedicated to registering users in the background
 // so the logged-in admin's current session is never signed out or disrupted.
@@ -132,6 +138,7 @@ export {
   orderBy,
   limit,
   serverTimestamp,
+  setLogLevel,
 };
 
 // ============================================================================
@@ -184,8 +191,11 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 export async function testConnection(): Promise<void> {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
+  } catch (error: any) {
+    const msg = error?.message || String(error);
+    if (error?.code === 'resource-exhausted' || msg.includes('Quota limit exceeded') || msg.includes('Quota exceeded')) {
+      markFirestoreQuotaExhausted();
+    } else if (error instanceof Error && msg.includes('the client is offline')) {
       console.warn("Please check your Firebase configuration or internet connection.");
     }
   }
@@ -206,3 +216,134 @@ export const sanitizeForFirestore = (data: any): any => {
   }
   return sanitized;
 };
+
+// ============================================================================
+// RESILIENT FIRESTORE WRITERS WITH QUOTA EXHAUSTION PROTECTION
+// ============================================================================
+const STORAGE_QUOTA_KEY = 'shh_fs_quota_exhausted';
+const STORAGE_TIMESTAMP_KEY = 'shh_fs_quota_timestamp';
+const QUOTA_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours cooldown since free daily quota resets daily
+
+let firestoreQuotaExhausted = false;
+let quotaExhaustedTimestamp = 0;
+
+try {
+  if (typeof window !== 'undefined') {
+    const isExhausted = 
+      localStorage.getItem(STORAGE_QUOTA_KEY) === 'true' || 
+      sessionStorage.getItem(STORAGE_QUOTA_KEY) === 'true';
+    if (isExhausted) {
+      firestoreQuotaExhausted = true;
+      quotaExhaustedTimestamp = parseInt(
+        localStorage.getItem(STORAGE_TIMESTAMP_KEY) || 
+        sessionStorage.getItem(STORAGE_TIMESTAMP_KEY) || 
+        String(Date.now()), 
+        10
+      );
+    }
+  }
+} catch {}
+
+export function isFirestoreQuotaExhausted(): boolean {
+  if (firestoreQuotaExhausted) {
+    if (Date.now() - quotaExhaustedTimestamp > QUOTA_COOLDOWN_MS) {
+      firestoreQuotaExhausted = false;
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_QUOTA_KEY);
+          localStorage.removeItem(STORAGE_TIMESTAMP_KEY);
+          sessionStorage.removeItem(STORAGE_QUOTA_KEY);
+          sessionStorage.removeItem(STORAGE_TIMESTAMP_KEY);
+        }
+      } catch {}
+    }
+  }
+  return firestoreQuotaExhausted;
+}
+
+export function markFirestoreQuotaExhausted(): void {
+  firestoreQuotaExhausted = true;
+  quotaExhaustedTimestamp = Date.now();
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_QUOTA_KEY, 'true');
+      localStorage.setItem(STORAGE_TIMESTAMP_KEY, String(quotaExhaustedTimestamp));
+      sessionStorage.setItem(STORAGE_QUOTA_KEY, 'true');
+      sessionStorage.setItem(STORAGE_TIMESTAMP_KEY, String(quotaExhaustedTimestamp));
+    }
+  } catch {}
+  console.warn('[Firebase] Firestore daily write quota limit reached. Gracefully operating with Express backend database storage.');
+}
+
+// Clear any obsolete stored quota flags so fresh sessions connect directly to Cloud Firestore
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem(STORAGE_QUOTA_KEY);
+    localStorage.removeItem(STORAGE_TIMESTAMP_KEY);
+    sessionStorage.removeItem(STORAGE_QUOTA_KEY);
+    sessionStorage.removeItem(STORAGE_TIMESTAMP_KEY);
+  } catch {}
+}
+
+function isQuotaError(err: any): boolean {
+  const code = String(err?.code || '').toLowerCase();
+  const msg = String(err?.message || err || '').toLowerCase();
+  return (
+    code === 'resource-exhausted' ||
+    msg.includes('quota limit exceeded') ||
+    msg.includes('quota exceeded') ||
+    msg.includes('resource-exhausted') ||
+    msg.includes('free daily write units')
+  );
+}
+
+export async function safeFirestoreSetDoc(docRef: any, data: any, options: any = { merge: true }): Promise<boolean> {
+  if (!db || isFirestoreQuotaExhausted()) {
+    return false;
+  }
+  try {
+    await setDoc(docRef, sanitizeForFirestore(data), options);
+    return true;
+  } catch (err: any) {
+    if (isQuotaError(err)) {
+      markFirestoreQuotaExhausted();
+      return false;
+    }
+    console.debug('Firestore setDoc notice:', err?.code || err?.message || err);
+    return false;
+  }
+}
+
+export async function safeFirestoreDeleteDoc(docRef: any): Promise<boolean> {
+  if (!db || isFirestoreQuotaExhausted()) {
+    return false;
+  }
+  try {
+    await deleteDoc(docRef);
+    return true;
+  } catch (err: any) {
+    if (isQuotaError(err)) {
+      markFirestoreQuotaExhausted();
+      return false;
+    }
+    console.debug('Firestore deleteDoc notice:', err?.code || err?.message || err);
+    return false;
+  }
+}
+
+export async function safeFirestoreUpdateDoc(docRef: any, data: any): Promise<boolean> {
+  if (!db || isFirestoreQuotaExhausted()) {
+    return false;
+  }
+  try {
+    await updateDoc(docRef, sanitizeForFirestore(data));
+    return true;
+  } catch (err: any) {
+    if (isQuotaError(err)) {
+      markFirestoreQuotaExhausted();
+      return false;
+    }
+    console.debug('Firestore updateDoc notice:', err?.code || err?.message || err);
+    return false;
+  }
+}
