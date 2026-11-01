@@ -483,8 +483,14 @@ async function startServer() {
     }
   }
 
+  let serverFirestoreQuotaExhausted = false;
+  let serverFirestoreQuotaTimestamp = 0;
+
   // Synchronize Cloud Firestore documents to Server in-memory cache and database.json
   async function syncFromFirestore() {
+    if (serverFirestoreQuotaExhausted && Date.now() - serverFirestoreQuotaTimestamp < 5 * 60 * 1000) {
+      return;
+    }
     try {
       const [resSnap, staffSnap, usersSnap, shiftsSnap, msgSnap] = await Promise.all([
         fsGetDocs(fsCollection(serverFirestore, 'residents')),
@@ -561,6 +567,11 @@ async function startServer() {
 
       saveServerDb();
     } catch (err: any) {
+      const msg = String(err?.message || err || '').toLowerCase();
+      if (err?.code === 'resource-exhausted' || msg.includes('quota') || msg.includes('resource-exhausted')) {
+        serverFirestoreQuotaExhausted = true;
+        serverFirestoreQuotaTimestamp = Date.now();
+      }
       console.warn('[Firestore Sync] Server sync notice:', err?.message || err);
     }
   }
@@ -1183,7 +1194,7 @@ async function startServer() {
       return res.status(400).json({ error: 'A spoken or typed query is required' });
     }
 
-    const botName = botType === 'chat' ? 'Samanthasappy AI Chatbot' : 'Samanthasappy AI Voice Chatbot';
+    const botName = botType === 'chat' ? 'Samanthasappy AI Chatbot' : 'Ask Samanthasappy';
 
     const SAMANTHA_SYSTEM_INSTRUCTION = `
 You are "${botName}", the official, warm, empathetic, and knowledgeable care companion for Samanthasappy Home Care & Daycare.
@@ -1284,6 +1295,7 @@ Example deflection: "I am ${botName} for Samanthasappy Home. I can only assist w
     res.json({ reply, source: 'knowledge-engine' });
   };
 
+  app.post('/api/ask-samanthasappy', handleAIVoiceChatBot);
   app.post('/api/ai-voice-chatbot', handleAIVoiceChatBot);
   app.post('/api/ai-chatbot', handleAIVoiceChatBot);
   app.post('/api/ai-voice-agent', handleAIVoiceChatBot);

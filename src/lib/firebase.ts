@@ -275,16 +275,6 @@ export function markFirestoreQuotaExhausted(): void {
   console.warn('[Firebase] Firestore daily write quota limit reached. Gracefully operating with Express backend database storage.');
 }
 
-// Clear any obsolete stored quota flags so fresh sessions connect directly to Cloud Firestore
-if (typeof window !== 'undefined') {
-  try {
-    localStorage.removeItem(STORAGE_QUOTA_KEY);
-    localStorage.removeItem(STORAGE_TIMESTAMP_KEY);
-    sessionStorage.removeItem(STORAGE_QUOTA_KEY);
-    sessionStorage.removeItem(STORAGE_TIMESTAMP_KEY);
-  } catch {}
-}
-
 function isQuotaError(err: any): boolean {
   const code = String(err?.code || '').toLowerCase();
   const msg = String(err?.message || err || '').toLowerCase();
@@ -293,7 +283,8 @@ function isQuotaError(err: any): boolean {
     msg.includes('quota limit exceeded') ||
     msg.includes('quota exceeded') ||
     msg.includes('resource-exhausted') ||
-    msg.includes('free daily write units')
+    msg.includes('free daily write units') ||
+    msg.includes('free daily read units')
   );
 }
 

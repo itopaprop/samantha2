@@ -622,6 +622,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (!db) return;
 
+    if (isFirestoreQuotaExhausted()) {
+      syncDatabase();
+      const interval = setInterval(syncDatabase, 3500);
+      return () => clearInterval(interval);
+    }
+
     const unsubs: (() => void)[] = [];
 
     // Helper to safely bind Firestore collection listeners directly
@@ -645,6 +651,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           }
         }).catch(err => {
+          const errCode = String(err?.code || '').toLowerCase();
+          const errMsg = String(err?.message || err || '').toLowerCase();
+          if (
+            errCode === 'resource-exhausted' ||
+            errMsg.includes('quota limit exceeded') ||
+            errMsg.includes('quota exceeded') ||
+            errMsg.includes('resource-exhausted') ||
+            errMsg.includes('free daily read units') ||
+            errMsg.includes('free daily write units')
+          ) {
+            markFirestoreQuotaExhausted();
+            syncDatabase().catch(() => {});
+          }
           console.debug(`Initial getDocs fetch for ${colName} notice:`, err?.message || err);
         });
 
@@ -775,7 +794,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 return prev.length === 0 ? filtered : prev;
               });
             } else {
-              setter(fallbackDefault || []);
+              setter(prev => (Array.isArray(prev) && prev.length > 0 ? prev : (fallbackDefault || [])));
             }
           }
         }, (err) => {
@@ -786,9 +805,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             errMsg.includes('quota limit exceeded') || 
             errMsg.includes('quota exceeded') ||
             errMsg.includes('resource-exhausted') ||
-            errMsg.includes('free daily write units')
+            errMsg.includes('free daily write units') ||
+            errMsg.includes('free daily read units')
           ) {
             markFirestoreQuotaExhausted();
+            try { unsubscribe(); } catch {}
             syncDatabase().catch(() => {});
           } else {
             console.debug(`Firestore listener notice for ${colName}:`, err?.message || err);
