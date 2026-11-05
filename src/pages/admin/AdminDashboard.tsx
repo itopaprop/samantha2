@@ -610,68 +610,68 @@ export const AdminDashboard: React.FC = () => {
                 <div className="text-[11px] text-slate-400 font-medium">Nurses & Care Specialists</div>
               </div>
 
-              {/* Dementia Support Clickable Card */}
+              {/* Dementia Clickable Card */}
               <div 
                 onClick={() => setSelectedCareCategory('dementia')}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedCareCategory('dementia'); } }}
                 className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-2 hover:border-purple-400 hover:shadow-md transition-all cursor-pointer group focus:outline-hidden focus:ring-2 focus:ring-purple-400 ring-offset-1"
-                aria-label="View Dementia Support Clients details"
+                aria-label="View Dementia details"
               >
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold text-purple-700 uppercase tracking-wider">Dementia Support</div>
+                  <div className="text-xs font-bold text-purple-700 uppercase tracking-wider">Dementia</div>
                   <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md group-hover:bg-purple-700 group-hover:text-white transition-colors">View Details →</span>
                 </div>
                 <div className="text-3xl font-extrabold text-purple-700">{dementiaCareClients}</div>
                 <div className="text-[11px] text-slate-400 font-medium group-hover:text-purple-600 transition-colors">Specialist Memory Care</div>
               </div>
 
-              {/* Domiciliary Clients Clickable Card */}
+              {/* Domiciliary Clickable Card */}
               <div 
                 onClick={() => setSelectedCareCategory('domiciliary')}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedCareCategory('domiciliary'); } }}
                 className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-2 hover:border-amber-400 hover:shadow-md transition-all cursor-pointer group focus:outline-hidden focus:ring-2 focus:ring-amber-400 ring-offset-1"
-                aria-label="View Domiciliary Clients details"
+                aria-label="View Domiciliary details"
               >
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold text-amber-700 uppercase tracking-wider">Domiciliary Clients</div>
+                  <div className="text-xs font-bold text-amber-700 uppercase tracking-wider">Domiciliary</div>
                   <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md group-hover:bg-amber-700 group-hover:text-white transition-colors">View Details →</span>
                 </div>
                 <div className="text-3xl font-extrabold text-amber-600">{domiciliaryClients}</div>
                 <div className="text-[11px] text-slate-400 font-medium group-hover:text-amber-700 transition-colors">Community Home Visits</div>
               </div>
 
-              {/* Daily Care Clients Clickable Card */}
+              {/* Daily Care Clickable Card */}
               <div 
                 onClick={() => setSelectedCareCategory('daily')}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedCareCategory('daily'); } }}
                 className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-2 hover:border-emerald-400 hover:shadow-md transition-all cursor-pointer group focus:outline-hidden focus:ring-2 focus:ring-emerald-400 ring-offset-1"
-                aria-label="View Daily Care Clients details"
+                aria-label="View Daily Care details"
               >
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Daily Care Clients</div>
+                  <div className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Daily Care</div>
                   <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md group-hover:bg-emerald-700 group-hover:text-white transition-colors">View Details →</span>
                 </div>
                 <div className="text-3xl font-extrabold text-emerald-600">{dailyCareClients}</div>
                 <div className="text-[11px] text-slate-400 font-medium group-hover:text-emerald-700 transition-colors">Full Living Assistance</div>
               </div>
 
-              {/* Vulnerable Clients Clickable Card */}
+              {/* Vulnerable Clickable Card */}
               <div 
                 onClick={() => setSelectedCareCategory('vulnerable')}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedCareCategory('vulnerable'); } }}
                 className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-2 hover:border-rose-400 hover:shadow-md transition-all cursor-pointer group focus:outline-hidden focus:ring-2 focus:ring-rose-400 ring-offset-1"
-                aria-label="View Vulnerable Clients details"
+                aria-label="View Vulnerable details"
               >
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold text-rose-700 uppercase tracking-wider">Vulnerable Clients</div>
+                  <div className="text-xs font-bold text-rose-700 uppercase tracking-wider">Vulnerable</div>
                   <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md group-hover:bg-rose-700 group-hover:text-white transition-colors">View Details →</span>
                 </div>
                 <div className="text-3xl font-extrabold text-rose-600">{vulnerableClients}</div>

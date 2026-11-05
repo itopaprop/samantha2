@@ -59,7 +59,7 @@ interface CategoryConfig {
 const CATEGORY_CONFIGS: Record<CategoryDetailType, CategoryConfig> = {
   dementia: {
     key: 'dementia',
-    title: 'Dementia Support Clients',
+    title: 'Dementia Clients',
     badge: 'Memory & Cognitive Care',
     tagline: 'Specialist Memory Care & Cognitive Support',
     description: 'Specialized 24/7 memory care program tailored for clients living with Alzheimer’s, vascular dementia, and cognitive changes. Care plans focus on sensory engagement, cognitive maintenance, safe routines, reminiscence therapy, and compassionate behavioral support by trained dementia champions.',
@@ -137,7 +137,7 @@ const CATEGORY_CONFIGS: Record<CategoryDetailType, CategoryConfig> = {
   },
   vulnerable: {
     key: 'vulnerable',
-    title: 'Vulnerable Adult Clients',
+    title: 'Vulnerable Clients',
     badge: 'Safeguarding & Sensory Care',
     tagline: 'Special Sensory Support & Safeguarding Oversight',
     description: 'Specialized safeguarding, trauma-informed care, and sensory integration support for vulnerable adults. Includes custom calming protocols, multi-disciplinary team coordination, tailored communication tools, and proactive welfare monitoring.',

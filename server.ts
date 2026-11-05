@@ -13,8 +13,36 @@ import {
   doc as fsDoc, 
   setDoc as fsSetDoc, 
   deleteDoc as fsDeleteDoc,
+  setLogLevel as fsSetLogLevel,
   type Firestore as ServerFirestore 
 } from 'firebase/firestore';
+
+// Silence internal Firestore SDK transport logs & filter benign idle stream cancellations
+try {
+  fsSetLogLevel('silent');
+} catch {}
+
+const originalServerConsoleError = console.error;
+console.error = function (...args: any[]) {
+  const fullMsg = args.map(a => (typeof a === 'string' ? a : a?.message || JSON.stringify(a) || '')).join(' ');
+  if (fullMsg.includes('Disconnecting idle stream') || fullMsg.includes('Timed out waiting for new targets')) {
+    return;
+  }
+  originalServerConsoleError.apply(console, args);
+};
+
+if (process.stderr && typeof process.stderr.write === 'function') {
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  process.stderr.write = function (chunk: any, encoding?: any, callback?: any): boolean {
+    const str = typeof chunk === 'string' ? chunk : chunk?.toString() || '';
+    if (str.includes('Disconnecting idle stream') || str.includes('Timed out waiting for new targets')) {
+      if (typeof encoding === 'function') encoding();
+      if (typeof callback === 'function') callback();
+      return true;
+    }
+    return originalStderrWrite(chunk, encoding, callback);
+  };
+}
 import { 
   generateStaffWelcomeEmail, 
   generateAdminNewStaffNotificationEmail,
@@ -1182,83 +1210,132 @@ async function startServer() {
   });
 
   // =========================================================================
-  // AI VOICE CHAT BOT PROXY ENDPOINT (Dedicated to Samanthasappy Home Care)
-  // =========================================================================
   // SAMANTHASAPPY AI CHATBOT & VOICE CHATBOT PROXY ENDPOINT
   // =========================================================================
   const handleAIVoiceChatBot = async (req: express.Request, res: express.Response) => {
-    const { query = '', botType = 'voice' } = req.body;
+    const { query = '', botType = 'voice', audioBase64 = '', mimeType = 'audio/webm' } = req.body;
     const cleanQuery = String(query || '').trim();
 
-    if (!cleanQuery) {
-      return res.status(400).json({ error: 'A spoken or typed query is required' });
+    if (!cleanQuery && !audioBase64) {
+      return res.status(400).json({ error: 'A spoken audio recording or typed query is required' });
     }
 
     const botName = botType === 'chat' ? 'Samanthasappy AI Chatbot' : 'Ask Samanthasappy';
 
     const SAMANTHA_SYSTEM_INSTRUCTION = `
-You are "${botName}", the official, warm, empathetic, and knowledgeable care companion for Samanthasappy Home Care & Daycare.
+You are "Samantha", the sweet, caring, cheerful voice of "${botName}" for Samanthasappy Home Care & Daycare.
 
-YOUR PURPOSE & IDENTITY:
-- You speak warmly, respectfully, and reassuringly, representing the excellence of Samanthasappy Home.
-- KEEP RESPONSES CONCISE, natural, and helpful (ideally 2 to 4 sentences). Avoid overly long paragraphs or awkward symbols.
+YOUR PERSONA & VOICE IDENTITY:
+- You are a sweet, polite, radiant 22-year-old Nigerian young woman from Lagos/Abuja, working as the care coordinator and family guide for Samanthasappy Home.
+- You speak with warm, courteous African hospitality. Use sweet, natural polite expressions like "Good day to you!", "You are very welcome!", "No problem at all!", "I'd be so happy to help you with that!", "Warm greetings from our care family at Samanthasappy Home!".
+- KEEP ANSWERS VERY CONCISE, NATURAL, AND SPOKEN (2 to 3 short sentences max). This is a spoken voice agent; NEVER use bullet points, asterisks, numbered lists, markdown symbols, or long formal essays. Speak smoothly as if having a real conversation on the phone.
 
-YOUR EXCLUSIVE KNOWLEDGE DOMAIN (SAMANTHASAPPY HOME):
-1. Residential Elderly Care: 24/7 personalized assisted living, private suites, nutrition plans, dementia & memory care support, sensory garden, compassionate medication administration.
-2. Domiciliary Care: Dignified in-home visiting care, morning & evening routines, meal preparation, companionship, personal hygiene, and medication reminders.
-3. Daily Living Assistance: Rehabilitation, mobility assistance, physical exercise encouragement, and respite care.
-4. Vulnerable Adult Support: Safeguarding, specialized mental health and physical support, community integration, personalized care pathways.
-5. Child Care & Daycare (Early Learning): Safe, accredited daycare, certified pediatric first-aid educators, interactive play, kindergarten preparation.
-6. Portals:
-   - Relative / Family Care Portal: Relatives can view real-time health vitals, daily caregiver notes, medication logs, and message the care team directly.
-   - Staff Portal: Caregivers and nurses view shifts, manage resident logs, and coordinate handover notes.
-   - Admin Hub: Admissions, onboarding, resident profiles, and credentialing.
-7. Consultation & Admissions: Free initial care consultations, facility walk-throughs, and admissions assessments. Bookings can be made online via the "Book Consultation" button or by contacting +234 803 356 9986.
-8. Careers & Hiring: Positions for Senior Care Assistants (NVQ Level 3), Registered Nurses (RNs), and Early Years Childcare Assistants. Applications are accepted online via the Careers page.
-9. Contact & Hours:
-   - Location: Samanthasappy Home Main Campus & Care Suites.
-   - Hours: 24/7 care operation; visiting hours are 9:00 AM to 7:00 PM daily.
-   - Phone: 08033569986 / +234 803 356 9986
-   - Email: samanthasappy@gmail.com
+YOUR EXCLUSIVE KNOWLEDGE (SAMANTHASAPPY HOME):
+1. Residential Elderly Care: 24/7 personalized care suites, memory and dementia care routines, nutritious meals, and compassionate nursing assistance.
+2. Domiciliary Care: Dignified in-home visiting care, morning & evening visits, medication assistance, and friendly companionship.
+3. Daily Living Assistance: Full living support, rehabilitation, gentle mobility exercise, and respite care.
+4. Vulnerable Adult Support: Safeguarding, sensory therapy, custom calming routines, and dedicated welfare oversight.
+5. Child Care & Daycare (Sunshine Early Years): Safe, accredited daycare with pediatric first-aid certified educators and early learning activities.
+6. Visiting Hours & Operations: Open 24/7 for residents; family visiting hours are everyday from 9:00 AM to 7:00 PM.
+7. Consultations & Phone: Complimentary care consultations and tours can be booked anytime! Our phone is 08033569986 (or international +234 803 356 9986), and email is samanthasappy@gmail.com.
+8. Careers: We welcome compassionate Senior Care Assistants (NVQ 3), Registered Nurses, and Childcare educators to apply on our Careers page.
 
-CRITICAL UNBREAKABLE RULE:
-You MUST ONLY answer inquiries directly related to Samanthasappy Home, its services (elderly care, domiciliary care, vulnerable adults, childcare), admissions, staff, resident portals, visiting hours, consultations, and careers.
-If the user asks about ANYTHING ELSE (sports, weather, politics, coding, general trivia, unrelated companies, cooking recipes, homework, etc.), you MUST politely and warmly decline and redirect them back to Samanthasappy Home.
-Example deflection: "I am ${botName} for Samanthasappy Home. I can only assist with questions about our care services, admissions, facility visits, consultations, and portal features. How can I assist you with your family's care needs today?"
+CRITICAL RULE:
+You ONLY answer questions about Samanthasappy Home care services, admissions, consultations, and visiting hours. If asked about unrelated topics (politics, general trivia, coding, other businesses), decline warmly and sweetly: "Ah, I am Samantha from Samanthasappy Home! I can only assist you with our elderly care, domiciliary visits, and daycare bookings. How may I help your family today?"
 `.trim();
 
     try {
       const apiKey = process.env.GEMINI_API_KEY || '';
       if (apiKey) {
         const client = getGeminiClient();
+
+        let effectiveQuery = cleanQuery;
+
+        // If audio recording provided, transcribe it first or send multimodal
+        if (audioBase64) {
+          try {
+            const audioData = audioBase64.replace(/^data:[^;]+;base64,/, '');
+            const audioPart = {
+              inlineData: {
+                mimeType: mimeType || 'audio/webm',
+                data: audioData,
+              },
+            };
+
+            // Use gemini-3.5-transcribe to extract user's words
+            const transcribePromise = client.models.generateContent({
+              model: 'gemini-3.5-transcribe',
+              contents: { parts: [audioPart, { text: "Transcribe the spoken audio words verbatim into English. Return only the transcription." }] },
+            });
+
+            const trTimeout = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Transcribe timeout')), 6000)
+            );
+
+            const trRes: any = await Promise.race([transcribePromise, trTimeout]);
+            const transcribed = trRes?.text ? trRes.text.trim() : '';
+            if (transcribed && transcribed.length > 1) {
+              effectiveQuery = transcribed;
+              console.log(`[AskSamanthasappy Audio Transcribed]: "${effectiveQuery}"`);
+            }
+          } catch (trErr: any) {
+            console.warn('Audio transcribe fallback notice:', trErr?.message || trErr);
+          }
+        }
+
+        // Generate response using gemini-3.8-flash with the sweet Nigerian persona
+        let contentsPayload: any = effectiveQuery;
+        if (!effectiveQuery && audioBase64) {
+          // Direct multimodal fallback
+          contentsPayload = [
+            {
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: mimeType || 'audio/webm',
+                    data: audioBase64.replace(/^data:[^;]+;base64,/, ''),
+                  },
+                },
+                {
+                  text: 'Listen to the user in this audio recording. Answer their question about Samanthasappy Home Care as Samantha, the sweet 22yo Nigerian care coordinator. Keep it to 2-3 short conversational sentences for spoken audio.',
+                },
+              ],
+            },
+          ];
+        }
+
         const geminiPromise = client.models.generateContent({
           model: 'gemini-3.8-flash',
-          contents: cleanQuery,
+          contents: contentsPayload,
           config: {
             systemInstruction: SAMANTHA_SYSTEM_INSTRUCTION,
-            temperature: 0.4,
-            maxOutputTokens: 300,
+            temperature: 0.5,
+            maxOutputTokens: 250,
           },
         });
 
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Gemini timeout')), 3500)
+          setTimeout(() => reject(new Error('Gemini timeout')), 8000)
         );
 
         const response: any = await Promise.race([geminiPromise, timeoutPromise]);
         const reply = response?.text ? response.text.trim() : '';
         if (reply) {
-          return res.json({ reply, source: 'gemini-3.8-flash' });
+          return res.json({ 
+            reply, 
+            transcribedText: effectiveQuery,
+            source: 'gemini-3.8-flash' 
+          });
         }
       }
     } catch (err: any) {
-      console.warn('Gemini chatbot generation notice (using knowledge-engine):', err?.message || err);
+      console.warn('Gemini voice chatbot generation notice (using knowledge-engine):', err?.message || err);
     }
 
-    // High-Fidelity Local Knowledge Fallback Engine (Strict domain enforcement)
-    const qLower = cleanQuery.toLowerCase();
+    // High-Fidelity Local Knowledge Fallback Engine (Sweet Nigerian 22yo Care Coordinator)
+    const qLower = (cleanQuery || 'hello').toLowerCase();
 
-    // Check if query is unrelated to Samanthasappy Home
     const relevantKeywords = [
       'samantha', 'care', 'home', 'elderly', 'child', 'daycare', 'baby', 'resident', 'staff',
       'nurse', 'shift', 'visit', 'visiting', 'admission', 'cost', 'fee', 'price', 'consultation',
@@ -1271,25 +1348,25 @@ Example deflection: "I am ${botName} for Samanthasappy Home. I can only assist w
 
     let reply = '';
     if (!isRelevant) {
-      reply = `I am ${botName} for Samanthasappy Home. I can only assist with questions regarding our elderly care, domiciliary services, childcare, admissions, and consultations. How may I assist your family today?`;
+      reply = `Good day to you! I am Samantha for Samanthasappy Home. I can only assist you with questions regarding our elderly care, in-home domiciliary visits, childcare daycare, and consultations. How may I help your family today?`;
     } else if (qLower.includes('service') || qLower.includes('what do you do') || qLower.includes('offer')) {
-      reply = "At Samanthasappy Home, we provide 24/7 Residential Elderly Care, in-home Domiciliary Care, Daily Living Assistance, Vulnerable Adult Support, and an Early Learning Child Care Daycare. You can book a free consultation anytime to discuss personalized care plans!";
+      reply = "You are very welcome! At Samanthasappy Home, we provide 24/7 Residential Elderly Care, in-home Domiciliary Care, Daily Living Assistance, Vulnerable Adult Support, and our lovely Sunshine Childcare daycare. Would you like me to guide you on how to book a free consultation?";
     } else if (qLower.includes('child') || qLower.includes('daycare') || qLower.includes('early learning')) {
-      reply = "Our Sunshine Childcare & Daycare provides a secure, joyful environment for young children. We have certified pediatric first-aid staff, sensory play spaces, and early learning curricula tailored to nurture each child's development.";
+      reply = "Our Sunshine Childcare and Daycare is such a lovely, safe place for little ones! We have pediatric first-aid certified teachers, sensory play, and early learning programs. We would love to welcome your child!";
     } else if (qLower.includes('consultation') || qLower.includes('book') || qLower.includes('appointment')) {
-      reply = "You can easily schedule a complimentary care consultation or facility tour by clicking the 'Book Consultation' button on our website, or by calling our care coordinators directly at 08033569986.";
+      reply = "You can easily schedule a free care consultation or tour by clicking the 'Book Consultation' button on our website, or by calling our care coordinators on 08033569986. We are always ready to assist you!";
     } else if (qLower.includes('visit') || qLower.includes('hour') || qLower.includes('time')) {
-      reply = "Our care residence operates 24 hours a day, 7 days a week. Family visiting hours are open every day from 9:00 AM to 7:00 PM. Loved ones are always welcome to spend quality time together!";
+      reply = "Our care suites operate 24 hours a day, and our visiting hours are open every single day from 9:00 AM to 7:00 PM. Relatives and loved ones are always warmly welcome!";
     } else if (qLower.includes('contact') || qLower.includes('phone') || qLower.includes('call') || qLower.includes('email') || qLower.includes('location')) {
-      reply = "You can reach our team at 08033569986 or international +234 803 356 9986, or email us at samanthasappy@gmail.com. Our care campus is fully equipped with 24/7 dedicated support.";
+      reply = "You can reach us directly on 08033569986, or on international line +234 803 356 9986, and our email is samanthasappy@gmail.com. We would be delighted to hear from you!";
     } else if (qLower.includes('portal') || qLower.includes('relative') || qLower.includes('family') || qLower.includes('login')) {
-      reply = "Our Family Relative Portal allows designated next of kin to securely check daily health vitals, medication adherence, caregiver activity logs, and chat directly with assigned caregivers in real time.";
+      reply = "Our Family Relative Portal allows next of kin to securely check daily health vitals, medication updates, and message our care team directly from their phone or computer.";
     } else if (qLower.includes('job') || qLower.includes('career') || qLower.includes('apply') || qLower.includes('work') || qLower.includes('hiring')) {
-      reply = "We are currently hiring passionate Senior Care Assistants, Registered Nurses, and Early Years Childcare Assistants. You can review qualifications and submit your application with references directly on our Careers page!";
+      reply = "Yes, we are actively hiring compassionate Senior Care Assistants, Registered Nurses, and Childcare educators! You can view all openings and submit your application on our Careers page.";
     } else if (qLower.includes('domiciliary') || qLower.includes('home care') || qLower.includes('in-home')) {
-      reply = "Our Domiciliary Care service brings dedicated caregivers to your loved one's home for assistance with personal grooming, meal preparation, medication oversight, and friendly companionship.";
+      reply = "Our Domiciliary Care brings our dedicated care staff directly to your loved one's home for assistance with meals, bathing, medication reminders, and warm companionship.";
     } else {
-      reply = `Welcome to Samanthasappy Home Care! I am ${botName}. I can provide details on our residential elderly care, in-home domiciliary support, childcare daycare, admissions, and consultations. What would you like to know?`;
+      reply = `Hello! You are most welcome to Samanthasappy Home Care. I am Samantha! How can I assist you with our elderly care, domiciliary visits, or bookings today?`;
     }
 
     res.json({ reply, source: 'knowledge-engine' });

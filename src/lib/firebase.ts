@@ -61,6 +61,17 @@ try {
   setLogLevel('silent');
 } catch {}
 
+if (typeof window !== 'undefined') {
+  const originalClientConsoleError = console.error;
+  console.error = function (...args: any[]) {
+    const fullMsg = args.map(a => (typeof a === 'string' ? a : a?.message || JSON.stringify(a) || '')).join(' ');
+    if (fullMsg.includes('Disconnecting idle stream') || fullMsg.includes('Timed out waiting for new targets')) {
+      return;
+    }
+    originalClientConsoleError.apply(console, args);
+  };
+}
+
 // Secondary Firebase Auth instance dedicated to registering users in the background
 // so the logged-in admin's current session is never signed out or disrupted.
 let secondaryAuthInstance: Auth | null = null;
