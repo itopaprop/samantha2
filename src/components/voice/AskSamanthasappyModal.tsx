@@ -12,9 +12,7 @@ import {
   AlertCircle,
   ExternalLink,
   RotateCw,
-  Lock,
-  ChevronDown,
-  ChevronUp
+  Lock
 } from 'lucide-react';
 
 export const AskSamanthasappyModal: React.FC = () => {
@@ -29,13 +27,13 @@ export const AskSamanthasappyModal: React.FC = () => {
   const [showTextInput, setShowTextInput] = useState(false);
   const [micPermissionDenied, setMicPermissionDenied] = useState(false);
   const [isPermissionBannerDismissed, setIsPermissionBannerDismissed] = useState(false);
-  const [showDetailedSteps, setShowDetailedSteps] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
 
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const synthRef = useRef<SpeechSynthesis | null>(null);
+  const activeAudioElementRef = useRef<HTMLAudioElement | null>(null);
   const isComponentMounted = useRef(true);
   const transcriptRef = useRef('');
   const silenceTimerRef = useRef<any>(null);
@@ -47,62 +45,68 @@ export const AskSamanthasappyModal: React.FC = () => {
   const nigerianVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const currentMimeTypeRef = useRef<string>('audio/webm');
 
-  // Resolve sweetest African (Nigerian) female voice
+  // Resolve realistic Nigerian & African lady voices
   const resolveVoice = useCallback(() => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     const voices = window.speechSynthesis.getVoices();
     if (!voices || voices.length === 0) return;
 
-    // 1. Direct Nigerian English voice
-    const nigerianVoice = voices.find(v => {
+    // 1. Nigerian English natural lady voices (Blessing, Chioma, Google Nigerian English)
+    const nigerianLadyVoice = voices.find(v => {
       const l = (v.lang || '').toLowerCase();
       const n = (v.name || '').toLowerCase();
       return (
         l === 'en-ng' || 
         l.startsWith('en-ng') || 
         l.startsWith('en_ng') || 
-        n.includes('nigeria') ||
-        n.includes('en-ng') ||
+        n.includes('blessing') ||
         n.includes('chioma') ||
-        n.includes('blessing')
+        n.includes('nigeria') ||
+        n.includes('en-ng')
       );
     });
 
-    if (nigerianVoice) {
-      nigerianVoiceRef.current = nigerianVoice;
+    if (nigerianLadyVoice) {
+      nigerianVoiceRef.current = nigerianLadyVoice;
       return;
     }
 
-    // 2. African English voice (e.g. en-ZA, African, South Africa, Ayanda)
-    const africanVoice = voices.find(v => {
+    // 2. African English natural lady voices (Ayanda, South Africa)
+    const africanLadyVoice = voices.find(v => {
       const l = (v.lang || '').toLowerCase();
       const n = (v.name || '').toLowerCase();
-      return l === 'en-za' || n.includes('african') || n.includes('south africa') || n.includes('ayanda');
+      return (
+        l === 'en-za' || 
+        n.includes('ayanda') || 
+        n.includes('african') || 
+        n.includes('south africa')
+      );
     });
 
-    if (africanVoice) {
-      nigerianVoiceRef.current = africanVoice;
+    if (africanLadyVoice) {
+      nigerianVoiceRef.current = africanLadyVoice;
       return;
     }
 
-    // 3. Sweet young female English voices
-    const sweetFemaleVoice = voices.find(v => {
+    // 3. Realistic natural female voices with warm lady cadence
+    const realisticFemaleVoice = voices.find(v => {
+      const n = (v.name || '').toLowerCase();
+      return (
+        n.includes('natural') && (n.includes('female') || n.includes('jenny') || n.includes('sonia') || n.includes('aria'))
+      );
+    }) || voices.find(v => {
       const n = (v.name || '').toLowerCase();
       return (
         n.includes('samantha') ||
-        n.includes('karen') ||
         n.includes('victoria') ||
-        n.includes('moira') ||
-        n.includes('tessa') ||
-        n.includes('natural') ||
+        n.includes('karen') ||
         n.includes('google uk english female') ||
-        n.includes('google us english') ||
-        n.includes('zira')
+        n.includes('google us english')
       );
     }) || voices.find(v => (v.lang || '').startsWith('en'));
 
-    if (sweetFemaleVoice) {
-      nigerianVoiceRef.current = sweetFemaleVoice;
+    if (realisticFemaleVoice) {
+      nigerianVoiceRef.current = realisticFemaleVoice;
     }
   }, []);
 
@@ -165,6 +169,13 @@ export const AskSamanthasappyModal: React.FC = () => {
       try { mediaRecorderRef.current.stop(); } catch {}
       mediaRecorderRef.current = null;
     }
+    if (activeAudioElementRef.current) {
+      try {
+        activeAudioElementRef.current.pause();
+        activeAudioElementRef.current.src = '';
+      } catch {}
+      activeAudioElementRef.current = null;
+    }
     if (synthRef.current) {
       try { synthRef.current.cancel(); } catch {}
     }
@@ -182,7 +193,72 @@ export const AskSamanthasappyModal: React.FC = () => {
     hasSpokenRef.current = false;
   };
 
-  // Speak Samantha's reply using a sweet, youthful Nigerian female voice
+  // Play realistic human lady voice (Gemini Neural TTS with Web Speech API fallback)
+  const playBotVoice = (reply: string, audioWavBase64?: string) => {
+    cleanupAudioPlayback();
+
+    // 1. Play ultra-realistic neural lady voice WAV if available
+    if (audioWavBase64) {
+      try {
+        const audio = new Audio(`data:audio/wav;base64,${audioWavBase64}`);
+        activeAudioElementRef.current = audio;
+
+        audio.onplay = () => {
+          if (!isComponentMounted.current) return;
+          setStatus('speaking');
+        };
+
+        audio.onended = () => {
+          if (!isComponentMounted.current) return;
+          setStatus('ready');
+          activeAudioElementRef.current = null;
+          if (!isMuted && isOpen) {
+            setTimeout(() => {
+              if (isOpen && !isMuted && isComponentMounted.current) {
+                startListeningSession();
+              }
+            }, 350);
+          }
+        };
+
+        audio.onerror = (err) => {
+          console.warn('Neural audio playback notice, using speech synthesis fallback:', err);
+          activeAudioElementRef.current = null;
+          speakText(reply);
+        };
+
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            console.warn('Audio play notice, using speech synthesis fallback:', err);
+            activeAudioElementRef.current = null;
+            speakText(reply);
+          });
+        }
+        return;
+      } catch (wavErr) {
+        console.warn('WAV initialization notice:', wavErr);
+      }
+    }
+
+    // 2. Realistic lady's speech synthesis fallback
+    speakText(reply);
+  };
+
+  const cleanupAudioPlayback = () => {
+    if (activeAudioElementRef.current) {
+      try {
+        activeAudioElementRef.current.pause();
+        activeAudioElementRef.current.src = '';
+      } catch {}
+      activeAudioElementRef.current = null;
+    }
+    if (synthRef.current) {
+      try { synthRef.current.cancel(); } catch {}
+    }
+  };
+
+  // Realistic human lady's speech synthesis fallback
   const speakText = (text: string) => {
     if (!synthRef.current) {
       setStatus('ready');
@@ -206,9 +282,9 @@ export const AskSamanthasappyModal: React.FC = () => {
 
       const utterance = new SpeechSynthesisUtterance(cleanText);
 
-      // Sweet, vibrant, youthful 22yo Nigerian cadence
-      utterance.pitch = 1.22;
-      utterance.rate = 0.97;
+      // Realistic, warm, natural adult lady pitch and unhurried human cadence
+      utterance.pitch = 1.05;
+      utterance.rate = 0.94;
       utterance.volume = 1.0;
 
       if (!nigerianVoiceRef.current) {
@@ -230,7 +306,6 @@ export const AskSamanthasappyModal: React.FC = () => {
       utterance.onend = () => {
         if (!isComponentMounted.current) return;
         setStatus('ready');
-        // Auto-resume listening so user can answer Samantha naturally
         if (!isMuted && isOpen) {
           setTimeout(() => {
             if (isOpen && !isMuted && isComponentMounted.current) {
@@ -311,13 +386,11 @@ export const AskSamanthasappyModal: React.FC = () => {
           if (currentLvl > 16) {
             hasSpokenRef.current = true;
 
-            // Reset silence timer while speech is active
             if (silenceTimerRef.current) {
               clearTimeout(silenceTimerRef.current);
               silenceTimerRef.current = null;
             }
 
-            // Arm auto-submit timer: 1.5 seconds of silence after speaking
             silenceTimerRef.current = setTimeout(() => {
               if (hasSpokenRef.current && isComponentMounted.current) {
                 commitAndSubmitVoice();
@@ -441,7 +514,7 @@ export const AskSamanthasappyModal: React.FC = () => {
 
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       setStatus('thinking');
-      setTranscript('Listening to your spoken voice...');
+      setTranscript('Listening to your voice...');
 
       mediaRecorderRef.current.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: currentMimeTypeRef.current });
@@ -473,10 +546,7 @@ export const AskSamanthasappyModal: React.FC = () => {
     setLastUserQuery('');
     setLastBotReply('');
 
-    if (synthRef.current) {
-      synthRef.current.cancel();
-    }
-
+    cleanupAudioPlayback();
     startListeningSession();
   };
 
@@ -503,12 +573,12 @@ export const AskSamanthasappyModal: React.FC = () => {
       setLastUserQuery(heardText);
       setLastBotReply(reply);
       setTranscript('');
-      speakText(reply);
+      playBotVoice(reply, data.audioWavBase64);
     } catch (err) {
       console.warn('Audio query error:', err);
       const fallback = "Good day! Welcome to Samanthasappy Home Care. We provide 24/7 Residential Care, Domiciliary Home Visits, and Childcare Daycare. You can reach our care team directly on 08033569986.";
       setLastBotReply(fallback);
-      speakText(fallback);
+      playBotVoice(fallback);
     }
   };
 
@@ -535,12 +605,12 @@ export const AskSamanthasappyModal: React.FC = () => {
       const reply = data.reply || "Good day! I am Samantha from Samanthasappy Home. How can I assist you with our elderly care, domiciliary visits, or bookings today?";
 
       setLastBotReply(reply);
-      speakText(reply);
+      playBotVoice(reply, data.audioWavBase64);
     } catch (err) {
       console.warn('Voice query error:', err);
       const fallback = "Good day! Welcome to Samanthasappy Home Care. We provide 24/7 Residential Care, Domiciliary Home Visits, and Childcare Daycare. You can reach our care team directly on 08033569986.";
       setLastBotReply(fallback);
-      speakText(fallback);
+      playBotVoice(fallback);
     }
   };
 
@@ -557,7 +627,7 @@ export const AskSamanthasappyModal: React.FC = () => {
 
   const handleOrbClick = () => {
     if (status === 'speaking') {
-      if (synthRef.current) synthRef.current.cancel();
+      cleanupAudioPlayback();
       startListeningSession();
     } else if (status === 'listening') {
       commitAndSubmitVoice();
@@ -610,16 +680,9 @@ export const AskSamanthasappyModal: React.FC = () => {
             <div className="p-4 sm:p-5 flex items-center justify-between border-b border-white/5 shrink-0 bg-[#0a0f1a]/80 backdrop-blur-sm">
               <div className="flex items-center gap-2.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
-                <div>
-                  <h3 className="font-bold text-base sm:text-lg text-white tracking-tight leading-tight">
-                    Ask Samanthasappy
-                  </h3>
-                  <div className="text-[10px] text-purple-300 font-medium flex items-center gap-1">
-                    <span>Sweet Nigerian Care Guide</span>
-                    <span>•</span>
-                    <span>22 yrs</span>
-                  </div>
-                </div>
+                <h3 className="font-bold text-base sm:text-lg text-white tracking-tight leading-tight">
+                  Ask Samanthasappy
+                </h3>
               </div>
 
               <div className="flex items-center gap-1.5 text-slate-400">
@@ -803,11 +866,7 @@ export const AskSamanthasappyModal: React.FC = () => {
                       <Sparkles className="w-3.5 h-3.5 text-purple-400" />
                       <span>Tap the mic orb above to talk with Samantha</span>
                     </div>
-                  ) : (
-                    <div className="text-xs text-slate-400">
-                      Sweet 22yo Nigerian Care Coordinator
-                    </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
 

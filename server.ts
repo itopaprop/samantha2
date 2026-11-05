@@ -1223,12 +1223,13 @@ async function startServer() {
     const botName = botType === 'chat' ? 'Samanthasappy AI Chatbot' : 'Ask Samanthasappy';
 
     const SAMANTHA_SYSTEM_INSTRUCTION = `
-You are "Samantha", the sweet, caring, cheerful voice of "${botName}" for Samanthasappy Home Care & Daycare.
+You are "Samantha", the warm, articulate, caring voice of "${botName}" for Samanthasappy Home Care & Daycare.
 
-YOUR PERSONA & VOICE IDENTITY:
-- You are a sweet, polite, radiant 22-year-old Nigerian young woman from Lagos/Abuja, working as the care coordinator and family guide for Samanthasappy Home.
-- You speak with warm, courteous African hospitality. Use sweet, natural polite expressions like "Good day to you!", "You are very welcome!", "No problem at all!", "I'd be so happy to help you with that!", "Warm greetings from our care family at Samanthasappy Home!".
-- KEEP ANSWERS VERY CONCISE, NATURAL, AND SPOKEN (2 to 3 short sentences max). This is a spoken voice agent; NEVER use bullet points, asterisks, numbered lists, markdown symbols, or long formal essays. Speak smoothly as if having a real conversation on the phone.
+YOUR PERSONA & REALISTIC VOICE IDENTITY:
+- You are a warm, courteous, highly professional Nigerian lady based in Nigeria, working as the family care coordinator for Samanthasappy Home.
+- You speak naturally in a realistic, graceful lady's voice with authentic Nigerian English warmth, cadence, and hospitable tone.
+- Use natural Nigerian polite expressions like "Good day to you!", "You are very welcome!", "No problem at all!", "I'd be glad to help you with that!", "Warm greetings from our Samanthasappy care family!".
+- KEEP ANSWERS VERY CONCISE, NATURAL, AND SPOKEN (2 to 3 short sentences max). This is a spoken voice agent; NEVER use bullet points, asterisks, numbered lists, markdown symbols, or long formal essays. Speak smoothly and conversationally with natural human pauses.
 
 YOUR EXCLUSIVE KNOWLEDGE (SAMANTHASAPPY HOME):
 1. Residential Elderly Care: 24/7 personalized care suites, memory and dementia care routines, nutritious meals, and compassionate nursing assistance.
@@ -1241,7 +1242,7 @@ YOUR EXCLUSIVE KNOWLEDGE (SAMANTHASAPPY HOME):
 8. Careers: We welcome compassionate Senior Care Assistants (NVQ 3), Registered Nurses, and Childcare educators to apply on our Careers page.
 
 CRITICAL RULE:
-You ONLY answer questions about Samanthasappy Home care services, admissions, consultations, and visiting hours. If asked about unrelated topics (politics, general trivia, coding, other businesses), decline warmly and sweetly: "Ah, I am Samantha from Samanthasappy Home! I can only assist you with our elderly care, domiciliary visits, and daycare bookings. How may I help your family today?"
+You ONLY answer questions about Samanthasappy Home care services, admissions, consultations, and visiting hours. If asked about unrelated topics (politics, general trivia, coding, other businesses), decline warmly and politely: "Ah, I am Samantha from Samanthasappy Home! I can only assist you with our elderly care, domiciliary visits, and daycare bookings. How may I help your family today?"
 `.trim();
 
     try {
@@ -1283,10 +1284,9 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
           }
         }
 
-        // Generate response using gemini-3.8-flash with the sweet Nigerian persona
+        // Generate response using gemini-3.8-flash
         let contentsPayload: any = effectiveQuery;
         if (!effectiveQuery && audioBase64) {
-          // Direct multimodal fallback
           contentsPayload = [
             {
               role: 'user',
@@ -1298,7 +1298,7 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
                   },
                 },
                 {
-                  text: 'Listen to the user in this audio recording. Answer their question about Samanthasappy Home Care as Samantha, the sweet 22yo Nigerian care coordinator. Keep it to 2-3 short conversational sentences for spoken audio.',
+                  text: 'Listen to the user in this audio recording. Answer their question about Samanthasappy Home Care as Samantha, a warm Nigerian lady care coordinator. Keep it to 2-3 short conversational sentences for spoken audio.',
                 },
               ],
             },
@@ -1322,8 +1322,51 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
         const response: any = await Promise.race([geminiPromise, timeoutPromise]);
         const reply = response?.text ? response.text.trim() : '';
         if (reply) {
+          // Generate realistic human lady voice audio using gemini-3.8-flash-lite-tts
+          let audioWavBase64 = '';
+          try {
+            const cleanSpokenText = reply.replace(/[*_#`~>]/g, '').trim();
+            const ttsPromise = client.models.generateContent({
+              model: 'gemini-3.8-flash-lite-tts',
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    {
+                      text: cleanSpokenText,
+                      speechMetadata: {
+                        style: 'Natural, warm, realistic Nigerian lady voice. Friendly, human conversational cadence.',
+                      },
+                    },
+                  ],
+                },
+              ],
+              config: {
+                responseModalities: ['AUDIO'],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName: 'Kore' },
+                  },
+                },
+              },
+            });
+
+            const ttsTimeout = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('TTS timeout')), 5000)
+            );
+
+            const ttsRes: any = await Promise.race([ttsPromise, ttsTimeout]);
+            const ttsData = ttsRes?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+            if (ttsData) {
+              audioWavBase64 = ttsData;
+            }
+          } catch (ttsErr: any) {
+            console.warn('Gemini TTS lady voice notice (using client speech engine):', ttsErr?.message || ttsErr);
+          }
+
           return res.json({ 
             reply, 
+            audioWavBase64,
             transcribedText: effectiveQuery,
             source: 'gemini-3.8-flash' 
           });
