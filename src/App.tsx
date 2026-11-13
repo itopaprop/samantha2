@@ -20,7 +20,6 @@ import { ApplyNowModal } from './components/modals/ApplyNowModal';
 import { WelcomePopupModal } from './components/modals/WelcomePopupModal';
 import { ToastNotification } from './components/modals/ToastNotification';
 import { SessionTimeoutWarningModal } from './components/modals/SessionTimeoutWarningModal';
-import { AskSamanthasappyModal } from './components/voice/AskSamanthasappyModal';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface ErrorBoundaryProps {
@@ -139,7 +138,6 @@ const AppContent: React.FC = () => {
       <WelcomePopupModal />
       <SessionTimeoutWarningModal />
       <ToastNotification />
-      <AskSamanthasappyModal />
     </div>
   );
 };

@@ -109,11 +109,23 @@ export const HomePage: React.FC = () => {
     }
   ];
 
-  const [currentSlide, setCurrentSlide] = useState(0);
+  const [slideState, setSlideState] = useState<{ current: number; prev: number | null }>({
+    current: 0,
+    prev: null,
+  });
+  const currentSlide = slideState.current;
+  const prevSlide = slideState.prev;
+
+  const changeSlide = (nextIndex: number) => {
+    setSlideState(s => (s.current === nextIndex ? s : { current: nextIndex, prev: s.current }));
+  };
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentSlide(prev => (prev + 1) % heroSlides.length);
+      setSlideState(s => ({
+        current: (s.current + 1) % heroSlides.length,
+        prev: s.current,
+      }));
     }, 6000);
     return () => clearInterval(timer);
   }, [heroSlides.length]);
@@ -190,27 +202,32 @@ export const HomePage: React.FC = () => {
       <section className="relative min-h-[580px] lg:min-h-[640px] flex items-center bg-slate-950 overflow-hidden">
         
         {/* Carousel Background Images */}
-        {heroSlides.map((slide, index) => (
-          <div
-            key={index}
-            className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
-              index === currentSlide ? 'opacity-100 z-10' : 'opacity-0 z-0'
-            }`}
-          >
-            <img
-              src={slide.image}
-              alt={slide.title}
-              referrerPolicy="no-referrer"
-              onError={(e) => {
-                const target = e.currentTarget;
-                if (slide.driveId && !target.src.includes('uc?export=view')) {
-                  target.src = `https://drive.google.com/uc?export=view&id=${slide.driveId}`;
-                }
-              }}
-              className={`w-full h-full object-cover ${slide.objectPosition || 'object-center'} filter brightness-[0.45]`}
-            />
-          </div>
-        ))}
+        {heroSlides.map((slide, index) => {
+          const isZooming = index === currentSlide || index === prevSlide;
+          return (
+            <div
+              key={index}
+              className={`absolute inset-0 overflow-hidden transition-opacity duration-1000 ease-in-out ${
+                index === currentSlide ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+              }`}
+            >
+              <img
+                src={slide.image}
+                alt={slide.title}
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (slide.driveId && !target.src.includes('uc?export=view')) {
+                    target.src = `https://drive.google.com/uc?export=view&id=${slide.driveId}`;
+                  }
+                }}
+                className={`w-full h-full object-cover ${slide.objectPosition || 'object-center'} filter brightness-[0.45] ${
+                  isZooming ? 'animate-hero-zoom' : 'scale-100'
+                }`}
+              />
+            </div>
+          );
+        })}
 
         {/* Hero Content Overlay */}
         <div className="relative z-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-white w-full">
@@ -262,8 +279,9 @@ export const HomePage: React.FC = () => {
         {/* Carousel Slide Indicators & Manual Controls */}
         <div className="absolute bottom-6 right-6 z-20 flex items-center gap-3 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
           <button
-            onClick={() => setCurrentSlide((currentSlide - 1 + heroSlides.length) % heroSlides.length)}
+            onClick={() => changeSlide((currentSlide - 1 + heroSlides.length) % heroSlides.length)}
             className="text-white/70 hover:text-white transition-colors"
+            aria-label="Previous slide"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
@@ -271,16 +289,18 @@ export const HomePage: React.FC = () => {
             {heroSlides.map((_, i) => (
               <button
                 key={i}
-                onClick={() => setCurrentSlide(i)}
+                onClick={() => changeSlide(i)}
                 className={`h-2 rounded-full transition-all ${
                   i === currentSlide ? 'w-6 bg-sky-400' : 'w-2 bg-white/40'
                 }`}
+                aria-label={`Go to slide ${i + 1}`}
               />
             ))}
           </div>
           <button
-            onClick={() => setCurrentSlide((currentSlide + 1) % heroSlides.length)}
+            onClick={() => changeSlide((currentSlide + 1) % heroSlides.length)}
             className="text-white/70 hover:text-white transition-colors"
+            aria-label="Next slide"
           >
             <ChevronRight className="w-5 h-5" />
           </button>
