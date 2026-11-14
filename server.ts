@@ -308,9 +308,9 @@ async function startServer() {
   const PORT = portFromArgs || 3000;
   const HOST = hostFromArgs || '0.0.0.0';
 
-  // JSON Body Parser with high limits for base64 avatars
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  // JSON Body Parser with high limits for base64 avatars and document uploads
+  app.use(express.json({ limit: '25mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
   // CORS Headers for API
   app.use((req, res, next) => {
@@ -1475,6 +1475,71 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
     res.json({ success: true, id });
   });
 
+  // Upload & serve application documents locally in data/uploads/
+  const UPLOADS_DIR = path.join(process.cwd(), 'data', 'uploads');
+  const ALLOWED_MIME_EXTENSIONS: Record<string, string> = {
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'image/gif': '.gif',
+    'application/pdf': '.pdf',
+    'application/msword': '.doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  };
+
+  app.post('/api/uploads/document', async (req, res) => {
+    try {
+      const { fileName, dataUrl, mimeType } = req.body || {};
+      if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+        return res.status(400).json({ error: 'Valid dataUrl is required' });
+      }
+      const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (!match) {
+        return res.status(400).json({ error: 'Invalid base64 data URL format' });
+      }
+      const detectedMime = mimeType || match[1] || 'application/octet-stream';
+      const base64Payload = match[2];
+      const buffer = Buffer.from(base64Payload, 'base64');
+
+      if (!fs.existsSync(UPLOADS_DIR)) {
+        fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      }
+
+      const rawName = (fileName || 'document').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const existingExt = path.extname(rawName);
+      const fallbackExt = ALLOWED_MIME_EXTENSIONS[detectedMime] || '';
+      const safeBase = existingExt ? rawName.slice(0, -existingExt.length) : rawName;
+      const finalExt = existingExt || fallbackExt || '.bin';
+      const storedName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeBase.slice(0, 60)}${finalExt}`;
+      const targetPath = path.join(UPLOADS_DIR, storedName);
+
+      fs.writeFileSync(targetPath, buffer);
+      return res.json({
+        success: true,
+        url: `/api/uploads/${storedName}`,
+        name: fileName || storedName,
+        mimeType: detectedMime,
+        size: buffer.length,
+      });
+    } catch (err: any) {
+      console.error('Document upload error:', err);
+      return res.status(500).json({ error: err?.message || 'Failed to save uploaded document' });
+    }
+  });
+
+  app.get('/api/uploads/:filename', (req, res) => {
+    const safeFilename = path.basename(req.params.filename || '');
+    if (!safeFilename) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    const targetPath = path.join(UPLOADS_DIR, safeFilename);
+    if (!fs.existsSync(targetPath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    res.sendFile(targetPath);
+  });
+
   app.get('/api/applications', async (req, res) => {
     try {
       const supabaseAdmin = getSupabaseAdmin();
@@ -1517,6 +1582,7 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
     } else {
       serverApplicationsList.unshift(appData);
     }
+    saveServerDb();
 
     try {
       const supabaseAdmin = getSupabaseAdmin();
@@ -1551,12 +1617,29 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
     if (idx >= 0) {
       const a = serverApplicationsList[idx];
       if (a.photoUrl) filesToDelete.push(a.photoUrl);
+      if (a.cvUrl) filesToDelete.push(a.cvUrl);
       if (a.receiptUrl) filesToDelete.push(a.receiptUrl);
+      if (a.documents && typeof a.documents === 'object') {
+        Object.values(a.documents).forEach((d: any) => {
+          if (d?.url) filesToDelete.push(d.url);
+        });
+      }
       if (Array.isArray(a.references)) {
         a.references.forEach((r: any) => { if (r.photoUrl) filesToDelete.push(r.photoUrl); });
       }
       serverApplicationsList.splice(idx, 1);
+      saveServerDb();
     }
+    // Remove local uploaded files if stored in /api/uploads/
+    filesToDelete.forEach((fileUrl) => {
+      if (typeof fileUrl === 'string' && fileUrl.startsWith('/api/uploads/')) {
+        const safeName = path.basename(fileUrl);
+        const localPath = path.join(UPLOADS_DIR, safeName);
+        if (fs.existsSync(localPath)) {
+          try { fs.unlinkSync(localPath); } catch {}
+        }
+      }
+    });
     try {
       const supabaseAdmin = getSupabaseAdmin();
       if (filesToDelete.length === 0) {
@@ -2077,11 +2160,20 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
       };
 
       const existingIdx = serverApplicationsList.findIndex(a => a.id === appId);
+      const richRecord = {
+        ...appRow,
+        ...application,
+        id: appId,
+        fullName: application.applicantName,
+        email: applicantEmail,
+        positionOrCategory,
+      };
       if (existingIdx >= 0) {
-        serverApplicationsList[existingIdx] = { ...serverApplicationsList[existingIdx], ...appRow };
+        serverApplicationsList[existingIdx] = { ...serverApplicationsList[existingIdx], ...richRecord };
       } else {
-        serverApplicationsList.unshift(appRow);
+        serverApplicationsList.unshift(richRecord);
       }
+      saveServerDb();
 
       try {
         const supabaseAdmin = getSupabaseAdmin();
@@ -2102,7 +2194,7 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
           receiver_name: adm.name,
           receiver_role: 'Admin',
           subject: `📥 NEW CARE APPLICATION: ${application.applicantName} (${isCaregiver ? 'Caregiver Applicant' : 'Resident Care Admission Request'})`,
-          content: `A new ${isCaregiver ? 'Caregiver Job Application' : 'Resident Care Admission Application'} has been submitted through the web portal.\n\nAPPLICANT DETAILS:\n• Full Name: ${application.applicantName}\n• Email: ${applicantEmail}\n• Phone: ${application.phone || 'N/A'}\n• Category / Role: ${positionOrCategory}\n${application.sponsorName ? `• Sponsor / Relative: ${application.sponsorName}\n` : ''}${application.notes ? `• Notes / Medical: ${application.notes}\n` : ''}${application.receiptName || application.paymentReceipt ? `• Payment Receipt: Attached (${application.receiptName || 'Bank Transfer Receipt'})\n` : ''}\nNotification dispatched to: samanthasappy@gmail.com, itopaprop@gmail.com`,
+          content: `A new ${isCaregiver ? 'Caregiver Job Application' : 'Resident Care Admission Application'} has been submitted through the web portal.\n\nAPPLICANT DETAILS:\n• Full Name: ${application.applicantName}\n• Email: ${applicantEmail}\n• Phone: ${application.phone || 'N/A'}\n${application.whatsappNumber ? `• WhatsApp: ${application.whatsappNumber}\n` : ''}${application.cityState ? `• City / State: ${application.cityState}\n` : ''}• Category / Role: ${positionOrCategory}\n${application.sponsorName ? `• Sponsor / Relative: ${application.sponsorName}\n` : ''}${application.notes ? `• Notes / Medical: ${application.notes}\n` : ''}${application.receiptName || application.paymentReceipt ? `• Payment Receipt: Attached (${application.receiptName || 'Bank Transfer Receipt'})\n` : ''}\nNotification dispatched to: samanthasappy@gmail.com, itopaprop@gmail.com`,
           attachment_url: application.receiptUrl || application.photoUrl || null,
           attachment_name: application.receiptName || null,
           is_read: false,
@@ -2140,6 +2232,26 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
         applicantName: application.applicantName,
         email: applicantEmail,
         phone: application.phone || '',
+        whatsappNumber: application.whatsappNumber,
+        dateOfBirth: application.dateOfBirth,
+        gender: application.gender,
+        residentialAddress: application.residentialAddress,
+        cityState: application.cityState,
+        nationality: application.nationality,
+        highestQualification: application.highestQualification,
+        institutionName: application.institutionName,
+        courseOfStudy: application.courseOfStudy,
+        graduationYear: application.graduationYear,
+        professionalQualifications: application.professionalQualifications,
+        relevantCertifications: application.relevantCertifications,
+        hasPreviousCareExperience: application.hasPreviousCareExperience,
+        previousEmployer: application.previousEmployer,
+        previousJobTitle: application.previousJobTitle,
+        yearsOfExperience: application.yearsOfExperience,
+        previousResponsibilities: application.previousResponsibilities,
+        reasonForLeaving: application.reasonForLeaving,
+        uploadedDocNames: Array.isArray(application.uploadedDocNames) ? application.uploadedDocNames : undefined,
+        references: Array.isArray(application.references) ? application.references : undefined,
         appType: isCaregiver ? 'caregiver' : 'resident',
         positionOrCategory,
         notes: application.experience || application.notes || application.medicalHistory,

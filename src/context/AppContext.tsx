@@ -12,6 +12,7 @@ import {
   JobVacancy,
   GalleryItem,
   ApplicationSubmission,
+  ApplicationDocument,
   CareCategory
 } from '../types';
 import { 
@@ -2871,6 +2872,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // CARE & JOB APPLICATIONS (WITH SUPABASE STORAGE & DATABASE)
   // ============================================================================
 
+  const uploadDataUrlToServer = async (
+    dataUrl: string | undefined,
+    fileName: string,
+    mimeType?: string
+  ): Promise<string | undefined> => {
+    if (!dataUrl || !dataUrl.startsWith('data:')) return dataUrl;
+    try {
+      const res = await fetch('/api/uploads/document', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName, dataUrl, mimeType }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.url) return json.url;
+      }
+    } catch (err) {
+      console.warn('Server document upload notice:', err);
+    }
+    try {
+      const { url } = await uploadToStorage('documents', 'applicants', dataUrl, fileName);
+      if (url) return url;
+    } catch {
+      // ignore
+    }
+    return dataUrl;
+  };
+
+  const compactDocForFirestore = (docVal: any): any => {
+    if (!docVal || typeof docVal !== 'object') return docVal;
+    if (typeof docVal.url === 'string' && docVal.url.startsWith('data:') && docVal.url.length > 150000) {
+      return { ...docVal, url: '' };
+    }
+    return docVal;
+  };
+
   const submitApplication = async (appData: Omit<ApplicationSubmission, 'id' | 'createdAt' | 'status'>): Promise<ApplicationSubmission> => {
     const cleanEmail = (appData.email || '').trim().toLowerCase();
     const cleanPhone = (appData.phone || '').trim();
@@ -2898,40 +2935,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const appUUID = generateUUID();
     const createdAt = new Date().toISOString().replace('T', ' ').slice(0, 16);
 
-    // 1. Upload applicant photo to documents/avatars bucket (resilient)
-    let photoUrl = appData.photoUrl;
-    if (appData.photoUrl?.startsWith('data:')) {
-      try {
-        const { url } = await uploadToStorage('documents', 'applicants', appData.photoUrl, `${appUUID}_applicant.jpg`);
-        if (url) photoUrl = url;
-      } catch (uploadErr) {
-        console.warn('Applicant photo upload note (using raw preview):', uploadErr);
-      }
+    // 1. Upload Section 4 Documents (passportPhoto, cv, educational/professional/training certs, validId)
+    const inputDocs = appData.documents || {};
+    const processDoc = async (docItem: ApplicationDocument | undefined, fallbackName: string): Promise<ApplicationDocument | undefined> => {
+      if (!docItem || !docItem.url) return undefined;
+      const uploadedUrl = await uploadDataUrlToServer(docItem.url, docItem.name || fallbackName, docItem.mimeType);
+      return {
+        ...docItem,
+        url: uploadedUrl || docItem.url,
+      };
+    };
+
+    const [
+      passportPhotoDoc,
+      cvDoc,
+      eduCertDoc,
+      profCertDoc,
+      trainingCertDoc,
+      validIdDoc,
+    ] = await Promise.all([
+      processDoc(inputDocs.passportPhoto, `${appUUID}_passport.jpg`),
+      processDoc(inputDocs.cv, `${appUUID}_cv.pdf`),
+      processDoc(inputDocs.educationalCertificates, `${appUUID}_educational_certs`),
+      processDoc(inputDocs.professionalCertificates, `${appUUID}_professional_certs`),
+      processDoc(inputDocs.trainingCertificates, `${appUUID}_training_certs`),
+      processDoc(inputDocs.validId, `${appUUID}_valid_id`),
+    ]);
+
+    const processedDocuments: ApplicationSubmission['documents'] = {
+      ...(passportPhotoDoc ? { passportPhoto: passportPhotoDoc } : {}),
+      ...(cvDoc ? { cv: cvDoc } : {}),
+      ...(eduCertDoc ? { educationalCertificates: eduCertDoc } : {}),
+      ...(profCertDoc ? { professionalCertificates: profCertDoc } : {}),
+      ...(trainingCertDoc ? { trainingCertificates: trainingCertDoc } : {}),
+      ...(validIdDoc ? { validId: validIdDoc } : {}),
+    };
+
+    // 2. Upload applicant photo (fallback to passportPhotoDoc) & payment receipt
+    let photoUrl = passportPhotoDoc?.url || appData.photoUrl;
+    if (photoUrl?.startsWith('data:')) {
+      photoUrl = await uploadDataUrlToServer(photoUrl, `${appUUID}_applicant.jpg`, 'image/jpeg');
     }
 
-    // 2. Upload payment receipt to documents/receipts bucket (resilient)
     let receiptUrl = appData.receiptUrl;
-    if (appData.receiptUrl?.startsWith('data:')) {
-      try {
-        const { url } = await uploadToStorage('documents', 'receipts', appData.receiptUrl, `${appUUID}_receipt.jpg`);
-        if (url) receiptUrl = url;
-      } catch (uploadErr) {
-        console.warn('Receipt upload note (using raw preview):', uploadErr);
-      }
+    if (receiptUrl?.startsWith('data:')) {
+      receiptUrl = await uploadDataUrlToServer(receiptUrl, appData.receiptName || `${appUUID}_receipt.jpg`);
     }
 
-    // 3. Upload reference/guarantor documents (resilient)
+    // 3. Upload reference/guarantor documents
     const rawRefs = Array.isArray(appData.references) ? appData.references : [];
     const processedReferences = await Promise.all(
       rawRefs.map(async (ref, idx) => {
         let refPhotoUrl = ref.photoUrl;
         if (ref.photoUrl?.startsWith('data:')) {
-          try {
-            const { url } = await uploadToStorage('documents', 'guarantors', ref.photoUrl, `${appUUID}_ref_${idx + 1}.jpg`);
-            if (url) refPhotoUrl = url;
-          } catch (uploadErr) {
-            console.warn('Ref photo upload note:', uploadErr);
-          }
+          refPhotoUrl = await uploadDataUrlToServer(ref.photoUrl, `${appUUID}_ref_${idx + 1}.jpg`, 'image/jpeg');
         }
         return {
           ...ref,
@@ -2943,6 +3000,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newSubmission: ApplicationSubmission = {
       ...appData,
       photoUrl,
+      cvUrl: cvDoc?.url || appData.cvUrl,
+      cvName: cvDoc?.name || appData.cvName,
+      documents: Object.keys(processedDocuments).length > 0 ? processedDocuments : appData.documents,
       receiptUrl,
       receiptName: appData.receiptName,
       references: processedReferences,
@@ -2954,8 +3014,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 4. Update local state immediately
     setApplications(prev => [newSubmission, ...prev]);
 
-    // 5. Save to Firestore (real-time sync)
-    setDoc(doc(db, 'applications', newSubmission.id), sanitizeForFirestore(newSubmission), { merge: true }).catch((fsErr) => {
+    // 5. Save to Firestore (guard against 1MB limit if any raw base64 remains)
+    const firestoreSubmission: ApplicationSubmission = {
+      ...newSubmission,
+      photoUrl: typeof newSubmission.photoUrl === 'string' && newSubmission.photoUrl.startsWith('data:') && newSubmission.photoUrl.length > 150000 ? undefined : newSubmission.photoUrl,
+      receiptUrl: typeof newSubmission.receiptUrl === 'string' && newSubmission.receiptUrl.startsWith('data:') && newSubmission.receiptUrl.length > 150000 ? undefined : newSubmission.receiptUrl,
+      cvUrl: typeof newSubmission.cvUrl === 'string' && newSubmission.cvUrl.startsWith('data:') && newSubmission.cvUrl.length > 150000 ? undefined : newSubmission.cvUrl,
+      documents: newSubmission.documents
+        ? {
+            ...(newSubmission.documents.passportPhoto ? { passportPhoto: compactDocForFirestore(newSubmission.documents.passportPhoto) } : {}),
+            ...(newSubmission.documents.cv ? { cv: compactDocForFirestore(newSubmission.documents.cv) } : {}),
+            ...(newSubmission.documents.educationalCertificates ? { educationalCertificates: compactDocForFirestore(newSubmission.documents.educationalCertificates) } : {}),
+            ...(newSubmission.documents.professionalCertificates ? { professionalCertificates: compactDocForFirestore(newSubmission.documents.professionalCertificates) } : {}),
+            ...(newSubmission.documents.trainingCertificates ? { trainingCertificates: compactDocForFirestore(newSubmission.documents.trainingCertificates) } : {}),
+            ...(newSubmission.documents.validId ? { validId: compactDocForFirestore(newSubmission.documents.validId) } : {}),
+          }
+        : undefined,
+    };
+
+    setDoc(doc(db, 'applications', newSubmission.id), sanitizeForFirestore(firestoreSubmission), { merge: true }).catch((fsErr) => {
       console.warn('Firestore application insert notice:', fsErr);
     });
 
@@ -2982,11 +3059,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 8. Dispatch Exactly One Dashboard Inbox Notification to Admin (Deterministic ID prevents duplicates)
     const refsFormatted = processedReferences
-      .map((r, idx) => `• Reference ${idx + 1}: ${r.name || 'N/A'} (${r.relationship || 'N/A'})\n  Phone: ${r.phone || 'N/A'} | Email: ${r.email || 'N/A'}${r.photoUrl ? ' | [Document Photo Attached]' : ''}`)
+      .map((r, idx) => `• Reference ${idx + 1}: ${r.name || 'N/A'} (${r.relationship || 'N/A'}${r.organisation ? ` at ${r.organisation}` : ''})\n  Phone: ${r.phone || 'N/A'} | Email: ${r.email || 'N/A'}${r.photoUrl ? ' | [Document Photo Attached]' : ''}`)
       .join('\n\n');
+
+    const uploadedDocLabels = [
+      processedDocuments.passportPhoto ? `Passport Photo (${processedDocuments.passportPhoto.name})` : null,
+      processedDocuments.cv ? `CV (${processedDocuments.cv.name})` : null,
+      processedDocuments.educationalCertificates ? `Educational Certificates (${processedDocuments.educationalCertificates.name})` : null,
+      processedDocuments.professionalCertificates ? `Professional Certificates (${processedDocuments.professionalCertificates.name})` : null,
+      processedDocuments.trainingCertificates ? `Training Certificates (${processedDocuments.trainingCertificates.name})` : null,
+      processedDocuments.validId ? `Valid ID (${processedDocuments.validId.name})` : null,
+    ].filter(Boolean) as string[];
 
     const appTitle = appData.type === 'caregiver' ? 'Caregiver / Staff Job Application' : 'Resident Care Admission Application';
     const adminAppNotifId = `notif_app_${newSubmission.id || (appData.email || 'app').replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+    const caregiverSectionsSummary = appData.type === 'caregiver'
+      ? `\nSECTION 1 – PERSONAL INFORMATION:\n• Full Name: ${appData.fullName}\n${appData.dateOfBirth ? `• Date of Birth: ${appData.dateOfBirth}\n` : ''}${appData.gender ? `• Gender: ${appData.gender}\n` : ''}• Phone: ${appData.phone}\n${appData.whatsappNumber ? `• WhatsApp: ${appData.whatsappNumber}\n` : ''}• Email: ${appData.email}\n${appData.residentialAddress ? `• Residential Address: ${appData.residentialAddress}\n` : ''}${appData.cityState ? `• City / State: ${appData.cityState}\n` : ''}${appData.nationality ? `• Nationality: ${appData.nationality}\n` : ''}• Position Applied For: ${appData.positionOrCategory}\n\nSECTION 2 – EDUCATIONAL BACKGROUND:\n• Highest Qualification: ${appData.highestQualification || 'N/A'}\n• Institution: ${appData.institutionName || 'N/A'}\n• Course of Study: ${appData.courseOfStudy || 'N/A'}\n• Graduation Year: ${appData.graduationYear || 'N/A'}\n• Professional Qualifications: ${appData.professionalQualifications || 'N/A'}\n• Relevant Certifications: ${appData.relevantCertifications || 'N/A'}\n\nSECTION 3 – WORK EXPERIENCE:\n• Previous Caregiving / Healthcare Experience: ${appData.hasPreviousCareExperience || 'N/A'}\n${appData.previousEmployer ? `• Previous Employer: ${appData.previousEmployer}\n` : ''}${appData.previousJobTitle ? `• Job Title: ${appData.previousJobTitle}\n` : ''}${appData.yearsOfExperience ? `• Years of Experience: ${appData.yearsOfExperience}\n` : ''}${appData.previousResponsibilities ? `• Previous Responsibilities: ${appData.previousResponsibilities}\n` : ''}${appData.reasonForLeaving ? `• Reason for Leaving: ${appData.reasonForLeaving}\n` : ''}${appData.notesOrStatement ? `• Additional Statement: ${appData.notesOrStatement}\n` : ''}\nSECTION 4 – DOCUMENT UPLOADS:\n${uploadedDocLabels.length > 0 ? uploadedDocLabels.map(d => `• ${d}`).join('\n') : '• None attached'}`
+      : `\nAPPLICANT FULL DETAILS:\n• Full Name: ${appData.fullName}\n• Email: ${appData.email}\n• Phone: ${appData.phone}\n• Care Category / Position: ${appData.positionOrCategory}\n${appData.sponsorName ? `• Sponsor / Next of Kin: ${appData.sponsorName}\n` : ''}${appData.notesOrStatement ? `• Medical / Qualification Notes: ${appData.notesOrStatement}\n` : ''}${photoUrl ? '• Applicant Photo: Attached\n' : ''}${receiptUrl ? `• Payment Receipt: Attached (${appData.receiptName || 'Bank Transfer Proof'})\n` : ''}`;
 
     const adminAppNotification: Message = {
       id: adminAppNotifId,
@@ -2997,8 +3087,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       receiverName: 'Managing Director & Admin',
       receiverRole: 'Admin' as UserRole,
       subject: `📥 NEW CARE APPLICATION: ${appData.fullName} (${appData.type === 'caregiver' ? 'Caregiver Applicant' : 'Resident Admission Request'})`,
-      content: `A new ${appTitle} has been submitted through the web portal.\n\nAPPLICANT FULL DETAILS:\n• Full Name: ${appData.fullName}\n• Email: ${appData.email}\n• Phone: ${appData.phone}\n• Care Category / Position: ${appData.positionOrCategory}\n${appData.sponsorName ? `• Sponsor / Next of Kin: ${appData.sponsorName}\n` : ''}${appData.notesOrStatement ? `• Medical / Qualification Notes: ${appData.notesOrStatement}\n` : ''}${photoUrl ? '• Applicant Photo: Attached\n' : ''}${receiptUrl ? `• Payment Receipt: Attached (${appData.receiptName || 'Bank Transfer Proof'})\n` : ''}\n\nATTACHED REFERENCES & GUARANTOR DOCUMENTS:\n${refsFormatted || 'None attached'}\n\nSubmitted on: ${createdAt}`,
-      attachmentUrl: receiptUrl || photoUrl || processedReferences[0]?.photoUrl,
+      content: `A new ${appTitle} has been submitted through the web portal.\n${caregiverSectionsSummary}\n\nSECTION 5 – REFERENCES:\n${refsFormatted || 'None attached'}\n\nSubmitted on: ${createdAt}`,
+      attachmentUrl: receiptUrl || photoUrl || processedDocuments.cv?.url || processedReferences[0]?.photoUrl,
       attachmentName: receiptUrl ? (appData.receiptName || `${appData.fullName.replace(/\s+/g, '_')}_Payment_Receipt.jpg`) : (photoUrl ? `${appData.fullName.replace(/\s+/g, '_')}_ID.jpg` : undefined),
       applicantPhotoUrl: photoUrl,
       references: processedReferences,
@@ -3022,14 +3112,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 9. Dispatch automated Email Notification and Receipt Confirmation
     try {
       invokeSubmitApplication({
+        id: newSubmission.id,
         applicantName: appData.fullName,
         email: appData.email,
         phone: appData.phone,
+        whatsappNumber: appData.whatsappNumber,
+        dateOfBirth: appData.dateOfBirth,
+        gender: appData.gender,
+        residentialAddress: appData.residentialAddress,
+        cityState: appData.cityState,
+        nationality: appData.nationality,
+        highestQualification: appData.highestQualification,
+        institutionName: appData.institutionName,
+        courseOfStudy: appData.courseOfStudy,
+        graduationYear: appData.graduationYear,
+        professionalQualifications: appData.professionalQualifications,
+        relevantCertifications: appData.relevantCertifications,
+        hasPreviousCareExperience: appData.hasPreviousCareExperience,
+        previousEmployer: appData.previousEmployer,
+        previousJobTitle: appData.previousJobTitle,
+        yearsOfExperience: appData.yearsOfExperience,
+        previousResponsibilities: appData.previousResponsibilities,
+        reasonForLeaving: appData.reasonForLeaving,
+        photoUrl,
+        documents: processedDocuments,
+        uploadedDocNames: uploadedDocLabels,
         type: appData.type,
         position: appData.positionOrCategory,
         careCategory: appData.positionOrCategory,
         notes: appData.notesOrStatement,
         paymentReceipt: !!receiptUrl,
+        receiptUrl,
         receiptName: appData.receiptName,
         sponsorName: appData.sponsorName,
         references: processedReferences,

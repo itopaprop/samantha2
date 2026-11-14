@@ -22,8 +22,14 @@ import {
   Loader2
 } from 'lucide-react';
 
+import {
+  CareerApplicationFields,
+  CareerFormState,
+  createInitialCareerFormState,
+} from '../forms/CareerApplicationFields';
+
 export const ApplyNowModal: React.FC = () => {
-  const { isApplyModalOpen, setIsApplyModalOpen, showToast, submitApplication } = useApp();
+  const { isApplyModalOpen, setIsApplyModalOpen, showToast, submitApplication, jobs } = useApp();
   const [appType, setAppType] = useState<'caregiver' | 'resident'>('caregiver');
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -36,7 +42,7 @@ export const ApplyNowModal: React.FC = () => {
   const feeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const feeCountdownRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Applicant Photo State
+  // Applicant Photo State (Resident Care Admission)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   // Receipt Attachment State (Resident Care Admission)
@@ -44,20 +50,34 @@ export const ApplyNowModal: React.FC = () => {
   const [receiptFileName, setReceiptFileName] = useState<string | null>(null);
   const [receiptFileType, setReceiptFileType] = useState<string | null>(null);
 
-  // Common & Caregiver Fields
+  // Resident Admission Fields
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  
-  // Caregiver Specific
-  const [position, setPosition] = useState('Senior Care Assistant');
-  const [experience, setExperience] = useState('3+ Years');
-  const [statement, setStatement] = useState('');
-
-  // Resident Specific
   const [sponsorName, setSponsorName] = useState('');
   const [careCategory, setCareCategory] = useState<'Elderly Residential' | 'Dementia Care' | 'Respite Care' | 'Nursing Care'>('Dementia Care');
   const [medicalNotes, setMedicalNotes] = useState('');
+
+  // Caregiver / Staff 5-Section Application State
+  const [careerForm, setCareerForm] = useState<CareerFormState>(() =>
+    createInitialCareerFormState('Senior Care Assistant')
+  );
+
+  const caregiverPositionOptions = React.useMemo(() => {
+    const jobTitles = (jobs || []).map((j) => j.title);
+    return [
+      ...jobTitles,
+      'Senior Care Assistant',
+      'Registered General Nurse (RGN)',
+      'Night Care Specialist',
+      'Dementia Care Specialist',
+      'Activities & Wellbeing Lead',
+      'Healthcare Support Worker',
+      'Caregiver',
+      'Child Care Assistant',
+      'Healthcare Administrator',
+    ];
+  }, [jobs]);
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -133,9 +153,6 @@ export const ApplyNowModal: React.FC = () => {
     setFullName('');
     setEmail('');
     setPhone('');
-    setPosition('Senior Care Assistant');
-    setExperience('3+ Years');
-    setStatement('');
     setSponsorName('');
     setCareCategory('Dementia Care');
     setMedicalNotes('');
@@ -144,6 +161,7 @@ export const ApplyNowModal: React.FC = () => {
     setReceiptFileName(null);
     setReceiptFileType(null);
     setPayLaterWhatsApp(false);
+    setCareerForm(createInitialCareerFormState('Senior Care Assistant'));
     setIsSubmitting(false);
     setSubmitted(false);
   };
@@ -167,21 +185,86 @@ export const ApplyNowModal: React.FC = () => {
       return;
     }
 
+    if (appType === 'caregiver') {
+      if (!careerForm.passportPhoto?.url) {
+        showToast('Please upload your Recent Passport Photograph in Section 4.');
+        return;
+      }
+      if (!careerForm.cv?.url) {
+        showToast('Please attach your Curriculum Vitae (CV) in Section 4.');
+        return;
+      }
+    }
+
     try {
       setIsSubmitting(true);
-      await submitApplication({
-        type: appType,
-        fullName: fullName || (appType === 'caregiver' ? 'Caregiver Applicant' : 'Resident Applicant'),
-        email: email || 'applicant@samanthasappy.com',
-        phone: phone || '+234 706 933 2193',
-        photoUrl: photoPreview || undefined,
-        receiptUrl: (appType === 'resident' && receiptPreview) ? receiptPreview : undefined,
-        receiptName: (appType === 'resident' && receiptFileName) ? receiptFileName : (payLaterWhatsApp ? 'Payment Confirmation via WhatsApp (+234 706 933 2193)' : undefined),
-        positionOrCategory: appType === 'caregiver' ? position : careCategory,
-        notesOrStatement: appType === 'caregiver' ? `${experience} • ${statement}` : (payLaterWhatsApp ? `${medicalNotes || 'Resident Care Admission Request'}\n[Payment receipt will be shared via WhatsApp / In-person verification]` : (medicalNotes || 'Resident Care Admission Request')),
-        sponsorName: appType === 'resident' ? sponsorName : undefined,
-        references: [],
-      });
+      if (appType === 'caregiver') {
+        const formattedRefs = [careerForm.ref1, careerForm.ref2]
+          .filter((r) => r.name.trim() !== '')
+          .map((r) => ({
+            name: r.name.trim(),
+            relationship: r.relationship.trim(),
+            organisation: r.organisation.trim() || undefined,
+            phone: r.phone.trim(),
+            email: r.email.trim() || undefined,
+            photoUrl: r.photoUrl || undefined,
+          }));
+
+        await submitApplication({
+          type: 'caregiver',
+          fullName: careerForm.fullName.trim() || 'Caregiver Applicant',
+          email: careerForm.email.trim(),
+          phone: careerForm.phone.trim(),
+          dateOfBirth: careerForm.dateOfBirth,
+          gender: careerForm.gender || undefined,
+          whatsappNumber: careerForm.whatsappNumber.trim() || undefined,
+          residentialAddress: careerForm.residentialAddress.trim(),
+          cityState: careerForm.cityState.trim(),
+          nationality: careerForm.nationality.trim() || undefined,
+          highestQualification: careerForm.highestQualification,
+          institutionName: careerForm.institutionName.trim(),
+          courseOfStudy: careerForm.courseOfStudy.trim(),
+          graduationYear: careerForm.graduationYear.trim(),
+          professionalQualifications: careerForm.professionalQualifications.trim() || undefined,
+          relevantCertifications: careerForm.relevantCertifications.trim() || undefined,
+          hasPreviousCareExperience: careerForm.hasPreviousCareExperience,
+          previousEmployer: careerForm.previousEmployer.trim() || undefined,
+          previousJobTitle: careerForm.previousJobTitle.trim() || undefined,
+          yearsOfExperience: careerForm.yearsOfExperience.trim() || undefined,
+          previousResponsibilities: careerForm.previousResponsibilities.trim() || undefined,
+          reasonForLeaving: careerForm.reasonForLeaving.trim() || undefined,
+          photoUrl: careerForm.passportPhoto?.url,
+          cvUrl: careerForm.cv?.url,
+          cvName: careerForm.cv?.name,
+          documents: {
+            ...(careerForm.passportPhoto ? { passportPhoto: careerForm.passportPhoto } : {}),
+            ...(careerForm.cv ? { cv: careerForm.cv } : {}),
+            ...(careerForm.educationalCertificates ? { educationalCertificates: careerForm.educationalCertificates } : {}),
+            ...(careerForm.professionalCertificates ? { professionalCertificates: careerForm.professionalCertificates } : {}),
+            ...(careerForm.trainingCertificates ? { trainingCertificates: careerForm.trainingCertificates } : {}),
+            ...(careerForm.validId ? { validId: careerForm.validId } : {}),
+          },
+          positionOrCategory: careerForm.position,
+          notesOrStatement: careerForm.coverLetter.trim() || careerForm.previousResponsibilities.trim() || undefined,
+          references: formattedRefs,
+        });
+      } else {
+        await submitApplication({
+          type: 'resident',
+          fullName: fullName || 'Resident Applicant',
+          email: email || 'applicant@samanthasappy.com',
+          phone: phone || '+234 706 933 2193',
+          photoUrl: photoPreview || undefined,
+          receiptUrl: receiptPreview || undefined,
+          receiptName: receiptFileName || (payLaterWhatsApp ? 'Payment Confirmation via WhatsApp (+234 706 933 2193)' : undefined),
+          positionOrCategory: careCategory,
+          notesOrStatement: payLaterWhatsApp
+            ? `${medicalNotes || 'Resident Care Admission Request'}\n[Payment receipt will be shared via WhatsApp / In-person verification]`
+            : (medicalNotes || 'Resident Care Admission Request'),
+          sponsorName,
+          references: [],
+        });
+      }
 
       setSubmitted(true);
       if (appType === 'caregiver') {
@@ -192,7 +275,7 @@ export const ApplyNowModal: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Submission error:', err);
-      showToast('Failed to complete submission. Please try again.');
+      showToast(err?.message || 'Failed to complete submission. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -202,7 +285,7 @@ export const ApplyNowModal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-100 max-h-[92vh] flex flex-col overflow-hidden">
+      <div className={`relative w-full ${appType === 'caregiver' ? 'max-w-3xl' : 'max-w-2xl'} bg-white rounded-2xl shadow-2xl border border-slate-100 max-h-[92vh] flex flex-col overflow-hidden`}>
         
         {/* Modal Header */}
         <div className="bg-gradient-to-r from-sky-800 via-teal-800 to-sky-900 px-5 sm:px-6 py-4 text-white flex items-center justify-between shrink-0">
@@ -237,7 +320,7 @@ export const ApplyNowModal: React.FC = () => {
                   {appType === 'resident' ? 'Resident Care Application Submitted Successfully!' : 'Caregiver Application Submitted!'}
                 </h3>
                 <p className="text-sm text-slate-600 max-w-md mx-auto">
-                  Thank you, <span className="font-semibold text-slate-900">{fullName}</span>. Your {appType === 'caregiver' ? 'caregiver job application' : 'resident care admission request'} has been safely logged with our admin team.
+                  Thank you, <span className="font-semibold text-slate-900">{appType === 'caregiver' ? careerForm.fullName : fullName}</span>. Your {appType === 'caregiver' ? 'caregiver job application' : 'resident care admission request'} has been safely logged with our admin team.
                 </p>
 
                 {/* Dispatch Status Badges */}
@@ -458,277 +541,200 @@ export const ApplyNowModal: React.FC = () => {
                 </div>
               )}
 
-              {/* Photo Upload Section & Mini Bank Account Details Card */}
-              {appType === 'resident' ? (
-                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-stretch">
-                    {/* Left: Resident Photograph / ID */}
-                    <div className="md:col-span-6 flex flex-col justify-between space-y-2">
-                      <label className="block text-xs font-bold text-slate-800">
-                        Resident Photograph / ID *
-                      </label>
-                      <div className="flex items-center gap-3">
-                        <div className="w-18 h-18 rounded-2xl border-2 border-dashed border-slate-300 bg-white flex flex-col items-center justify-center overflow-hidden shrink-0 relative group">
-                          {photoPreview ? (
-                            <>
-                              <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
-                              <button
-                                type="button"
-                                onClick={() => setPhotoPreview(null)}
-                                className="absolute inset-0 bg-slate-900/60 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
-                                title="Remove photo"
-                              >
-                                <Trash2 className="w-4 h-4 text-red-400" />
-                              </button>
-                            </>
-                          ) : (
-                            <div className="text-center p-1.5 text-slate-400">
-                              <ImageIcon className="w-5 h-5 mx-auto mb-0.5 text-slate-300" />
-                              <span className="text-[9px]">No Photo</span>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="space-y-1 flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-700 hover:bg-sky-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors">
-                              <Upload className="w-3.5 h-3.5" />
-                              <span>Attach Photograph</span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={handlePhotoUpload}
-                                className="hidden"
-                              />
-                            </label>
-                            {photoPreview && (
-                              <button
-                                type="button"
-                                onClick={() => setPhotoPreview(null)}
-                                className="px-2 py-1 text-[11px] text-red-600 hover:bg-red-50 rounded-lg border border-red-200 cursor-pointer"
-                              >
-                                Remove
-                              </button>
+              {/* Caregiver 5-Section Application vs Resident Care Admission */}
+              {appType === 'caregiver' ? (
+                <CareerApplicationFields
+                  form={careerForm}
+                  setForm={setCareerForm}
+                  positionOptions={caregiverPositionOptions}
+                  compact
+                  onFileError={(msg) => showToast(msg)}
+                />
+              ) : (
+                <>
+                  {/* Photo Upload Section & Mini Bank Account Details Card */}
+                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-stretch">
+                      {/* Left: Resident Photograph / ID */}
+                      <div className="md:col-span-6 flex flex-col justify-between space-y-2">
+                        <label className="block text-xs font-bold text-slate-800">
+                          Resident Photograph / ID *
+                        </label>
+                        <div className="flex items-center gap-3">
+                          <div className="w-18 h-18 rounded-2xl border-2 border-dashed border-slate-300 bg-white flex flex-col items-center justify-center overflow-hidden shrink-0 relative group">
+                            {photoPreview ? (
+                              <>
+                                <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
+                                <button
+                                  type="button"
+                                  onClick={() => setPhotoPreview(null)}
+                                  className="absolute inset-0 bg-slate-900/60 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                                  title="Remove photo"
+                                >
+                                  <Trash2 className="w-4 h-4 text-red-400" />
+                                </button>
+                              </>
+                            ) : (
+                              <div className="text-center p-1.5 text-slate-400">
+                                <ImageIcon className="w-5 h-5 mx-auto mb-0.5 text-slate-300" />
+                                <span className="text-[9px]">No Photo</span>
+                              </div>
                             )}
                           </div>
-                          <p className="text-[10px] text-slate-500 leading-tight">
-                            Upload recent passport photograph or ID photo (PNG, JPG). Max 5MB.
-                          </p>
+
+                          <div className="space-y-1 flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-700 hover:bg-sky-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors">
+                                <Upload className="w-3.5 h-3.5" />
+                                <span>Attach Photograph</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={handlePhotoUpload}
+                                  className="hidden"
+                                />
+                              </label>
+                              {photoPreview && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPhotoPreview(null)}
+                                  className="px-2 py-1 text-[11px] text-red-600 hover:bg-red-50 rounded-lg border border-red-200 cursor-pointer"
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-500 leading-tight">
+                              Upload recent passport photograph or ID photo (PNG, JPG). Max 5MB.
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Right: Mini Bank Account Details Card */}
-                    <div className="md:col-span-6 p-3 bg-gradient-to-br from-amber-50/95 via-orange-50/60 to-amber-50/90 rounded-xl border border-amber-200/90 shadow-2xs space-y-2 flex flex-col justify-center">
-                      <div className="flex items-center justify-between gap-1 border-b border-amber-200/80 pb-1.5">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <Building2 className="w-3.5 h-3.5 text-amber-800 shrink-0" />
-                          <span className="text-[11px] font-bold text-amber-950 uppercase tracking-wide">
-                            Official Bank Account Details
+                      {/* Right: Mini Bank Account Details Card */}
+                      <div className="md:col-span-6 p-3 bg-gradient-to-br from-amber-50/95 via-orange-50/60 to-amber-50/90 rounded-xl border border-amber-200/90 shadow-2xs space-y-2 flex flex-col justify-center">
+                        <div className="flex items-center justify-between gap-1 border-b border-amber-200/80 pb-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Building2 className="w-3.5 h-3.5 text-amber-800 shrink-0" />
+                            <span className="text-[11px] font-bold text-amber-950 uppercase tracking-wide">
+                              Official Bank Account Details
+                            </span>
+                          </div>
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-200/80 text-amber-900 rounded-md shrink-0">
+                            Verified
                           </span>
                         </div>
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-200/80 text-amber-900 rounded-md shrink-0">
-                          Verified
-                        </span>
-                      </div>
 
-                      <div className="space-y-1.5">
-                        {/* Account Name */}
-                        <div className="flex items-center justify-between gap-2 p-1.5 bg-white/95 rounded-lg border border-amber-200/80 shadow-2xs">
-                          <div className="min-w-0">
-                            <div className="text-[10px] font-semibold text-slate-500">Account Details / Name:</div>
-                            <div className="text-xs font-extrabold text-amber-950 truncate tracking-tight">Samanthasappy world concept</div>
+                        <div className="space-y-1.5">
+                          {/* Account Name */}
+                          <div className="flex items-center justify-between gap-2 p-1.5 bg-white/95 rounded-lg border border-amber-200/80 shadow-2xs">
+                            <div className="min-w-0">
+                              <div className="text-[10px] font-semibold text-slate-500">Account Details / Name:</div>
+                              <div className="text-xs font-extrabold text-amber-950 truncate tracking-tight">Samanthasappy world concept</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyAccount('Samanthasappy world concept', 100)}
+                              className="px-2.5 py-1 bg-amber-800 hover:bg-amber-900 text-white rounded-md text-[10px] font-bold flex items-center gap-1 shrink-0 transition-colors shadow-2xs cursor-pointer"
+                              title="Copy Account Name"
+                            >
+                              {copiedAcc === 100 ? <Check className="w-3 h-3 text-emerald-200" /> : <Copy className="w-3 h-3" />}
+                              <span>{copiedAcc === 100 ? 'Copied' : 'Copy'}</span>
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyAccount('Samanthasappy world concept', 100)}
-                            className="px-2.5 py-1 bg-amber-800 hover:bg-amber-900 text-white rounded-md text-[10px] font-bold flex items-center gap-1 shrink-0 transition-colors shadow-2xs cursor-pointer"
-                            title="Copy Account Name"
-                          >
-                            {copiedAcc === 100 ? <Check className="w-3 h-3 text-emerald-200" /> : <Copy className="w-3 h-3" />}
-                            <span>{copiedAcc === 100 ? 'Copied' : 'Copy'}</span>
-                          </button>
-                        </div>
 
-                        {/* Stanbic IBTC */}
-                        <div className="flex items-center justify-between gap-2 p-1.5 bg-white/95 rounded-lg border border-amber-200/70 shadow-2xs">
-                          <div className="min-w-0">
-                            <div className="text-[10px] font-semibold text-slate-600 truncate">Bank Stanbic IBTC account number:</div>
-                            <div className="text-xs font-extrabold font-mono text-slate-900 tracking-wide">0005392596</div>
+                          {/* Stanbic IBTC */}
+                          <div className="flex items-center justify-between gap-2 p-1.5 bg-white/95 rounded-lg border border-amber-200/70 shadow-2xs">
+                            <div className="min-w-0">
+                              <div className="text-[10px] font-semibold text-slate-600 truncate">Bank Stanbic IBTC account number:</div>
+                              <div className="text-xs font-extrabold font-mono text-slate-900 tracking-wide">0005392596</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyAccount('0005392596', 101)}
+                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-md text-[10px] font-bold flex items-center gap-1 shrink-0 transition-colors shadow-2xs cursor-pointer"
+                              title="Copy Stanbic IBTC Account Number"
+                            >
+                              {copiedAcc === 101 ? <Check className="w-3 h-3 text-emerald-200" /> : <Copy className="w-3 h-3" />}
+                              <span>{copiedAcc === 101 ? 'Copied' : 'Copy'}</span>
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyAccount('0005392596', 101)}
-                            className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-md text-[10px] font-bold flex items-center gap-1 shrink-0 transition-colors shadow-2xs cursor-pointer"
-                            title="Copy Stanbic IBTC Account Number"
-                          >
-                            {copiedAcc === 101 ? <Check className="w-3 h-3 text-emerald-200" /> : <Copy className="w-3 h-3" />}
-                            <span>{copiedAcc === 101 ? 'Copied' : 'Copy'}</span>
-                          </button>
-                        </div>
 
-                        {/* Wema Bank */}
-                        <div className="flex items-center justify-between gap-2 p-1.5 bg-white/95 rounded-lg border border-amber-200/70 shadow-2xs">
-                          <div className="min-w-0">
-                            <div className="text-[10px] font-semibold text-slate-600 truncate">Wema bank Account number:</div>
-                            <div className="text-xs font-extrabold font-mono text-slate-900 tracking-wide">0229796137</div>
+                          {/* Wema Bank */}
+                          <div className="flex items-center justify-between gap-2 p-1.5 bg-white/95 rounded-lg border border-amber-200/70 shadow-2xs">
+                            <div className="min-w-0">
+                              <div className="text-[10px] font-semibold text-slate-600 truncate">Wema bank Account number:</div>
+                              <div className="text-xs font-extrabold font-mono text-slate-900 tracking-wide">0229796137</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyAccount('0229796137', 102)}
+                              className="px-2.5 py-1 bg-amber-700 hover:bg-amber-800 text-white rounded-md text-[10px] font-bold flex items-center gap-1 shrink-0 transition-colors shadow-2xs cursor-pointer"
+                              title="Copy Wema Bank Account Number"
+                            >
+                              {copiedAcc === 102 ? <Check className="w-3 h-3 text-emerald-200" /> : <Copy className="w-3 h-3" />}
+                              <span>{copiedAcc === 102 ? 'Copied' : 'Copy'}</span>
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyAccount('0229796137', 102)}
-                            className="px-2.5 py-1 bg-amber-700 hover:bg-amber-800 text-white rounded-md text-[10px] font-bold flex items-center gap-1 shrink-0 transition-colors shadow-2xs cursor-pointer"
-                            title="Copy Wema Bank Account Number"
-                          >
-                            {copiedAcc === 102 ? <Check className="w-3 h-3 text-emerald-200" /> : <Copy className="w-3 h-3" />}
-                            <span>{copiedAcc === 102 ? 'Copied' : 'Copy'}</span>
-                          </button>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
-                  <label className="block text-xs font-bold text-slate-800 mb-2">
-                    Caregiver Applicant Photo *
-                  </label>
-                  <div className="flex items-center gap-4">
-                    <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-slate-300 bg-white flex flex-col items-center justify-center overflow-hidden shrink-0 relative group">
-                      {photoPreview ? (
-                        <>
-                          <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => setPhotoPreview(null)}
-                            className="absolute inset-0 bg-slate-900/60 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
-                            title="Remove photo"
-                          >
-                            <Trash2 className="w-5 h-5 text-red-400" />
-                          </button>
-                        </>
-                      ) : (
-                        <div className="text-center p-2 text-slate-400">
-                          <ImageIcon className="w-6 h-6 mx-auto mb-1 text-slate-300" />
-                          <span className="text-[10px]">No Photo</span>
-                        </div>
-                      )}
+
+                  {/* Resident Form Fields */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Resident Full Name *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Resident Full Name"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
+                      />
                     </div>
 
-                    <div className="space-y-1.5 flex-1">
-                      <div className="flex items-center gap-2">
-                        <label className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-1.5 bg-sky-700 hover:bg-sky-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors">
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>Attach Photograph</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handlePhotoUpload}
-                            className="hidden"
-                          />
-                        </label>
-                        {photoPreview && (
-                          <button
-                            type="button"
-                            onClick={() => setPhotoPreview(null)}
-                            className="px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-xl border border-red-200 cursor-pointer"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-500">
-                        Upload recent passport photograph or ID photo (PNG, JPG). Max 5MB.
-                      </p>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Sponsor / Contact Email *</label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="contact@example.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Phone Number *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="+44 7700 900123"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Next of Kin / Sponsor Name *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Robert Thompson (Son)"
+                        value={sponsorName}
+                        onChange={(e) => setSponsorName(e.target.value)}
+                        className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
+                      />
                     </div>
                   </div>
-                </div>
+                </>
               )}
 
-              {/* Form Fields: Caregiver vs Resident */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {appType === 'caregiver' ? 'Full Name *' : 'Resident Full Name *'}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder={appType === 'caregiver' ? 'e.g. Applicant Full Name' : 'e.g. Resident Full Name'}
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {appType === 'caregiver' ? 'Email Address *' : 'Sponsor / Contact Email *'}
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="contact@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Phone Number *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="+44 7700 900123"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
-
-                {appType === 'caregiver' ? (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Role / Position Applied For *</label>
-                    <select
-                      value={position}
-                      onChange={(e) => setPosition(e.target.value)}
-                      className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500 bg-white"
-                    >
-                      <option value="Senior Care Assistant">Senior Care Assistant</option>
-                      <option value="Registered General Nurse (RGN)">Registered General Nurse (RGN)</option>
-                      <option value="Night Care Specialist">Night Care Specialist</option>
-                      <option value="Dementia Care Specialist">Dementia Care Specialist</option>
-                      <option value="Activities & Wellbeing Lead">Activities & Wellbeing Lead</option>
-                      <option value="Healthcare Support Worker">Healthcare Support Worker</option>
-                    </select>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Next of Kin / Sponsor Name *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Robert Thompson (Son)"
-                      value={sponsorName}
-                      onChange={(e) => setSponsorName(e.target.value)}
-                      className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {appType === 'caregiver' ? (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Experience & Qualifications Summary</label>
-                  <textarea
-                    rows={2}
-                    placeholder="Briefly state your relevant care experience, certifications (NVQ, DBS, First Aid) and availability..."
-                    value={statement}
-                    onChange={(e) => setStatement(e.target.value)}
-                    className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                  ></textarea>
-                </div>
-              ) : (
+              {appType === 'resident' && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>

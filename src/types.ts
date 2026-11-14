@@ -18,9 +18,17 @@ export type CareCategory =
 export interface Reference {
   name: string;
   relationship: string;
+  organisation?: string;
   phone: string;
   email?: string;
   photoUrl?: string;
+}
+
+export interface ApplicationDocument {
+  name: string;
+  url: string;
+  mimeType?: string;
+  size?: number;
 }
 
 export interface User {
@@ -177,7 +185,39 @@ export interface ApplicationSubmission {
   fullName: string;
   email: string;
   phone: string;
+  // Section 1 – Personal Information
+  dateOfBirth?: string;
+  gender?: string;
+  whatsappNumber?: string;
+  residentialAddress?: string;
+  cityState?: string;
+  nationality?: string;
+  // Section 2 – Educational Background
+  highestQualification?: string;
+  institutionName?: string;
+  courseOfStudy?: string;
+  graduationYear?: string;
+  professionalQualifications?: string;
+  relevantCertifications?: string;
+  // Section 3 – Work Experience
+  hasPreviousCareExperience?: 'Yes' | 'No' | string;
+  previousEmployer?: string;
+  previousJobTitle?: string;
+  yearsOfExperience?: string;
+  previousResponsibilities?: string;
+  reasonForLeaving?: string;
+  // Section 4 – Document Uploads
   photoUrl?: string;
+  cvUrl?: string;
+  cvName?: string;
+  documents?: {
+    passportPhoto?: ApplicationDocument;
+    cv?: ApplicationDocument;
+    educationalCertificates?: ApplicationDocument;
+    professionalCertificates?: ApplicationDocument;
+    trainingCertificates?: ApplicationDocument;
+    validId?: ApplicationDocument;
+  };
   receiptUrl?: string;
   receiptName?: string;
   positionOrCategory: string;

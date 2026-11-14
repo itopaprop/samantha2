@@ -6,17 +6,15 @@ import {
   GraduationCap, 
   CheckCircle2, 
   MapPin, 
-  Clock, 
   Send, 
-  Paperclip, 
-  Award,
   BookOpen,
-  Upload,
-  Image as ImageIcon,
-  Trash2,
-  Users,
   Loader2
 } from 'lucide-react';
+import {
+  CareerApplicationFields,
+  CareerFormState,
+  createInitialCareerFormState,
+} from '../components/forms/CareerApplicationFields';
 
 export const CareersPage: React.FC = () => {
   const { showToast, jobs, submitApplication, syncDatabase } = useApp();
@@ -27,44 +25,46 @@ export const CareersPage: React.FC = () => {
       syncDatabase().catch(() => {});
     }
   }, [syncDatabase]);
-  const [selectedPosition, setSelectedPosition] = useState<string>('Senior Care Assistant');
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [form, setForm] = useState<CareerFormState>(() =>
+    createInitialCareerFormState('Senior Care Assistant')
+  );
 
-  const [form, setForm] = useState({
-    fullName: '',
-    email: '',
-    phone: '',
-    address: '',
-    position: 'Senior Care Assistant',
-    coverLetter: '',
-    cvFile: null as File | null,
-    photoUrl: null as string | null,
-    ref1: { name: '', relationship: '', phone: '', email: '', photoUrl: null as string | null },
-    ref2: { name: '', relationship: '', phone: '', email: '', photoUrl: null as string | null },
-  });
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setForm(prev => ({ ...prev, photoUrl: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
-    }
-  };
+  const positionOptions = React.useMemo(() => {
+    const jobTitles = jobs.map((j) => j.title);
+    const trainingTitles = INITIAL_TRAINING_PROGRAMS.map((p) => `Trainee - ${p.title}`);
+    return [
+      ...jobTitles,
+      'Caregiver',
+      'Senior Care Assistant',
+      'Child Care Assistant',
+      'Registered Nurse (RN)',
+      'Healthcare Administrator',
+      ...trainingTitles,
+    ];
+  }, [jobs]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!form.passportPhoto?.url) {
+      showToast('Please upload your Recent Passport Photograph in Section 4.');
+      return;
+    }
+    if (!form.cv?.url) {
+      showToast('Please attach your Curriculum Vitae (CV) in Section 4.');
+      return;
+    }
+
     const formattedRefs = [form.ref1, form.ref2]
       .filter(r => r.name.trim() !== '')
       .map(r => ({
-        name: r.name,
-        relationship: r.relationship,
-        phone: r.phone,
-        email: r.email || undefined,
+        name: r.name.trim(),
+        relationship: r.relationship.trim(),
+        organisation: r.organisation.trim() || undefined,
+        phone: r.phone.trim(),
+        email: r.email.trim() || undefined,
         photoUrl: r.photoUrl || undefined,
       }));
 
@@ -72,34 +72,51 @@ export const CareersPage: React.FC = () => {
       setIsSubmitting(true);
       await submitApplication({
         type: 'caregiver',
-        fullName: form.fullName || 'Job Applicant',
-        email: form.email || 'applicant@samanthasappy.com',
-        phone: form.phone || '+234 706 933 2193',
-        photoUrl: form.photoUrl || undefined,
+        fullName: form.fullName.trim() || 'Job Applicant',
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        dateOfBirth: form.dateOfBirth,
+        gender: form.gender || undefined,
+        whatsappNumber: form.whatsappNumber.trim() || undefined,
+        residentialAddress: form.residentialAddress.trim(),
+        cityState: form.cityState.trim(),
+        nationality: form.nationality.trim() || undefined,
+        highestQualification: form.highestQualification,
+        institutionName: form.institutionName.trim(),
+        courseOfStudy: form.courseOfStudy.trim(),
+        graduationYear: form.graduationYear.trim(),
+        professionalQualifications: form.professionalQualifications.trim() || undefined,
+        relevantCertifications: form.relevantCertifications.trim() || undefined,
+        hasPreviousCareExperience: form.hasPreviousCareExperience,
+        previousEmployer: form.previousEmployer.trim() || undefined,
+        previousJobTitle: form.previousJobTitle.trim() || undefined,
+        yearsOfExperience: form.yearsOfExperience.trim() || undefined,
+        previousResponsibilities: form.previousResponsibilities.trim() || undefined,
+        reasonForLeaving: form.reasonForLeaving.trim() || undefined,
+        photoUrl: form.passportPhoto?.url,
+        cvUrl: form.cv?.url,
+        cvName: form.cv?.name,
+        documents: {
+          ...(form.passportPhoto ? { passportPhoto: form.passportPhoto } : {}),
+          ...(form.cv ? { cv: form.cv } : {}),
+          ...(form.educationalCertificates ? { educationalCertificates: form.educationalCertificates } : {}),
+          ...(form.professionalCertificates ? { professionalCertificates: form.professionalCertificates } : {}),
+          ...(form.trainingCertificates ? { trainingCertificates: form.trainingCertificates } : {}),
+          ...(form.validId ? { validId: form.validId } : {}),
+        },
         positionOrCategory: form.position,
-        notesOrStatement: form.coverLetter,
+        notesOrStatement: form.coverLetter.trim() || form.previousResponsibilities.trim() || undefined,
         references: formattedRefs,
       });
 
       setSubmitted(true);
       setTimeout(() => {
         setSubmitted(false);
-        setForm({
-          fullName: '',
-          email: '',
-          phone: '',
-          address: '',
-          position: 'Senior Care Assistant',
-          coverLetter: '',
-          cvFile: null,
-          photoUrl: null,
-          ref1: { name: '', relationship: '', phone: '', email: '', photoUrl: null },
-          ref2: { name: '', relationship: '', phone: '', email: '', photoUrl: null },
-        });
-      }, 3000);
+        setForm(createInitialCareerFormState('Senior Care Assistant'));
+      }, 3500);
     } catch (err: any) {
       console.error('Submission error:', err);
-      showToast('Error submitting application. Please try again.');
+      showToast(err?.message || 'Error submitting application. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -272,350 +289,13 @@ export const CareersPage: React.FC = () => {
               </p>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Applicant Photo / Image Holder */}
-              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
-                <label className="block text-xs font-bold text-slate-800 mb-2">Applicant Photo / Passport ID *</label>
-                <div className="flex items-center gap-4">
-                  <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-slate-300 bg-white flex flex-col items-center justify-center overflow-hidden shrink-0 relative group">
-                    {form.photoUrl ? (
-                      <>
-                        <img src={form.photoUrl} alt="Applicant photo preview" className="w-full h-full object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => setForm({ ...form, photoUrl: null })}
-                          className="absolute inset-0 bg-slate-900/60 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
-                          title="Remove photo"
-                        >
-                          <Trash2 className="w-5 h-5 text-red-400" />
-                        </button>
-                      </>
-                    ) : (
-                      <div className="text-center p-2 text-slate-400">
-                        <ImageIcon className="w-6 h-6 mx-auto mb-1 text-slate-300" />
-                        <span className="text-[10px]">No Photo</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5 flex-1">
-                    <div className="flex items-center gap-2">
-                      <label className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-1.5 bg-sky-700 hover:bg-sky-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors">
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>Upload Photo</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageChange}
-                          className="hidden"
-                        />
-                      </label>
-                      {form.photoUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setForm({ ...form, photoUrl: null })}
-                          className="px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-xl border border-red-200 cursor-pointer"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      Upload your recent passport-sized photograph or ID image (PNG, JPG). Max 5MB.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Eleanor Davis"
-                    value={form.fullName}
-                    onChange={e => setForm({ ...form, fullName: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address *</label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="eleanor@example.com"
-                    value={form.email}
-                    onChange={e => setForm({ ...form, email: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Phone Number *</label>
-                  <input
-                    type="tel"
-                    required
-                    placeholder="+44 7700 900123"
-                    value={form.phone}
-                    onChange={e => setForm({ ...form, phone: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Position Applied For *</label>
-                  <select
-                    value={form.position}
-                    onChange={e => setForm({ ...form, position: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                  >
-                    <option value="Caregiver">Caregiver</option>
-                    <option value="Senior Care Assistant">Senior Care Assistant</option>
-                    <option value="Child Care Assistant">Child Care Assistant</option>
-                    <option value="Registered Nurse (RN)">Nurse (RN)</option>
-                    <option value="Administrator">Healthcare Administrator</option>
-                    <option value="Trainee - Professional Caregiver Certification">Trainee - Professional Caregiver Certification</option>
-                    <option value="Trainee - Dementia Care Specialist">Trainee - Dementia Care Specialist</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Residential Address *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Street address, City, Postcode"
-                  value={form.address}
-                  onChange={e => setForm({ ...form, address: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Upload CV / Resume (PDF / Word) *</label>
-                <div className="flex items-center gap-3">
-                  <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium border border-slate-200">
-                    <Paperclip className="w-4 h-4 text-sky-600" />
-                    <span>{form.cvFile ? form.cvFile.name : 'Choose File to Attach'}</span>
-                    <input
-                      type="file"
-                      accept=".pdf,.doc,.docx"
-                      onChange={e => setForm({ ...form, cvFile: e.target.files ? e.target.files[0] : null })}
-                      className="hidden"
-                    />
-                  </label>
-                  {form.cvFile && (
-                    <span className="text-xs text-emerald-600 font-medium">CV Attached</span>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Cover Letter & Care Motivation</label>
-                <textarea
-                  rows={3}
-                  placeholder="Share why you are passionate about joining Samanthasappy Home..."
-                  value={form.coverLetter}
-                  onChange={e => setForm({ ...form, coverLetter: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                ></textarea>
-              </div>
-
-              {/* 2 References Section */}
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
-                <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5 uppercase tracking-wider text-sky-800">
-                  <Users className="w-4 h-4 text-sky-600" /> Professional & Character References (2 Required)
-                </h4>
-
-                {/* Reference 1 */}
-                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-2.5">
-                  <span className="text-[11px] font-bold text-sky-700 block">Reference 1 (Primary Employer / Line Manager)</span>
-                  
-                  {/* Reference 1 Image Holder */}
-                  <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200/80">
-                    <div className="w-12 h-12 rounded-lg border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden shrink-0 relative group">
-                      {form.ref1.photoUrl ? (
-                        <>
-                          <img src={form.ref1.photoUrl} alt="Ref 1" className="w-full h-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => setForm({ ...form, ref1: { ...form.ref1, photoUrl: null } })}
-                            className="absolute inset-0 bg-slate-900/60 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
-                            title="Remove photo"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                          </button>
-                        </>
-                      ) : (
-                        <ImageIcon className="w-4 h-4 text-slate-300" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <label className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold bg-sky-50 hover:bg-sky-100 text-sky-800 rounded-md border border-sky-200 transition-colors">
-                          <Upload className="w-3 h-3 text-sky-600" />
-                          <span>{form.ref1.photoUrl ? 'Change Photo/Doc' : 'Attach Ref Photo / Letter ID'}</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => setForm(f => ({ ...f, ref1: { ...f.ref1, photoUrl: reader.result as string } }));
-                                reader.readAsDataURL(file);
-                              }
-                            }}
-                            className="hidden"
-                          />
-                        </label>
-                        {form.ref1.photoUrl && (
-                          <button
-                            type="button"
-                            onClick={() => setForm({ ...form, ref1: { ...form.ref1, photoUrl: null } })}
-                            className="text-[10px] text-red-600 hover:underline"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Attach referee ID photo, passport copy or reference letter image</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="Referee Full Name *"
-                      value={form.ref1.name}
-                      onChange={e => setForm({ ...form, ref1: { ...form.ref1, name: e.target.value } })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                    <input
-                      type="text"
-                      required
-                      placeholder="Relationship / Role (e.g. Ward Manager) *"
-                      value={form.ref1.relationship}
-                      onChange={e => setForm({ ...form, ref1: { ...form.ref1, relationship: e.target.value } })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="Phone Number *"
-                      value={form.ref1.phone}
-                      onChange={e => setForm({ ...form, ref1: { ...form.ref1, phone: e.target.value } })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                    <input
-                      type="email"
-                      placeholder="Email Address"
-                      value={form.ref1.email}
-                      onChange={e => setForm({ ...form, ref1: { ...form.ref1, email: e.target.value } })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Reference 2 */}
-                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-2.5">
-                  <span className="text-[11px] font-bold text-sky-700 block">Reference 2 (Secondary Employer / Academic / Character Referee)</span>
-                  
-                  {/* Reference 2 Image Holder */}
-                  <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200/80">
-                    <div className="w-12 h-12 rounded-lg border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden shrink-0 relative group">
-                      {form.ref2.photoUrl ? (
-                        <>
-                          <img src={form.ref2.photoUrl} alt="Ref 2" className="w-full h-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => setForm({ ...form, ref2: { ...form.ref2, photoUrl: null } })}
-                            className="absolute inset-0 bg-slate-900/60 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
-                            title="Remove photo"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                          </button>
-                        </>
-                      ) : (
-                        <ImageIcon className="w-4 h-4 text-slate-300" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <label className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold bg-sky-50 hover:bg-sky-100 text-sky-800 rounded-md border border-sky-200 transition-colors">
-                          <Upload className="w-3 h-3 text-sky-600" />
-                          <span>{form.ref2.photoUrl ? 'Change Photo/Doc' : 'Attach Ref Photo / Letter ID'}</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => setForm(f => ({ ...f, ref2: { ...f.ref2, photoUrl: reader.result as string } }));
-                                reader.readAsDataURL(file);
-                              }
-                            }}
-                            className="hidden"
-                          />
-                        </label>
-                        {form.ref2.photoUrl && (
-                          <button
-                            type="button"
-                            onClick={() => setForm({ ...form, ref2: { ...form.ref2, photoUrl: null } })}
-                            className="text-[10px] text-red-600 hover:underline"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Attach referee ID photo, passport copy or reference letter image</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="Referee Full Name *"
-                      value={form.ref2.name}
-                      onChange={e => setForm({ ...form, ref2: { ...form.ref2, name: e.target.value } })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                    <input
-                      type="text"
-                      required
-                      placeholder="Relationship / Role (e.g. Tutor / Former Employer) *"
-                      value={form.ref2.relationship}
-                      onChange={e => setForm({ ...form, ref2: { ...form.ref2, relationship: e.target.value } })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="Phone Number *"
-                      value={form.ref2.phone}
-                      onChange={e => setForm({ ...form, ref2: { ...form.ref2, phone: e.target.value } })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                    <input
-                      type="email"
-                      placeholder="Email Address"
-                      value={form.ref2.email}
-                      onChange={e => setForm({ ...form, ref2: { ...form.ref2, email: e.target.value } })}
-                      className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-sky-500"
-                    />
-                  </div>
-                </div>
-              </div>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <CareerApplicationFields
+                form={form}
+                setForm={setForm}
+                positionOptions={positionOptions}
+                onFileError={(msg) => showToast(msg)}
+              />
 
               <div className="pt-2">
                 <button

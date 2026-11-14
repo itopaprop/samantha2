@@ -722,6 +722,26 @@ export function generateAdminNewApplicationNotificationEmail(data: {
   applicantName: string;
   email: string;
   phone: string;
+  whatsappNumber?: string;
+  dateOfBirth?: string;
+  gender?: string;
+  residentialAddress?: string;
+  cityState?: string;
+  nationality?: string;
+  highestQualification?: string;
+  institutionName?: string;
+  courseOfStudy?: string;
+  graduationYear?: string;
+  professionalQualifications?: string;
+  relevantCertifications?: string;
+  hasPreviousCareExperience?: string;
+  previousEmployer?: string;
+  previousJobTitle?: string;
+  yearsOfExperience?: string;
+  previousResponsibilities?: string;
+  reasonForLeaving?: string;
+  uploadedDocNames?: string[];
+  references?: Array<{ name: string; relationship: string; organisation?: string; phone: string; email?: string }>;
   appType: 'caregiver' | 'resident';
   positionOrCategory: string;
   notes?: string;
@@ -737,6 +757,21 @@ export function generateAdminNewApplicationNotificationEmail(data: {
   const dateStr = data.date || new Date().toISOString().replace('T', ' ').slice(0, 16);
   const subject = `📥 [Admin Alert] New ${isCaregiver ? 'Caregiver Job Application' : 'Resident Care Admission'}: ${data.applicantName}`;
 
+  const referencesHtml = Array.isArray(data.references) && data.references.length > 0
+    ? data.references.map((r, i) => `
+      <tr>
+        <td style="color: #64748b; font-weight: 600;">Reference ${i + 1}:</td>
+        <td style="color: #0f172a;">
+          <strong>${r.name}</strong> — ${r.relationship}${r.organisation ? ` (${r.organisation})` : ''}<br/>
+          <span style="font-size: 12px; color: #475569;">Tel: ${r.phone}${r.email ? ` | ${r.email}` : ''}</span>
+        </td>
+      </tr>`).join('')
+    : '';
+
+  const referencesText = Array.isArray(data.references) && data.references.length > 0
+    ? data.references.map((r, i) => `  ${i + 1}. ${r.name} (${r.relationship}${r.organisation ? `, ${r.organisation}` : ''}) | ${r.phone}${r.email ? ` | ${r.email}` : ''}`).join('\n')
+    : '';
+
   const html = `
 <!DOCTYPE html>
 <html>
@@ -749,7 +784,7 @@ export function generateAdminNewApplicationNotificationEmail(data: {
   <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; padding: 32px 16px;">
     <tr>
       <td align="center">
-        <table width="100%" max-width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
+        <table width="100%" max-width="640" cellpadding="0" cellspacing="0" style="max-width: 640px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
           <tr>
             <td style="background-color: #0f172a; padding: 28px 24px; text-align: center;">
               <div style="display: inline-block; padding: 6px 14px; background-color: #f59e0b; color: #ffffff; font-size: 11px; font-weight: 700; border-radius: 9999px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">
@@ -766,7 +801,7 @@ export function generateAdminNewApplicationNotificationEmail(data: {
           <tr>
             <td style="padding: 28px 24px;">
               <p style="margin: 0 0 16px 0; color: #334155; font-size: 14px;">
-                A new web application has been submitted through the Care Portal. An email receipt confirmation has been automatically sent to the applicant.
+                A new web application has been submitted through the ${facility} portal. An email receipt confirmation has been automatically sent to the applicant.
               </p>
 
               <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px;">
@@ -785,6 +820,8 @@ export function generateAdminNewApplicationNotificationEmail(data: {
                         <td style="color: #64748b; font-weight: 600;">${isCaregiver ? 'Target Role:' : 'Care Category:'}</td>
                         <td style="color: #0d9488; font-weight: 700;">${data.positionOrCategory}</td>
                       </tr>
+                      ${data.dateOfBirth ? `<tr><td style="color: #64748b; font-weight: 600;">Date of Birth:</td><td style="color: #0f172a;">${data.dateOfBirth}</td></tr>` : ''}
+                      ${data.gender ? `<tr><td style="color: #64748b; font-weight: 600;">Gender:</td><td style="color: #0f172a;">${data.gender}</td></tr>` : ''}
                       <tr>
                         <td style="color: #64748b; font-weight: 600;">Email:</td>
                         <td style="color: #0f172a; font-family: monospace;">${data.email}</td>
@@ -793,6 +830,15 @@ export function generateAdminNewApplicationNotificationEmail(data: {
                         <td style="color: #64748b; font-weight: 600;">Phone:</td>
                         <td style="color: #0f172a;">${data.phone}</td>
                       </tr>
+                      ${data.whatsappNumber ? `<tr><td style="color: #64748b; font-weight: 600;">WhatsApp:</td><td style="color: #0f172a;">${data.whatsappNumber}</td></tr>` : ''}
+                      ${data.residentialAddress ? `<tr><td style="color: #64748b; font-weight: 600;">Residential Address:</td><td style="color: #0f172a;">${data.residentialAddress}${data.cityState ? `, ${data.cityState}` : ''}</td></tr>` : ''}
+                      ${data.nationality ? `<tr><td style="color: #64748b; font-weight: 600;">Nationality:</td><td style="color: #0f172a;">${data.nationality}</td></tr>` : ''}
+                      ${data.highestQualification ? `<tr><td style="color: #64748b; font-weight: 600;">Education:</td><td style="color: #0f172a;">${data.highestQualification}${data.courseOfStudy ? ` in ${data.courseOfStudy}` : ''}${data.institutionName ? ` — ${data.institutionName}` : ''}${data.graduationYear ? ` (${data.graduationYear})` : ''}</td></tr>` : ''}
+                      ${data.professionalQualifications ? `<tr><td style="color: #64748b; font-weight: 600;">Professional Quals:</td><td style="color: #0f172a;">${data.professionalQualifications}</td></tr>` : ''}
+                      ${data.relevantCertifications ? `<tr><td style="color: #64748b; font-weight: 600;">Certifications:</td><td style="color: #0f172a;">${data.relevantCertifications}</td></tr>` : ''}
+                      ${data.hasPreviousCareExperience ? `<tr><td style="color: #64748b; font-weight: 600;">Care Experience:</td><td style="color: #0f172a;">${data.hasPreviousCareExperience}${data.yearsOfExperience ? ` (${data.yearsOfExperience})` : ''}${data.previousEmployer ? ` • ${data.previousJobTitle || 'Staff'} at ${data.previousEmployer}` : ''}</td></tr>` : ''}
+                      ${data.previousResponsibilities ? `<tr><td style="color: #64748b; font-weight: 600;">Responsibilities:</td><td style="color: #334155;">${data.previousResponsibilities}</td></tr>` : ''}
+                      ${data.reasonForLeaving ? `<tr><td style="color: #64748b; font-weight: 600;">Reason for Leaving:</td><td style="color: #334155;">${data.reasonForLeaving}</td></tr>` : ''}
                       ${data.sponsorName ? `
                       <tr>
                         <td style="color: #64748b; font-weight: 600;">Sponsor / Next of Kin:</td>
@@ -800,19 +846,24 @@ export function generateAdminNewApplicationNotificationEmail(data: {
                       </tr>` : ''}
                       ${data.notes ? `
                       <tr>
-                        <td style="color: #64748b; font-weight: 600;">Notes / Experience:</td>
+                        <td style="color: #64748b; font-weight: 600;">Notes / Statement:</td>
                         <td style="color: #334155;">${data.notes}</td>
+                      </tr>` : ''}
+                      ${data.uploadedDocNames && data.uploadedDocNames.length > 0 ? `
+                      <tr>
+                        <td style="color: #64748b; font-weight: 600;">Uploaded Documents:</td>
+                        <td style="color: #0369a1; font-weight: 600;">${data.uploadedDocNames.join(', ')}</td>
                       </tr>` : ''}
                       ${data.hasReceipt ? `
                       <tr>
                         <td style="color: #64748b; font-weight: 600;">Payment Receipt:</td>
                         <td style="color: #16a34a; font-weight: 700;">Attached (${data.receiptName || 'Bank Slip'})</td>
                       </tr>` : ''}
-                      ${data.referencesCount !== undefined ? `
+                      ${referencesHtml || (data.referencesCount !== undefined ? `
                       <tr>
                         <td style="color: #64748b; font-weight: 600;">References / Guarantors:</td>
-                        <td style="color: #0f172a;">${data.referencesCount} document(s) uploaded</td>
-                      </tr>` : ''}
+                        <td style="color: #0f172a;">${data.referencesCount} reference(s) provided</td>
+                      </tr>` : '')}
                       <tr>
                         <td style="color: #64748b; font-weight: 600;">Submitted Time:</td>
                         <td style="color: #64748b;">${dateStr}</td>
@@ -823,7 +874,7 @@ export function generateAdminNewApplicationNotificationEmail(data: {
               </table>
 
               <p style="margin: 0; color: #64748b; font-size: 12px;">
-                You can review, approve, or manage this application in your Admin Dashboard Inbox and Applications tab.
+                You can review, view uploaded documents, or manage this application in your Admin Dashboard Inbox and Applications tab.
               </p>
             </td>
           </tr>
@@ -842,12 +893,9 @@ Applicant Details:
 - Name: ${data.applicantName}
 - Type: ${isCaregiver ? 'Caregiver / Staff Job Application' : 'Resident Care Admission'}
 - Position / Category: ${data.positionOrCategory}
-- Email: ${data.email}
+${data.dateOfBirth ? `- Date of Birth: ${data.dateOfBirth}\n` : ''}${data.gender ? `- Gender: ${data.gender}\n` : ''}- Email: ${data.email}
 - Phone: ${data.phone}
-${data.sponsorName ? `- Sponsor / Next of Kin: ${data.sponsorName}\n` : ''}
-${data.notes ? `- Notes / Experience: ${data.notes}\n` : ''}
-${data.hasReceipt ? `- Payment Receipt: Attached (${data.receiptName || 'Bank Slip'})\n` : ''}
-- Date: ${dateStr}
+${data.whatsappNumber ? `- WhatsApp: ${data.whatsappNumber}\n` : ''}${data.residentialAddress ? `- Address: ${data.residentialAddress}${data.cityState ? `, ${data.cityState}` : ''}\n` : ''}${data.nationality ? `- Nationality: ${data.nationality}\n` : ''}${data.highestQualification ? `- Education: ${data.highestQualification} (${data.courseOfStudy || ''} - ${data.institutionName || ''} ${data.graduationYear || ''})\n` : ''}${data.professionalQualifications ? `- Professional Quals: ${data.professionalQualifications}\n` : ''}${data.relevantCertifications ? `- Certifications: ${data.relevantCertifications}\n` : ''}${data.hasPreviousCareExperience ? `- Previous Care Experience: ${data.hasPreviousCareExperience} (${data.previousEmployer || ''} - ${data.previousJobTitle || ''} - ${data.yearsOfExperience || ''})\n` : ''}${data.sponsorName ? `- Sponsor / Next of Kin: ${data.sponsorName}\n` : ''}${data.notes ? `- Notes / Statement: ${data.notes}\n` : ''}${data.uploadedDocNames && data.uploadedDocNames.length > 0 ? `- Documents Uploaded: ${data.uploadedDocNames.join(', ')}\n` : ''}${referencesText ? `- References:\n${referencesText}\n` : ''}${data.hasReceipt ? `- Payment Receipt: Attached (${data.receiptName || 'Bank Slip'})\n` : ''}- Date: ${dateStr}
 
 An automatic confirmation receipt has been emailed to ${data.email}.
 `;

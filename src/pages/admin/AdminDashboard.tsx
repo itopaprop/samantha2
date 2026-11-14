@@ -1350,27 +1350,75 @@ export const AdminDashboard: React.FC = () => {
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                         <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Contact Info</span>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Personal &amp; Contact Info</span>
                           <div className="font-bold text-slate-800">✉️ {app.email}</div>
                           <div className="text-slate-600 font-medium">📞 {app.phone}</div>
+                          {app.whatsappNumber && <div className="text-emerald-700 font-medium">💬 WhatsApp: {app.whatsappNumber}</div>}
+                          {app.dateOfBirth && <div className="text-slate-600">DOB: {app.dateOfBirth}{app.gender ? ` • ${app.gender}` : ''}</div>}
+                          {app.nationality && <div className="text-slate-600">Nationality: {app.nationality}</div>}
+                          {(app.residentialAddress || app.cityState) && (
+                            <div className="text-slate-600">
+                              📍 {[app.residentialAddress, app.cityState].filter(Boolean).join(', ')}
+                            </div>
+                          )}
                         </div>
                         <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Category / Role</span>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            {app.type === 'caregiver' ? 'Role & Education' : 'Category / Role'}
+                          </span>
                           <div className="font-bold text-slate-800">{app.positionOrCategory}</div>
                           {app.sponsorName && <div className="text-slate-600">Sponsor: {app.sponsorName}</div>}
+                          {app.highestQualification && (
+                            <div className="text-slate-700 pt-1 border-t border-slate-100">
+                              <span className="font-semibold">{app.highestQualification}</span>
+                              {app.courseOfStudy ? ` in ${app.courseOfStudy}` : ''}
+                              {app.institutionName ? ` — ${app.institutionName}` : ''}
+                              {app.graduationYear ? ` (${app.graduationYear})` : ''}
+                            </div>
+                          )}
+                          {app.professionalQualifications && (
+                            <div className="text-slate-600">Prof. Quals: {app.professionalQualifications}</div>
+                          )}
+                          {app.relevantCertifications && (
+                            <div className="text-slate-600">Certs: {app.relevantCertifications}</div>
+                          )}
                         </div>
                         <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Medical / Qualifications Note</span>
-                          <div className="text-slate-700 line-clamp-2">{app.notesOrStatement || 'N/A'}</div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            {app.type === 'caregiver' ? 'Work Experience & Notes' : 'Medical / Qualifications Note'}
+                          </span>
+                          {app.hasPreviousCareExperience && (
+                            <div className="text-slate-700 font-semibold">
+                              Prior Care Experience: {app.hasPreviousCareExperience}
+                              {app.yearsOfExperience ? ` (${app.yearsOfExperience})` : ''}
+                            </div>
+                          )}
+                          {(app.previousEmployer || app.previousJobTitle) && (
+                            <div className="text-slate-600">
+                              {[app.previousJobTitle, app.previousEmployer].filter(Boolean).join(' at ')}
+                            </div>
+                          )}
+                          {app.previousResponsibilities && (
+                            <div className="text-slate-700">{app.previousResponsibilities}</div>
+                          )}
+                          {app.reasonForLeaving && (
+                            <div className="text-slate-500">Reason left: {app.reasonForLeaving}</div>
+                          )}
+                          {app.notesOrStatement && (
+                            <div className="text-slate-700 line-clamp-3">{app.notesOrStatement}</div>
+                          )}
+                          {!app.hasPreviousCareExperience && !app.notesOrStatement && (
+                            <div className="text-slate-400">N/A</div>
+                          )}
                         </div>
                       </div>
 
-                      {/* Attached Images & Receipt preview */}
-                      {((app.references && app.references.length > 0) || app.photoUrl || app.receiptUrl) && (
+                      {/* Attached Images, Section 4 Documents, References & Receipt preview */}
+                      {((app.references && app.references.length > 0) || app.photoUrl || app.receiptUrl || app.cvUrl || app.documents) && (
                         <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-3">
                           <div className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 pb-1 border-b border-slate-100">
                             <Paperclip className="w-4 h-4 text-sky-700" />
-                            <span>Attached Documents & Payment Receipts</span>
+                            <span>Attached Documents, References &amp; Payment Receipts</span>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {app.receiptUrl && (
@@ -1403,7 +1451,7 @@ export const AdminDashboard: React.FC = () => {
                                   onClick={() => setPreviewImage({ url: app.photoUrl!, title: `Application Photo: ${app.fullName}` })}
                                 />
                                 <div>
-                                  <div className="text-xs font-bold text-slate-900">Applicant Photo Document</div>
+                                  <div className="text-xs font-bold text-slate-900">Recent Passport Photograph</div>
                                   <button
                                     type="button"
                                     onClick={() => setPreviewImage({ url: app.photoUrl!, title: `Application Photo: ${app.fullName}` })}
@@ -1414,6 +1462,52 @@ export const AdminDashboard: React.FC = () => {
                                 </div>
                               </div>
                             )}
+                            {[
+                              { key: 'cv', label: 'Curriculum Vitae (CV)', doc: app.documents?.cv || (app.cvUrl ? { name: app.cvName || 'CV Document', url: app.cvUrl } : undefined) },
+                              { key: 'educationalCertificates', label: 'Educational Certificates', doc: app.documents?.educationalCertificates },
+                              { key: 'professionalCertificates', label: 'Professional Certificates', doc: app.documents?.professionalCertificates },
+                              { key: 'trainingCertificates', label: 'Relevant Training Certificates', doc: app.documents?.trainingCertificates },
+                              { key: 'validId', label: 'Valid Identification Document', doc: app.documents?.validId },
+                            ].map(({ key, label, doc }) => {
+                              if (!doc || !doc.name) return null;
+                              const isImg = Boolean(doc.mimeType?.startsWith('image/') || doc.url?.startsWith('data:image/') || /\.(png|jpe?g|webp|gif)$/i.test(doc.url || doc.name));
+                              return (
+                                <div key={key} className="p-2.5 bg-sky-50/60 rounded-xl border border-sky-200/80 flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-lg bg-white border border-sky-200 flex items-center justify-center shrink-0 text-sky-700">
+                                    <FileText className="w-5 h-5" />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-xs font-bold text-slate-900 truncate">{label}</div>
+                                    <div className="text-[11px] text-slate-600 truncate">{doc.name}</div>
+                                    <div className="flex items-center gap-3 mt-0.5">
+                                      {doc.url ? (
+                                        isImg ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => setPreviewImage({ url: doc.url, title: `${label}: ${app.fullName}` })}
+                                            className="text-[11px] font-bold text-sky-700 hover:underline cursor-pointer flex items-center gap-1"
+                                          >
+                                            <Eye className="w-3 h-3" /> Preview
+                                          </button>
+                                        ) : (
+                                          <a
+                                            href={doc.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            download={doc.name}
+                                            className="text-[11px] font-bold text-sky-700 hover:underline flex items-center gap-1"
+                                          >
+                                            <Download className="w-3 h-3" /> Open / Download
+                                          </a>
+                                        )
+                                      ) : (
+                                        <span className="text-[10px] text-amber-700 font-medium">File metadata recorded</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
                             {app.references && app.references.map((ref, idx) => (
                               <div key={idx} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3">
                                 {ref.photoUrl ? (
@@ -1424,11 +1518,18 @@ export const AdminDashboard: React.FC = () => {
                                     onClick={() => setPreviewImage({ url: ref.photoUrl!, title: `Reference Document: ${ref.name} (${ref.relationship})` })}
                                   />
                                 ) : (
-                                  <div className="w-12 h-12 rounded-lg bg-slate-200 flex items-center justify-center text-slate-400 text-[10px] shrink-0 font-bold">No Doc</div>
+                                  <div className="w-12 h-12 rounded-lg bg-slate-200 flex items-center justify-center text-slate-400 text-[10px] shrink-0 font-bold">Ref {idx + 1}</div>
                                 )}
                                 <div className="min-w-0">
-                                  <div className="text-xs font-bold text-slate-900 truncate">{ref.name} ({ref.relationship})</div>
-                                  <div className="text-[11px] text-slate-500">📞 {ref.phone}</div>
+                                  <div className="text-xs font-bold text-slate-900 truncate">
+                                    {ref.name} ({ref.relationship})
+                                  </div>
+                                  {ref.organisation && (
+                                    <div className="text-[11px] text-slate-700 font-medium truncate">🏢 {ref.organisation}</div>
+                                  )}
+                                  <div className="text-[11px] text-slate-500">
+                                    📞 {ref.phone}{ref.email ? ` • ✉️ ${ref.email}` : ''}
+                                  </div>
                                   {ref.photoUrl && (
                                     <button
                                       type="button"
