@@ -1610,6 +1610,27 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
     res.json({ success: true, application: appData });
   });
 
+  app.patch('/api/applications/:id', async (req, res) => {
+    const { id } = req.params;
+    const updates = req.body || {};
+    const idx = serverApplicationsList.findIndex(a => a.id === id);
+    if (idx < 0) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+    serverApplicationsList[idx] = { ...serverApplicationsList[idx], ...updates };
+    saveServerDb();
+    try {
+      const supabaseAdmin = getSupabaseAdmin();
+      const sbUpdate: any = {};
+      if (updates.status !== undefined) sbUpdate.status = updates.status;
+      if (updates.notesOrStatement !== undefined) sbUpdate.notes_or_statement = updates.notesOrStatement;
+      if (Object.keys(sbUpdate).length > 0) {
+        await supabaseAdmin.from('applications').update(sbUpdate).eq('id', id);
+      }
+    } catch {}
+    res.json({ success: true, application: serverApplicationsList[idx] });
+  });
+
   app.delete('/api/applications/:id', async (req, res) => {
     const { id } = req.params;
     let filesToDelete: string[] = [];
@@ -2235,9 +2256,25 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
         whatsappNumber: application.whatsappNumber,
         dateOfBirth: application.dateOfBirth,
         gender: application.gender,
+        maritalStatus: application.maritalStatus,
         residentialAddress: application.residentialAddress,
         cityState: application.cityState,
         nationality: application.nationality,
+        careTypeRequired: application.careTypeRequired,
+        reasonForAdmission: application.reasonForAdmission,
+        existingMedicalConditions: application.existingMedicalConditions,
+        currentMedications: application.currentMedications,
+        specialCareRequirements: application.specialCareRequirements,
+        mobilityStatus: application.mobilityStatus,
+        nextOfKinName: application.nextOfKinName,
+        nextOfKinRelationship: application.nextOfKinRelationship,
+        nextOfKinPhone: application.nextOfKinPhone,
+        nextOfKinAltPhone: application.nextOfKinAltPhone,
+        nextOfKinEmail: application.nextOfKinEmail,
+        applicantGuardianName: application.applicantGuardianName,
+        applicantSignature: application.applicantSignature,
+        consentDate: application.consentDate,
+        admissionId: application.admissionId,
         highestQualification: application.highestQualification,
         institutionName: application.institutionName,
         courseOfStudy: application.courseOfStudy,

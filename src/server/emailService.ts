@@ -725,9 +725,25 @@ export function generateAdminNewApplicationNotificationEmail(data: {
   whatsappNumber?: string;
   dateOfBirth?: string;
   gender?: string;
+  maritalStatus?: string;
   residentialAddress?: string;
   cityState?: string;
   nationality?: string;
+  careTypeRequired?: string;
+  reasonForAdmission?: string;
+  existingMedicalConditions?: string;
+  currentMedications?: string;
+  specialCareRequirements?: string;
+  mobilityStatus?: string;
+  nextOfKinName?: string;
+  nextOfKinRelationship?: string;
+  nextOfKinPhone?: string;
+  nextOfKinAltPhone?: string;
+  nextOfKinEmail?: string;
+  applicantGuardianName?: string;
+  applicantSignature?: string;
+  consentDate?: string;
+  admissionId?: string;
   highestQualification?: string;
   institutionName?: string;
   courseOfStudy?: string;
@@ -791,10 +807,10 @@ export function generateAdminNewApplicationNotificationEmail(data: {
                 New Form Submission
               </div>
               <h1 style="margin: 0; color: #ffffff; font-size: 22px; font-weight: 800;">
-                New ${isCaregiver ? 'Job Application' : 'Resident Admission'}
+                New ${isCaregiver ? 'Job Application' : 'Resident Care Admission'}
               </h1>
               <p style="margin: 4px 0 0 0; color: #cbd5e1; font-size: 13px;">
-                Submitted via Care Portal Applications
+                Submitted via ${facility} Portal
               </p>
             </td>
           </tr>
@@ -808,8 +824,9 @@ export function generateAdminNewApplicationNotificationEmail(data: {
                 <tr>
                   <td style="padding: 16px 20px;">
                     <table width="100%" cellpadding="6" cellspacing="0" style="font-size: 13px;">
+                      ${data.admissionId ? `<tr><td width="38%" style="color: #64748b; font-weight: 600;">Admission ID:</td><td style="color: #0369a1; font-weight: 800; font-family: monospace;">${data.admissionId}</td></tr>` : ''}
                       <tr>
-                        <td width="38%" style="color: #64748b; font-weight: 600;">Applicant Full Name:</td>
+                        <td width="38%" style="color: #64748b; font-weight: 600;">${isCaregiver ? 'Applicant Full Name:' : 'Resident Full Name:'}</td>
                         <td style="color: #0f172a; font-weight: 700; font-size: 14px;">${data.applicantName}</td>
                       </tr>
                       <tr>
@@ -817,11 +834,12 @@ export function generateAdminNewApplicationNotificationEmail(data: {
                         <td style="color: #0f172a; font-weight: 600;">${isCaregiver ? 'Caregiver / Staff Job Application' : 'Resident Care Admission'}</td>
                       </tr>
                       <tr>
-                        <td style="color: #64748b; font-weight: 600;">${isCaregiver ? 'Target Role:' : 'Care Category:'}</td>
-                        <td style="color: #0d9488; font-weight: 700;">${data.positionOrCategory}</td>
+                        <td style="color: #64748b; font-weight: 600;">${isCaregiver ? 'Target Role:' : 'Type of Care Required:'}</td>
+                        <td style="color: #0d9488; font-weight: 700;">${data.careTypeRequired || data.positionOrCategory}</td>
                       </tr>
                       ${data.dateOfBirth ? `<tr><td style="color: #64748b; font-weight: 600;">Date of Birth:</td><td style="color: #0f172a;">${data.dateOfBirth}</td></tr>` : ''}
                       ${data.gender ? `<tr><td style="color: #64748b; font-weight: 600;">Gender:</td><td style="color: #0f172a;">${data.gender}</td></tr>` : ''}
+                      ${data.maritalStatus ? `<tr><td style="color: #64748b; font-weight: 600;">Marital Status:</td><td style="color: #0f172a;">${data.maritalStatus}</td></tr>` : ''}
                       <tr>
                         <td style="color: #64748b; font-weight: 600;">Email:</td>
                         <td style="color: #0f172a; font-family: monospace;">${data.email}</td>
@@ -833,13 +851,20 @@ export function generateAdminNewApplicationNotificationEmail(data: {
                       ${data.whatsappNumber ? `<tr><td style="color: #64748b; font-weight: 600;">WhatsApp:</td><td style="color: #0f172a;">${data.whatsappNumber}</td></tr>` : ''}
                       ${data.residentialAddress ? `<tr><td style="color: #64748b; font-weight: 600;">Residential Address:</td><td style="color: #0f172a;">${data.residentialAddress}${data.cityState ? `, ${data.cityState}` : ''}</td></tr>` : ''}
                       ${data.nationality ? `<tr><td style="color: #64748b; font-weight: 600;">Nationality:</td><td style="color: #0f172a;">${data.nationality}</td></tr>` : ''}
+                      ${data.mobilityStatus ? `<tr><td style="color: #64748b; font-weight: 600;">Mobility Status:</td><td style="color: #0f172a;">${data.mobilityStatus}</td></tr>` : ''}
+                      ${data.reasonForAdmission ? `<tr><td style="color: #64748b; font-weight: 600;">Reason for Admission:</td><td style="color: #334155;">${data.reasonForAdmission}</td></tr>` : ''}
+                      ${data.existingMedicalConditions ? `<tr><td style="color: #64748b; font-weight: 600;">Medical Conditions:</td><td style="color: #334155;">${data.existingMedicalConditions}</td></tr>` : ''}
+                      ${data.currentMedications ? `<tr><td style="color: #64748b; font-weight: 600;">Current Medications:</td><td style="color: #334155;">${data.currentMedications}</td></tr>` : ''}
+                      ${data.specialCareRequirements ? `<tr><td style="color: #64748b; font-weight: 600;">Special Care Requirements:</td><td style="color: #334155;">${data.specialCareRequirements}</td></tr>` : ''}
+                      ${data.nextOfKinName ? `<tr><td style="color: #64748b; font-weight: 600;">Next of Kin / Emergency Contact:</td><td style="color: #0f172a;"><strong>${data.nextOfKinName}</strong>${data.nextOfKinRelationship ? ` (${data.nextOfKinRelationship})` : ''}<br/><span style="font-size: 12px; color: #475569;">Tel: ${data.nextOfKinPhone || data.phone}${data.nextOfKinAltPhone ? ` | Alt: ${data.nextOfKinAltPhone}` : ''}${data.nextOfKinEmail ? ` | ${data.nextOfKinEmail}` : ''}</span></td></tr>` : ''}
+                      ${data.applicantGuardianName ? `<tr><td style="color: #64748b; font-weight: 600;">Signed Consent By:</td><td style="color: #0f172a;">${data.applicantGuardianName} (Signature: ${data.applicantSignature || 'N/A'} on ${data.consentDate || dateStr})</td></tr>` : ''}
                       ${data.highestQualification ? `<tr><td style="color: #64748b; font-weight: 600;">Education:</td><td style="color: #0f172a;">${data.highestQualification}${data.courseOfStudy ? ` in ${data.courseOfStudy}` : ''}${data.institutionName ? ` — ${data.institutionName}` : ''}${data.graduationYear ? ` (${data.graduationYear})` : ''}</td></tr>` : ''}
                       ${data.professionalQualifications ? `<tr><td style="color: #64748b; font-weight: 600;">Professional Quals:</td><td style="color: #0f172a;">${data.professionalQualifications}</td></tr>` : ''}
                       ${data.relevantCertifications ? `<tr><td style="color: #64748b; font-weight: 600;">Certifications:</td><td style="color: #0f172a;">${data.relevantCertifications}</td></tr>` : ''}
                       ${data.hasPreviousCareExperience ? `<tr><td style="color: #64748b; font-weight: 600;">Care Experience:</td><td style="color: #0f172a;">${data.hasPreviousCareExperience}${data.yearsOfExperience ? ` (${data.yearsOfExperience})` : ''}${data.previousEmployer ? ` • ${data.previousJobTitle || 'Staff'} at ${data.previousEmployer}` : ''}</td></tr>` : ''}
                       ${data.previousResponsibilities ? `<tr><td style="color: #64748b; font-weight: 600;">Responsibilities:</td><td style="color: #334155;">${data.previousResponsibilities}</td></tr>` : ''}
                       ${data.reasonForLeaving ? `<tr><td style="color: #64748b; font-weight: 600;">Reason for Leaving:</td><td style="color: #334155;">${data.reasonForLeaving}</td></tr>` : ''}
-                      ${data.sponsorName ? `
+                      ${!data.nextOfKinName && data.sponsorName ? `
                       <tr>
                         <td style="color: #64748b; font-weight: 600;">Sponsor / Next of Kin:</td>
                         <td style="color: #0f172a;">${data.sponsorName}</td>
@@ -874,7 +899,7 @@ export function generateAdminNewApplicationNotificationEmail(data: {
               </table>
 
               <p style="margin: 0; color: #64748b; font-size: 12px;">
-                You can review, view uploaded documents, or manage this application in your Admin Dashboard Inbox and Applications tab.
+                You can open the full ${isCaregiver ? 'application' : 'Resident Care Admission Form (including the Staff-Only Administrative Section)'} in your Admin Dashboard Inbox and Applications tab.
               </p>
             </td>
           </tr>
@@ -890,12 +915,12 @@ export function generateAdminNewApplicationNotificationEmail(data: {
 [Admin Alert] New ${isCaregiver ? 'Job Application' : 'Resident Admission'}: ${data.applicantName}
 
 Applicant Details:
-- Name: ${data.applicantName}
+${data.admissionId ? `- Admission ID: ${data.admissionId}\n` : ''}- Name: ${data.applicantName}
 - Type: ${isCaregiver ? 'Caregiver / Staff Job Application' : 'Resident Care Admission'}
-- Position / Category: ${data.positionOrCategory}
-${data.dateOfBirth ? `- Date of Birth: ${data.dateOfBirth}\n` : ''}${data.gender ? `- Gender: ${data.gender}\n` : ''}- Email: ${data.email}
+- Position / Care Type: ${data.careTypeRequired || data.positionOrCategory}
+${data.dateOfBirth ? `- Date of Birth: ${data.dateOfBirth}\n` : ''}${data.gender ? `- Gender: ${data.gender}\n` : ''}${data.maritalStatus ? `- Marital Status: ${data.maritalStatus}\n` : ''}- Email: ${data.email}
 - Phone: ${data.phone}
-${data.whatsappNumber ? `- WhatsApp: ${data.whatsappNumber}\n` : ''}${data.residentialAddress ? `- Address: ${data.residentialAddress}${data.cityState ? `, ${data.cityState}` : ''}\n` : ''}${data.nationality ? `- Nationality: ${data.nationality}\n` : ''}${data.highestQualification ? `- Education: ${data.highestQualification} (${data.courseOfStudy || ''} - ${data.institutionName || ''} ${data.graduationYear || ''})\n` : ''}${data.professionalQualifications ? `- Professional Quals: ${data.professionalQualifications}\n` : ''}${data.relevantCertifications ? `- Certifications: ${data.relevantCertifications}\n` : ''}${data.hasPreviousCareExperience ? `- Previous Care Experience: ${data.hasPreviousCareExperience} (${data.previousEmployer || ''} - ${data.previousJobTitle || ''} - ${data.yearsOfExperience || ''})\n` : ''}${data.sponsorName ? `- Sponsor / Next of Kin: ${data.sponsorName}\n` : ''}${data.notes ? `- Notes / Statement: ${data.notes}\n` : ''}${data.uploadedDocNames && data.uploadedDocNames.length > 0 ? `- Documents Uploaded: ${data.uploadedDocNames.join(', ')}\n` : ''}${referencesText ? `- References:\n${referencesText}\n` : ''}${data.hasReceipt ? `- Payment Receipt: Attached (${data.receiptName || 'Bank Slip'})\n` : ''}- Date: ${dateStr}
+${data.whatsappNumber ? `- WhatsApp: ${data.whatsappNumber}\n` : ''}${data.residentialAddress ? `- Address: ${data.residentialAddress}${data.cityState ? `, ${data.cityState}` : ''}\n` : ''}${data.nationality ? `- Nationality: ${data.nationality}\n` : ''}${data.mobilityStatus ? `- Mobility Status: ${data.mobilityStatus}\n` : ''}${data.reasonForAdmission ? `- Reason for Admission: ${data.reasonForAdmission}\n` : ''}${data.existingMedicalConditions ? `- Existing Medical Conditions: ${data.existingMedicalConditions}\n` : ''}${data.currentMedications ? `- Current Medications: ${data.currentMedications}\n` : ''}${data.specialCareRequirements ? `- Special Care Requirements: ${data.specialCareRequirements}\n` : ''}${data.nextOfKinName ? `- Next of Kin: ${data.nextOfKinName} (${data.nextOfKinRelationship || 'Relative'}) | ${data.nextOfKinPhone || data.phone}${data.nextOfKinAltPhone ? ` | Alt: ${data.nextOfKinAltPhone}` : ''}\n` : ''}${data.applicantGuardianName ? `- Consent Signed By: ${data.applicantGuardianName} (${data.applicantSignature || ''}) on ${data.consentDate || dateStr}\n` : ''}${data.highestQualification ? `- Education: ${data.highestQualification} (${data.courseOfStudy || ''} - ${data.institutionName || ''} ${data.graduationYear || ''})\n` : ''}${data.professionalQualifications ? `- Professional Quals: ${data.professionalQualifications}\n` : ''}${data.relevantCertifications ? `- Certifications: ${data.relevantCertifications}\n` : ''}${data.hasPreviousCareExperience ? `- Previous Care Experience: ${data.hasPreviousCareExperience} (${data.previousEmployer || ''} - ${data.previousJobTitle || ''} - ${data.yearsOfExperience || ''})\n` : ''}${!data.nextOfKinName && data.sponsorName ? `- Sponsor / Next of Kin: ${data.sponsorName}\n` : ''}${data.notes ? `- Notes / Statement: ${data.notes}\n` : ''}${data.uploadedDocNames && data.uploadedDocNames.length > 0 ? `- Documents Uploaded: ${data.uploadedDocNames.join(', ')}\n` : ''}${referencesText ? `- References:\n${referencesText}\n` : ''}${data.hasReceipt ? `- Payment Receipt: Attached (${data.receiptName || 'Bank Slip'})\n` : ''}- Date: ${dateStr}
 
 An automatic confirmation receipt has been emailed to ${data.email}.
 `;

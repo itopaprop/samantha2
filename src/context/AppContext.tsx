@@ -177,6 +177,7 @@ interface AppContextType {
 
   applications: ApplicationSubmission[];
   submitApplication: (appData: Omit<ApplicationSubmission, 'id' | 'createdAt' | 'status'>) => Promise<ApplicationSubmission>;
+  updateApplication: (id: string, updates: Partial<ApplicationSubmission>) => Promise<void>;
   deleteApplication: (id: string) => Promise<void>;
   
   toastMessage: string | null;
@@ -2375,6 +2376,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Application submission deleted.');
   };
 
+  const updateApplication = async (id: string, updates: Partial<ApplicationSubmission>) => {
+    setApplications(prev => prev.map(app => (app.id === id ? { ...app, ...updates } : app)));
+
+    await Promise.allSettled([
+      setDoc(doc(db, 'applications', id), sanitizeForFirestore(updates), { merge: true }),
+      fetch(`/api/applications/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      }),
+    ]);
+
+    showToast('Application administrative record updated.');
+  };
+
   const bookConsultation = async (bookingData: Omit<ConsultationBooking, 'id' | 'status' | 'createdAt'>) => {
     const cbUUID = generateUUID();
     const newBooking: ConsultationBooking = {
@@ -2997,6 +3013,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
+    const generatedAdmissionId =
+      appData.type === 'resident'
+        ? appData.admissionId || `ADM-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+        : appData.admissionId;
+
     const newSubmission: ApplicationSubmission = {
       ...appData,
       photoUrl,
@@ -3006,6 +3027,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       receiptUrl,
       receiptName: appData.receiptName,
       references: processedReferences,
+      ...(appData.type === 'resident'
+        ? {
+            admissionId: generatedAdmissionId,
+            admissionStatus: appData.admissionStatus || 'Pending',
+          }
+        : {}),
       id: appUUID,
       createdAt,
       status: 'Received',
@@ -3076,7 +3103,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const caregiverSectionsSummary = appData.type === 'caregiver'
       ? `\nSECTION 1 – PERSONAL INFORMATION:\n• Full Name: ${appData.fullName}\n${appData.dateOfBirth ? `• Date of Birth: ${appData.dateOfBirth}\n` : ''}${appData.gender ? `• Gender: ${appData.gender}\n` : ''}• Phone: ${appData.phone}\n${appData.whatsappNumber ? `• WhatsApp: ${appData.whatsappNumber}\n` : ''}• Email: ${appData.email}\n${appData.residentialAddress ? `• Residential Address: ${appData.residentialAddress}\n` : ''}${appData.cityState ? `• City / State: ${appData.cityState}\n` : ''}${appData.nationality ? `• Nationality: ${appData.nationality}\n` : ''}• Position Applied For: ${appData.positionOrCategory}\n\nSECTION 2 – EDUCATIONAL BACKGROUND:\n• Highest Qualification: ${appData.highestQualification || 'N/A'}\n• Institution: ${appData.institutionName || 'N/A'}\n• Course of Study: ${appData.courseOfStudy || 'N/A'}\n• Graduation Year: ${appData.graduationYear || 'N/A'}\n• Professional Qualifications: ${appData.professionalQualifications || 'N/A'}\n• Relevant Certifications: ${appData.relevantCertifications || 'N/A'}\n\nSECTION 3 – WORK EXPERIENCE:\n• Previous Caregiving / Healthcare Experience: ${appData.hasPreviousCareExperience || 'N/A'}\n${appData.previousEmployer ? `• Previous Employer: ${appData.previousEmployer}\n` : ''}${appData.previousJobTitle ? `• Job Title: ${appData.previousJobTitle}\n` : ''}${appData.yearsOfExperience ? `• Years of Experience: ${appData.yearsOfExperience}\n` : ''}${appData.previousResponsibilities ? `• Previous Responsibilities: ${appData.previousResponsibilities}\n` : ''}${appData.reasonForLeaving ? `• Reason for Leaving: ${appData.reasonForLeaving}\n` : ''}${appData.notesOrStatement ? `• Additional Statement: ${appData.notesOrStatement}\n` : ''}\nSECTION 4 – DOCUMENT UPLOADS:\n${uploadedDocLabels.length > 0 ? uploadedDocLabels.map(d => `• ${d}`).join('\n') : '• None attached'}`
-      : `\nAPPLICANT FULL DETAILS:\n• Full Name: ${appData.fullName}\n• Email: ${appData.email}\n• Phone: ${appData.phone}\n• Care Category / Position: ${appData.positionOrCategory}\n${appData.sponsorName ? `• Sponsor / Next of Kin: ${appData.sponsorName}\n` : ''}${appData.notesOrStatement ? `• Medical / Qualification Notes: ${appData.notesOrStatement}\n` : ''}${photoUrl ? '• Applicant Photo: Attached\n' : ''}${receiptUrl ? `• Payment Receipt: Attached (${appData.receiptName || 'Bank Transfer Proof'})\n` : ''}`;
+      : `\nADMISSION REFERENCE: ${generatedAdmissionId || 'Pending'}\n\nSECTION 1 – RESIDENT'S PERSONAL INFORMATION:\n• Full Name: ${appData.fullName}\n${appData.dateOfBirth ? `• Date of Birth: ${appData.dateOfBirth}\n` : ''}${appData.gender ? `• Gender: ${appData.gender}\n` : ''}${appData.maritalStatus ? `• Marital Status: ${appData.maritalStatus}\n` : ''}${appData.residentialAddress ? `• Residential Address: ${appData.residentialAddress}\n` : ''}\nSECTION 2 – CARE INFORMATION:\n• Type of Care Required: ${appData.careTypeRequired || appData.positionOrCategory}\n${appData.mobilityStatus ? `• Mobility Status: ${appData.mobilityStatus}\n` : ''}${appData.reasonForAdmission ? `• Reason for Admission: ${appData.reasonForAdmission}\n` : ''}${appData.existingMedicalConditions ? `• Existing Medical Conditions: ${appData.existingMedicalConditions}\n` : ''}${appData.currentMedications ? `• Current Medications: ${appData.currentMedications}\n` : ''}${appData.specialCareRequirements ? `• Special Care Requirements: ${appData.specialCareRequirements}\n` : ''}\nSECTION 3 – NEXT OF KIN / EMERGENCY CONTACT:\n• Full Name: ${appData.nextOfKinName || appData.sponsorName || 'N/A'}\n${appData.nextOfKinRelationship ? `• Relationship to Resident: ${appData.nextOfKinRelationship}\n` : ''}• Phone Number: ${appData.nextOfKinPhone || appData.phone}\n${appData.nextOfKinAltPhone ? `• Alternative Phone: ${appData.nextOfKinAltPhone}\n` : ''}• Email Address: ${appData.nextOfKinEmail || appData.email}\n\nSECTION 4 – ADMISSION CONSENT:\n• Confirmed Accurate: ${appData.consentInfoAccurate ? 'Yes' : 'No'}\n• Contact Consent: ${appData.consentContactPermitted ? 'Yes' : 'No'}\n${appData.applicantGuardianName ? `• Applicant / Guardian: ${appData.applicantGuardianName}\n` : ''}${appData.applicantSignature ? `• Signature: ${appData.applicantSignature}\n` : ''}${appData.consentDate ? `• Consent Date: ${appData.consentDate}\n` : ''}${photoUrl ? '• Resident Photo: Attached\n' : ''}${receiptUrl ? `• Payment Receipt: Attached (${appData.receiptName || 'Bank Transfer Proof'})\n` : ''}`;
 
     const adminAppNotification: Message = {
       id: adminAppNotifId,
@@ -3086,8 +3113,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       receiverId: 'usr-admin-1',
       receiverName: 'Managing Director & Admin',
       receiverRole: 'Admin' as UserRole,
-      subject: `📥 NEW CARE APPLICATION: ${appData.fullName} (${appData.type === 'caregiver' ? 'Caregiver Applicant' : 'Resident Admission Request'})`,
-      content: `A new ${appTitle} has been submitted through the web portal.\n${caregiverSectionsSummary}\n\nSECTION 5 – REFERENCES:\n${refsFormatted || 'None attached'}\n\nSubmitted on: ${createdAt}`,
+      subject: `📥 NEW CARE APPLICATION: ${appData.fullName} (${appData.type === 'caregiver' ? 'Caregiver Applicant' : 'Resident Care Admission Form'})`,
+      content: `A new ${appTitle} has been submitted through the web portal.\n${caregiverSectionsSummary}${appData.type === 'caregiver' ? `\n\nSECTION 5 – REFERENCES:\n${refsFormatted || 'None attached'}` : ''}\n\nSubmitted on: ${createdAt}`,
       attachmentUrl: receiptUrl || photoUrl || processedDocuments.cv?.url || processedReferences[0]?.photoUrl,
       attachmentName: receiptUrl ? (appData.receiptName || `${appData.fullName.replace(/\s+/g, '_')}_Payment_Receipt.jpg`) : (photoUrl ? `${appData.fullName.replace(/\s+/g, '_')}_ID.jpg` : undefined),
       applicantPhotoUrl: photoUrl,
@@ -3119,9 +3146,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         whatsappNumber: appData.whatsappNumber,
         dateOfBirth: appData.dateOfBirth,
         gender: appData.gender,
+        maritalStatus: appData.maritalStatus,
         residentialAddress: appData.residentialAddress,
         cityState: appData.cityState,
         nationality: appData.nationality,
+        careTypeRequired: appData.careTypeRequired,
+        reasonForAdmission: appData.reasonForAdmission,
+        existingMedicalConditions: appData.existingMedicalConditions,
+        currentMedications: appData.currentMedications,
+        specialCareRequirements: appData.specialCareRequirements,
+        mobilityStatus: appData.mobilityStatus,
+        nextOfKinName: appData.nextOfKinName,
+        nextOfKinRelationship: appData.nextOfKinRelationship,
+        nextOfKinPhone: appData.nextOfKinPhone,
+        nextOfKinAltPhone: appData.nextOfKinAltPhone,
+        nextOfKinEmail: appData.nextOfKinEmail,
+        applicantGuardianName: appData.applicantGuardianName,
+        applicantSignature: appData.applicantSignature,
+        consentDate: appData.consentDate,
+        admissionId: generatedAdmissionId,
         highestQualification: appData.highestQualification,
         institutionName: appData.institutionName,
         courseOfStudy: appData.courseOfStudy,
@@ -3139,12 +3182,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         uploadedDocNames: uploadedDocLabels,
         type: appData.type,
         position: appData.positionOrCategory,
-        careCategory: appData.positionOrCategory,
+        careCategory: appData.careTypeRequired || appData.positionOrCategory,
         notes: appData.notesOrStatement,
         paymentReceipt: !!receiptUrl,
         receiptUrl,
         receiptName: appData.receiptName,
-        sponsorName: appData.sponsorName,
+        sponsorName: appData.sponsorName || appData.nextOfKinName,
         references: processedReferences,
       }).catch(e => console.warn('Submit application notification notice:', e));
     } catch (e) {
@@ -3226,6 +3269,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deleteGalleryItem,
       applications,
       submitApplication,
+      updateApplication,
       deleteApplication,
       toastMessage,
       showToast,

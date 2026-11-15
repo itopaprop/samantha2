@@ -27,6 +27,11 @@ import {
   CareerFormState,
   createInitialCareerFormState,
 } from '../forms/CareerApplicationFields';
+import {
+  ResidentAdmissionFields,
+  ResidentAdmissionFormState,
+  createInitialResidentFormState,
+} from '../forms/ResidentAdmissionFields';
 
 export const ApplyNowModal: React.FC = () => {
   const { isApplyModalOpen, setIsApplyModalOpen, showToast, submitApplication, jobs } = useApp();
@@ -50,13 +55,10 @@ export const ApplyNowModal: React.FC = () => {
   const [receiptFileName, setReceiptFileName] = useState<string | null>(null);
   const [receiptFileType, setReceiptFileType] = useState<string | null>(null);
 
-  // Resident Admission Fields
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [sponsorName, setSponsorName] = useState('');
-  const [careCategory, setCareCategory] = useState<'Elderly Residential' | 'Dementia Care' | 'Respite Care' | 'Nursing Care'>('Dementia Care');
-  const [medicalNotes, setMedicalNotes] = useState('');
+  // Resident Care Admission State (Sections 1–4; Section 5 is Admin/Staff-Only)
+  const [residentForm, setResidentForm] = useState<ResidentAdmissionFormState>(() =>
+    createInitialResidentFormState()
+  );
 
   // Caregiver / Staff 5-Section Application State
   const [careerForm, setCareerForm] = useState<CareerFormState>(() =>
@@ -150,12 +152,7 @@ export const ApplyNowModal: React.FC = () => {
 
   const resetForm = () => {
     closeFeeNotice();
-    setFullName('');
-    setEmail('');
-    setPhone('');
-    setSponsorName('');
-    setCareCategory('Dementia Care');
-    setMedicalNotes('');
+    setResidentForm(createInitialResidentFormState());
     setPhotoPreview(null);
     setReceiptPreview(null);
     setReceiptFileName(null);
@@ -180,9 +177,15 @@ export const ApplyNowModal: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (appType === 'resident' && !receiptPreview && !payLaterWhatsApp) {
-      showToast('Please attach your payment receipt or select the WhatsApp payment verification option.');
-      return;
+    if (appType === 'resident') {
+      if (!residentForm.consentInfoAccurate || !residentForm.consentContactPermitted) {
+        showToast('Please confirm both Admission Consent checkboxes in Section 4.');
+        return;
+      }
+      if (!receiptPreview && !payLaterWhatsApp) {
+        showToast('Please attach your payment receipt or select the WhatsApp payment verification option.');
+        return;
+      }
     }
 
     if (appType === 'caregiver') {
@@ -249,19 +252,42 @@ export const ApplyNowModal: React.FC = () => {
           references: formattedRefs,
         });
       } else {
+        const baseReason = residentForm.reasonForAdmission.trim() || 'Resident Care Admission Request';
         await submitApplication({
           type: 'resident',
-          fullName: fullName || 'Resident Applicant',
-          email: email || 'applicant@samanthasappy.com',
-          phone: phone || '+234 706 933 2193',
+          fullName: residentForm.fullName.trim() || 'Resident Applicant',
+          email: residentForm.nextOfKinEmail.trim() || 'applicant@samanthasappy.com',
+          phone: residentForm.nextOfKinPhone.trim() || '+234 706 933 2193',
+          dateOfBirth: residentForm.dateOfBirth,
+          gender: residentForm.gender,
+          maritalStatus: residentForm.maritalStatus,
+          residentialAddress: residentForm.residentialAddress.trim(),
+          careTypeRequired: residentForm.careTypeRequired || 'Long-term care',
+          reasonForAdmission: residentForm.reasonForAdmission.trim(),
+          existingMedicalConditions: residentForm.existingMedicalConditions.trim() || undefined,
+          currentMedications: residentForm.currentMedications.trim() || undefined,
+          specialCareRequirements: residentForm.specialCareRequirements.trim() || undefined,
+          mobilityStatus: residentForm.mobilityStatus,
+          nextOfKinName: residentForm.nextOfKinName.trim(),
+          nextOfKinRelationship: residentForm.nextOfKinRelationship,
+          nextOfKinPhone: residentForm.nextOfKinPhone.trim(),
+          nextOfKinAltPhone: residentForm.nextOfKinAltPhone.trim() || undefined,
+          nextOfKinEmail: residentForm.nextOfKinEmail.trim(),
+          consentInfoAccurate: residentForm.consentInfoAccurate,
+          consentContactPermitted: residentForm.consentContactPermitted,
+          applicantGuardianName: residentForm.applicantGuardianName.trim(),
+          applicantSignature: residentForm.applicantSignature.trim(),
+          consentDate: residentForm.consentDate,
           photoUrl: photoPreview || undefined,
           receiptUrl: receiptPreview || undefined,
           receiptName: receiptFileName || (payLaterWhatsApp ? 'Payment Confirmation via WhatsApp (+234 706 933 2193)' : undefined),
-          positionOrCategory: careCategory,
+          positionOrCategory: residentForm.careTypeRequired || 'Long-term care',
           notesOrStatement: payLaterWhatsApp
-            ? `${medicalNotes || 'Resident Care Admission Request'}\n[Payment receipt will be shared via WhatsApp / In-person verification]`
-            : (medicalNotes || 'Resident Care Admission Request'),
-          sponsorName,
+            ? `${baseReason}\n[Payment receipt will be shared via WhatsApp / In-person verification]`
+            : baseReason,
+          sponsorName: residentForm.nextOfKinName.trim()
+            ? `${residentForm.nextOfKinName.trim()}${residentForm.nextOfKinRelationship ? ` (${residentForm.nextOfKinRelationship})` : ''}`
+            : undefined,
           references: [],
         });
       }
@@ -285,7 +311,7 @@ export const ApplyNowModal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className={`relative w-full ${appType === 'caregiver' ? 'max-w-3xl' : 'max-w-2xl'} bg-white rounded-2xl shadow-2xl border border-slate-100 max-h-[92vh] flex flex-col overflow-hidden`}>
+      <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-slate-100 max-h-[92vh] flex flex-col overflow-hidden">
         
         {/* Modal Header */}
         <div className="bg-gradient-to-r from-sky-800 via-teal-800 to-sky-900 px-5 sm:px-6 py-4 text-white flex items-center justify-between shrink-0">
@@ -320,7 +346,7 @@ export const ApplyNowModal: React.FC = () => {
                   {appType === 'resident' ? 'Resident Care Application Submitted Successfully!' : 'Caregiver Application Submitted!'}
                 </h3>
                 <p className="text-sm text-slate-600 max-w-md mx-auto">
-                  Thank you, <span className="font-semibold text-slate-900">{appType === 'caregiver' ? careerForm.fullName : fullName}</span>. Your {appType === 'caregiver' ? 'caregiver job application' : 'resident care admission request'} has been safely logged with our admin team.
+                  Thank you, <span className="font-semibold text-slate-900">{appType === 'caregiver' ? careerForm.fullName : residentForm.fullName}</span>. Your {appType === 'caregiver' ? 'caregiver job application' : 'resident care admission request'} has been safely logged with our admin team.
                 </p>
 
                 {/* Dispatch Status Badges */}
@@ -681,87 +707,16 @@ export const ApplyNowModal: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Resident Form Fields */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Resident Full Name *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Resident Full Name"
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Sponsor / Contact Email *</label>
-                      <input
-                        type="email"
-                        required
-                        placeholder="contact@example.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Phone Number *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="+44 7700 900123"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Next of Kin / Sponsor Name *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Robert Thompson (Son)"
-                        value={sponsorName}
-                        onChange={(e) => setSponsorName(e.target.value)}
-                        className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                      />
-                    </div>
-                  </div>
+                  {/* Rebuilt Resident Care Admission Form (Sections 1–4) */}
+                  <ResidentAdmissionFields
+                    form={residentForm}
+                    setForm={setResidentForm}
+                  />
                 </>
               )}
 
               {appType === 'resident' && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Preferred Care Category *</label>
-                      <select
-                        value={careCategory}
-                        onChange={(e) => setCareCategory(e.target.value as any)}
-                        className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500 bg-white"
-                      >
-                        <option value="Dementia Care">Dementia & Memory Care</option>
-                        <option value="Elderly Residential">Elderly Residential Care</option>
-                        <option value="Nursing Care">24/7 Nursing & Rehabilitation</option>
-                        <option value="Respite Care">Respite & Short-Stay Care</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Medical / Mobility Notes</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Wheelchair assistance, dietary requirements..."
-                        value={medicalNotes}
-                        onChange={(e) => setMedicalNotes(e.target.value)}
-                        className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
-                      />
-                    </div>
-                  </div>
 
                   {/* Attachment Button / Box for Receipt under Resident Care Admission */}
                   <div className={`p-4 rounded-2xl border transition-all space-y-3 ${receiptPreview ? 'bg-emerald-50/70 border-emerald-300' : 'bg-rose-50/50 border-rose-200'}`}>

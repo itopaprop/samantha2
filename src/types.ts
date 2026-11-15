@@ -185,28 +185,55 @@ export interface ApplicationSubmission {
   fullName: string;
   email: string;
   phone: string;
-  // Section 1 – Personal Information
+  // Section 1 – Personal Information (Caregiver & Resident)
   dateOfBirth?: string;
   gender?: string;
+  maritalStatus?: string;
   whatsappNumber?: string;
   residentialAddress?: string;
   cityState?: string;
   nationality?: string;
-  // Section 2 – Educational Background
+  // Resident Section 2 – Care Information
+  careTypeRequired?: 'Short-term care' | 'Long-term care' | 'Respite care' | 'Rehabilitation / recovery care' | string;
+  reasonForAdmission?: string;
+  existingMedicalConditions?: string;
+  currentMedications?: string;
+  specialCareRequirements?: string;
+  mobilityStatus?: string;
+  // Resident Section 3 – Next of Kin / Emergency Contact
+  nextOfKinName?: string;
+  nextOfKinRelationship?: string;
+  nextOfKinPhone?: string;
+  nextOfKinAltPhone?: string;
+  nextOfKinEmail?: string;
+  // Resident Section 4 – Admission Consent
+  consentInfoAccurate?: boolean;
+  consentContactPermitted?: boolean;
+  applicantGuardianName?: string;
+  applicantSignature?: string;
+  consentDate?: string;
+  // Resident Section 5 – Administrative Section (Staff Only - hidden from applicants)
+  admissionId?: string;
+  admissionDate?: string;
+  admissionStatus?: 'Pending' | 'Approved' | 'Rejected';
+  assignedStaffId?: string;
+  assignedStaffName?: string;
+  staffNotes?: string;
+  // Caregiver Section 2 – Educational Background
   highestQualification?: string;
   institutionName?: string;
   courseOfStudy?: string;
   graduationYear?: string;
   professionalQualifications?: string;
   relevantCertifications?: string;
-  // Section 3 – Work Experience
+  // Caregiver Section 3 – Work Experience
   hasPreviousCareExperience?: 'Yes' | 'No' | string;
   previousEmployer?: string;
   previousJobTitle?: string;
   yearsOfExperience?: string;
   previousResponsibilities?: string;
   reasonForLeaving?: string;
-  // Section 4 – Document Uploads
+  // Caregiver Section 4 – Document Uploads
   photoUrl?: string;
   cvUrl?: string;
   cvName?: string;

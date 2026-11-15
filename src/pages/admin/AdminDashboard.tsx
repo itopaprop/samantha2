@@ -17,7 +17,8 @@ import { ComposeMessageModal } from '../../components/modals/ComposeMessageModal
 import { ShareEventModal } from '../../components/modals/ShareEventModal';
 import { EditProfilePhotoModal } from '../../components/modals/EditProfilePhotoModal';
 import { ClientCategoryDetailsModal, CategoryDetailType } from '../../components/modals/ClientCategoryDetailsModal';
-import { CareCategory, UserRole, StaffMember, Resident, Shift, CommunityEvent } from '../../types';
+import { ResidentAdmissionReviewModal } from '../../components/modals/ResidentAdmissionReviewModal';
+import { CareCategory, UserRole, StaffMember, Resident, Shift, CommunityEvent, ApplicationSubmission } from '../../types';
 import { 
   Users, 
   UserCheck, 
@@ -73,6 +74,7 @@ export const AdminDashboard: React.FC = () => {
     messages,
     deleteMessage,
     applications,
+    updateApplication,
     deleteApplication,
     activityLogs, 
     events,
@@ -125,6 +127,9 @@ export const AdminDashboard: React.FC = () => {
   const [adminZoomScale, setAdminZoomScale] = useState<number>(1);
   const [sharingAdminEvent, setSharingAdminEvent] = useState<CommunityEvent | null>(null);
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
+  const [reviewingResidentAppId, setReviewingResidentAppId] = useState<string | null>(null);
+  const reviewingResidentApp: ApplicationSubmission | null =
+    applications.find((a) => a.id === reviewingResidentAppId) || null;
 
   // Edit modal states
   const [editingResident, setEditingResident] = useState<Resident | null>(null);
@@ -1184,9 +1189,34 @@ export const AdminDashboard: React.FC = () => {
                       <div className="text-xs text-slate-500 mt-1">
                         {messagingTab === 'inbox' ? `From: ${msg.senderName} (${msg.senderRole})` : `To: ${msg.receiverName} (${msg.receiverRole})`}
                       </div>
-                      <p className="text-xs text-slate-700 mt-2 leading-relaxed">
+                      <p className="text-xs text-slate-700 mt-2 leading-relaxed whitespace-pre-line">
                         {msg.content}
                       </p>
+
+                      {msg.subject?.includes('Resident Care Admission Form') && (
+                        <div className="mt-3 flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const matched = applications.find(
+                                (a) =>
+                                  a.type === 'resident' &&
+                                  (msg.subject.toLowerCase().includes(a.fullName.toLowerCase()) ||
+                                    (a.admissionId && msg.content.includes(a.admissionId)))
+                              );
+                              if (matched) {
+                                setReviewingResidentAppId(matched.id);
+                              } else {
+                                setMessagingTab('applications');
+                              }
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>Open Resident Care Admission Form (Staff Only Section)</span>
+                          </button>
+                        </div>
+                      )}
 
                       {(msg.attachmentName || msg.attachmentUrl) && (
                         <div 
@@ -1323,18 +1353,49 @@ export const AdminDashboard: React.FC = () => {
                             <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-md uppercase tracking-wider ${
                               app.type === 'caregiver' ? 'bg-teal-100 text-teal-800' : 'bg-sky-100 text-sky-800'
                             }`}>
-                              {app.type === 'caregiver' ? 'Caregiver Staff Application' : 'Resident Care Admission Application'}
+                              {app.type === 'caregiver' ? 'Caregiver Staff Application' : 'Resident Care Admission Form'}
                             </span>
+                            {app.type === 'resident' && app.admissionId && (
+                              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-200 text-slate-800">
+                                {app.admissionId}
+                              </span>
+                            )}
+                            {app.type === 'resident' && (
+                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md border ${
+                                app.admissionStatus === 'Approved'
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  : app.admissionStatus === 'Rejected'
+                                  ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                  : 'bg-amber-100 text-amber-800 border-amber-300'
+                              }`}>
+                                Admission: {app.admissionStatus || 'Pending'}
+                              </span>
+                            )}
+                            {app.type === 'resident' && app.assignedStaffName && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200">
+                                Staff: {app.assignedStaffName}
+                              </span>
+                            )}
                             <span className="text-[10px] font-bold text-slate-500">Submitted: {app.createdAt}</span>
                           </div>
                           <h3 className="text-base font-extrabold text-slate-900 mt-1">{app.fullName}</h3>
                         </div>
 
-                        {/* Action Buttons: Retain or Delete Application */}
-                        <div className="flex items-center gap-2 shrink-0">
+                        {/* Action Buttons: Open Form, Retain or Delete Application */}
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          {app.type === 'resident' && (
+                            <button
+                              type="button"
+                              onClick={() => setReviewingResidentAppId(app.id)}
+                              className="px-3.5 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>Open Resident Care Admission Form</span>
+                            </button>
+                          )}
                           <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            Retained in Database
+                            Retained
                           </span>
                           <button
                             type="button"
@@ -1351,10 +1412,15 @@ export const AdminDashboard: React.FC = () => {
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                         <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Personal &amp; Contact Info</span>
-                          <div className="font-bold text-slate-800">✉️ {app.email}</div>
-                          <div className="text-slate-600 font-medium">📞 {app.phone}</div>
+                          <div className="font-bold text-slate-800">✉️ {app.nextOfKinEmail || app.email}</div>
+                          <div className="text-slate-600 font-medium">📞 {app.nextOfKinPhone || app.phone}</div>
+                          {app.nextOfKinAltPhone && <div className="text-slate-600">Alt: {app.nextOfKinAltPhone}</div>}
                           {app.whatsappNumber && <div className="text-emerald-700 font-medium">💬 WhatsApp: {app.whatsappNumber}</div>}
-                          {app.dateOfBirth && <div className="text-slate-600">DOB: {app.dateOfBirth}{app.gender ? ` • ${app.gender}` : ''}</div>}
+                          {app.dateOfBirth && (
+                            <div className="text-slate-600">
+                              DOB: {app.dateOfBirth}{app.gender ? ` • ${app.gender}` : ''}{app.maritalStatus ? ` • ${app.maritalStatus}` : ''}
+                            </div>
+                          )}
                           {app.nationality && <div className="text-slate-600">Nationality: {app.nationality}</div>}
                           {(app.residentialAddress || app.cityState) && (
                             <div className="text-slate-600">
@@ -1364,10 +1430,16 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                         <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                            {app.type === 'caregiver' ? 'Role & Education' : 'Category / Role'}
+                            {app.type === 'caregiver' ? 'Role & Education' : 'Care Info & Next of Kin'}
                           </span>
-                          <div className="font-bold text-slate-800">{app.positionOrCategory}</div>
-                          {app.sponsorName && <div className="text-slate-600">Sponsor: {app.sponsorName}</div>}
+                          <div className="font-bold text-slate-800">{app.careTypeRequired || app.positionOrCategory}</div>
+                          {app.mobilityStatus && <div className="text-slate-600">Mobility: {app.mobilityStatus}</div>}
+                          {(app.nextOfKinName || app.sponsorName) && (
+                            <div className="text-slate-600">
+                              Next of Kin: {app.nextOfKinName || app.sponsorName}
+                              {app.nextOfKinRelationship && app.nextOfKinName ? ` (${app.nextOfKinRelationship})` : ''}
+                            </div>
+                          )}
                           {app.highestQualification && (
                             <div className="text-slate-700 pt-1 border-t border-slate-100">
                               <span className="font-semibold">{app.highestQualification}</span>
@@ -1385,7 +1457,7 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                         <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                            {app.type === 'caregiver' ? 'Work Experience & Notes' : 'Medical / Qualifications Note'}
+                            {app.type === 'caregiver' ? 'Work Experience & Notes' : 'Clinical & Administrative Notes'}
                           </span>
                           {app.hasPreviousCareExperience && (
                             <div className="text-slate-700 font-semibold">
@@ -1404,10 +1476,18 @@ export const AdminDashboard: React.FC = () => {
                           {app.reasonForLeaving && (
                             <div className="text-slate-500">Reason left: {app.reasonForLeaving}</div>
                           )}
-                          {app.notesOrStatement && (
-                            <div className="text-slate-700 line-clamp-3">{app.notesOrStatement}</div>
+                          {app.type === 'resident' && app.existingMedicalConditions && (
+                            <div className="text-slate-700">Conditions: {app.existingMedicalConditions}</div>
                           )}
-                          {!app.hasPreviousCareExperience && !app.notesOrStatement && (
+                          {(app.reasonForAdmission || app.notesOrStatement) && (
+                            <div className="text-slate-700 line-clamp-3">{app.reasonForAdmission || app.notesOrStatement}</div>
+                          )}
+                          {app.type === 'resident' && app.admissionDate && (
+                            <div className="text-teal-800 font-semibold pt-1 border-t border-slate-100">
+                              Admission Date: {app.admissionDate}
+                            </div>
+                          )}
+                          {!app.hasPreviousCareExperience && !app.notesOrStatement && !app.reasonForAdmission && (
                             <div className="text-slate-400">N/A</div>
                           )}
                         </div>
@@ -2514,6 +2594,16 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Resident Care Admission Form Review Modal (Includes Staff-Only Section 5) */}
+      <ResidentAdmissionReviewModal
+        isOpen={!!reviewingResidentApp}
+        onClose={() => setReviewingResidentAppId(null)}
+        application={reviewingResidentApp}
+        staff={staff}
+        onSaveAdminSection={updateApplication}
+        onPreviewImage={(img) => setPreviewImage(img)}
+      />
 
       {/* Edit Profile Photo & Info Modal */}
       <EditProfilePhotoModal
