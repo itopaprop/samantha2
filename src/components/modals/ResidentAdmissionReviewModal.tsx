@@ -441,7 +441,13 @@ export const ResidentAdmissionReviewModal: React.FC<ResidentAdmissionReviewModal
                   <span className={fieldLabelCls}>Alternative Phone Number</span>
                   <div className={fieldBoxCls}>{application.nextOfKinAltPhone || 'N/A'}</div>
                 </div>
-                <div className="sm:col-span-2">
+                <div>
+                  <span className={fieldLabelCls}>Applicant WhatsApp Number</span>
+                  <div className={fieldBoxCls}>
+                    {application.applicantWhatsApp || application.whatsappNumber || 'N/A'}
+                  </div>
+                </div>
+                <div>
                   <span className={fieldLabelCls}>Email Address</span>
                   <div className={fieldBoxCls}>{application.nextOfKinEmail || application.email || 'N/A'}</div>
                 </div>
@@ -459,6 +465,10 @@ export const ResidentAdmissionReviewModal: React.FC<ResidentAdmissionReviewModal
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                   Consent to contact confirmed: {application.consentContactPermitted ? 'Yes' : 'Not recorded'}
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-teal-50 text-teal-800 border border-teal-200">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-teal-600" />
+                  WhatsApp notification consent: {application.whatsappConsent === true ? 'Yes (Agreed)' : 'No'}
                 </span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

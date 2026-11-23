@@ -37,18 +37,21 @@ import {
   logoutFirebaseUser,
   onAuthStateChanged,
   sanitizeForFirestore, 
+  formatFirestoreDate,
   handleFirestoreError,
   OperationType,
   collection, 
   doc, 
   getDocs, 
   getDoc, 
+  setDoc as directFirestoreSetDoc,
   safeFirestoreSetDoc as setDoc, 
   safeFirestoreUpdateDoc as updateDoc, 
   safeFirestoreDeleteDoc as deleteDoc, 
   onSnapshot, 
   query, 
   where,
+  serverTimestamp,
   isFirestoreQuotaExhausted,
   markFirestoreQuotaExhausted
 } from '../lib/firebase';
@@ -639,10 +642,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fallbackDefault?: T[]
     ) => {
       try {
+        const normalizeFirestoreDoc = <D,>(docSnap: any): D => {
+          const data = docSnap.data() || {};
+          if (data.createdAt && typeof data.createdAt !== 'string') {
+            data.createdAt = formatFirestoreDate(data.createdAt);
+          }
+          return { ...data, id: docSnap.id } as D;
+        };
+
         // Direct proactive getDocs fetch to immediately hydrate on cold boot across browsers
         getDocs(collection(db, colName)).then(snapshot => {
           if (!snapshot.empty) {
-            const rawItems = snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as T[];
+            const rawItems = snapshot.docs.map(d => normalizeFirestoreDoc<T>(d));
             const cleanItems = rawItems.filter(item => !isDemoRecord(item));
             if (colName === 'residents') {
               setter(cleanItems as any);
@@ -671,7 +682,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const unsubscribe = onSnapshot(collection(db, colName), (snapshot) => {
           if (!snapshot.empty) {
-            const rawItems = snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as T[];
+            const rawItems = snapshot.docs.map(d => normalizeFirestoreDoc<T>(d));
             const cleanItems = rawItems.filter(item => !isDemoRecord(item));
 
             if (colName === 'users') {
@@ -3018,8 +3029,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? appData.admissionId || `ADM-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
         : appData.admissionId;
 
+    const isResident = appData.type === 'resident';
+    const initialStatus: ApplicationSubmission['status'] = isResident ? 'pending' : 'Received';
+    const resolvedFormType =
+      appData.formType || (isResident ? 'resident_care_admission' : 'caregiver_job_application');
+    const resolvedApplicantName = isResident
+      ? (appData.applicantName || appData.applicantGuardianName || appData.fullName || '').trim()
+      : (appData.applicantName || appData.fullName || '').trim();
+    const resolvedApplicantWhatsApp = isResident
+      ? (appData.applicantWhatsApp || appData.whatsappNumber || appData.phone || '').trim()
+      : (appData.applicantWhatsApp || appData.whatsappNumber || '').trim() || undefined;
+    const resolvedWhatsAppConsent = Boolean(appData.whatsappConsent);
+
     const newSubmission: ApplicationSubmission = {
       ...appData,
+      applicantName: resolvedApplicantName,
+      ...(resolvedApplicantWhatsApp ? { applicantWhatsApp: resolvedApplicantWhatsApp } : {}),
+      whatsappConsent: resolvedWhatsAppConsent,
+      formType: resolvedFormType,
       photoUrl,
       cvUrl: cvDoc?.url || appData.cvUrl,
       cvName: cvDoc?.name || appData.cvName,
@@ -3027,7 +3054,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       receiptUrl,
       receiptName: appData.receiptName,
       references: processedReferences,
-      ...(appData.type === 'resident'
+      ...(isResident
         ? {
             admissionId: generatedAdmissionId,
             admissionStatus: appData.admissionStatus || 'Pending',
@@ -3035,14 +3062,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         : {}),
       id: appUUID,
       createdAt,
-      status: 'Received',
+      status: initialStatus,
     };
 
-    // 4. Update local state immediately
-    setApplications(prev => [newSubmission, ...prev]);
-
-    // 5. Save to Firestore (guard against 1MB limit if any raw base64 remains)
-    const firestoreSubmission: ApplicationSubmission = {
+    // 4. Save to Firestore FIRST and await confirmation before showing success
+    const firestoreSubmission: Record<string, any> = {
       ...newSubmission,
       photoUrl: typeof newSubmission.photoUrl === 'string' && newSubmission.photoUrl.startsWith('data:') && newSubmission.photoUrl.length > 150000 ? undefined : newSubmission.photoUrl,
       receiptUrl: typeof newSubmission.receiptUrl === 'string' && newSubmission.receiptUrl.startsWith('data:') && newSubmission.receiptUrl.length > 150000 ? undefined : newSubmission.receiptUrl,
@@ -3057,11 +3081,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ...(newSubmission.documents.validId ? { validId: compactDocForFirestore(newSubmission.documents.validId) } : {}),
           }
         : undefined,
+      createdAt: serverTimestamp(),
+      status: initialStatus,
+      whatsappConsent: Boolean(newSubmission.whatsappConsent),
     };
 
-    setDoc(doc(db, 'applications', newSubmission.id), sanitizeForFirestore(firestoreSubmission), { merge: true }).catch((fsErr) => {
-      console.warn('Firestore application insert notice:', fsErr);
-    });
+    try {
+      await directFirestoreSetDoc(
+        doc(db, 'applications', newSubmission.id),
+        sanitizeForFirestore(firestoreSubmission),
+        { merge: true }
+      );
+    } catch (fsErr: any) {
+      const errCode = String(fsErr?.code || '').toLowerCase();
+      const errMsg = String(fsErr?.message || fsErr || '').toLowerCase();
+      if (
+        errCode === 'resource-exhausted' ||
+        errMsg.includes('quota limit exceeded') ||
+        errMsg.includes('quota exceeded') ||
+        errMsg.includes('free daily write units')
+      ) {
+        markFirestoreQuotaExhausted();
+      }
+      handleFirestoreError(fsErr, OperationType.CREATE, `applications/${newSubmission.id}`);
+      throw new Error(
+        'Unable to confirm application save with Firestore right now. Please check your internet connection and try again.'
+      );
+    }
+
+    // 5. Update local state only after Firestore confirms save
+    setApplications(prev => [newSubmission, ...prev]);
 
     // 6. Save to Server API Cache
     fetch('/api/applications', {
@@ -3103,7 +3152,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const caregiverSectionsSummary = appData.type === 'caregiver'
       ? `\nSECTION 1 – PERSONAL INFORMATION:\n• Full Name: ${appData.fullName}\n${appData.dateOfBirth ? `• Date of Birth: ${appData.dateOfBirth}\n` : ''}${appData.gender ? `• Gender: ${appData.gender}\n` : ''}• Phone: ${appData.phone}\n${appData.whatsappNumber ? `• WhatsApp: ${appData.whatsappNumber}\n` : ''}• Email: ${appData.email}\n${appData.residentialAddress ? `• Residential Address: ${appData.residentialAddress}\n` : ''}${appData.cityState ? `• City / State: ${appData.cityState}\n` : ''}${appData.nationality ? `• Nationality: ${appData.nationality}\n` : ''}• Position Applied For: ${appData.positionOrCategory}\n\nSECTION 2 – EDUCATIONAL BACKGROUND:\n• Highest Qualification: ${appData.highestQualification || 'N/A'}\n• Institution: ${appData.institutionName || 'N/A'}\n• Course of Study: ${appData.courseOfStudy || 'N/A'}\n• Graduation Year: ${appData.graduationYear || 'N/A'}\n• Professional Qualifications: ${appData.professionalQualifications || 'N/A'}\n• Relevant Certifications: ${appData.relevantCertifications || 'N/A'}\n\nSECTION 3 – WORK EXPERIENCE:\n• Previous Caregiving / Healthcare Experience: ${appData.hasPreviousCareExperience || 'N/A'}\n${appData.previousEmployer ? `• Previous Employer: ${appData.previousEmployer}\n` : ''}${appData.previousJobTitle ? `• Job Title: ${appData.previousJobTitle}\n` : ''}${appData.yearsOfExperience ? `• Years of Experience: ${appData.yearsOfExperience}\n` : ''}${appData.previousResponsibilities ? `• Previous Responsibilities: ${appData.previousResponsibilities}\n` : ''}${appData.reasonForLeaving ? `• Reason for Leaving: ${appData.reasonForLeaving}\n` : ''}${appData.notesOrStatement ? `• Additional Statement: ${appData.notesOrStatement}\n` : ''}\nSECTION 4 – DOCUMENT UPLOADS:\n${uploadedDocLabels.length > 0 ? uploadedDocLabels.map(d => `• ${d}`).join('\n') : '• None attached'}`
-      : `\nADMISSION REFERENCE: ${generatedAdmissionId || 'Pending'}\n\nSECTION 1 – RESIDENT'S PERSONAL INFORMATION:\n• Full Name: ${appData.fullName}\n${appData.dateOfBirth ? `• Date of Birth: ${appData.dateOfBirth}\n` : ''}${appData.gender ? `• Gender: ${appData.gender}\n` : ''}${appData.maritalStatus ? `• Marital Status: ${appData.maritalStatus}\n` : ''}${appData.residentialAddress ? `• Residential Address: ${appData.residentialAddress}\n` : ''}\nSECTION 2 – CARE INFORMATION:\n• Type of Care Required: ${appData.careTypeRequired || appData.positionOrCategory}\n${appData.mobilityStatus ? `• Mobility Status: ${appData.mobilityStatus}\n` : ''}${appData.reasonForAdmission ? `• Reason for Admission: ${appData.reasonForAdmission}\n` : ''}${appData.existingMedicalConditions ? `• Existing Medical Conditions: ${appData.existingMedicalConditions}\n` : ''}${appData.currentMedications ? `• Current Medications: ${appData.currentMedications}\n` : ''}${appData.specialCareRequirements ? `• Special Care Requirements: ${appData.specialCareRequirements}\n` : ''}\nSECTION 3 – NEXT OF KIN / EMERGENCY CONTACT:\n• Full Name: ${appData.nextOfKinName || appData.sponsorName || 'N/A'}\n${appData.nextOfKinRelationship ? `• Relationship to Resident: ${appData.nextOfKinRelationship}\n` : ''}• Phone Number: ${appData.nextOfKinPhone || appData.phone}\n${appData.nextOfKinAltPhone ? `• Alternative Phone: ${appData.nextOfKinAltPhone}\n` : ''}• Email Address: ${appData.nextOfKinEmail || appData.email}\n\nSECTION 4 – ADMISSION CONSENT:\n• Confirmed Accurate: ${appData.consentInfoAccurate ? 'Yes' : 'No'}\n• Contact Consent: ${appData.consentContactPermitted ? 'Yes' : 'No'}\n${appData.applicantGuardianName ? `• Applicant / Guardian: ${appData.applicantGuardianName}\n` : ''}${appData.applicantSignature ? `• Signature: ${appData.applicantSignature}\n` : ''}${appData.consentDate ? `• Consent Date: ${appData.consentDate}\n` : ''}${photoUrl ? '• Resident Photo: Attached\n' : ''}${receiptUrl ? `• Payment Receipt: Attached (${appData.receiptName || 'Bank Transfer Proof'})\n` : ''}`;
+      : `\nADMISSION REFERENCE: ${generatedAdmissionId || 'Pending'}\n\nSECTION 1 – RESIDENT'S PERSONAL INFORMATION:\n• Full Name: ${appData.fullName}\n${appData.dateOfBirth ? `• Date of Birth: ${appData.dateOfBirth}\n` : ''}${appData.gender ? `• Gender: ${appData.gender}\n` : ''}${appData.maritalStatus ? `• Marital Status: ${appData.maritalStatus}\n` : ''}${appData.residentialAddress ? `• Residential Address: ${appData.residentialAddress}\n` : ''}\nSECTION 2 – CARE INFORMATION:\n• Type of Care Required: ${appData.careTypeRequired || appData.positionOrCategory}\n${appData.mobilityStatus ? `• Mobility Status: ${appData.mobilityStatus}\n` : ''}${appData.reasonForAdmission ? `• Reason for Admission: ${appData.reasonForAdmission}\n` : ''}${appData.existingMedicalConditions ? `• Existing Medical Conditions: ${appData.existingMedicalConditions}\n` : ''}${appData.currentMedications ? `• Current Medications: ${appData.currentMedications}\n` : ''}${appData.specialCareRequirements ? `• Special Care Requirements: ${appData.specialCareRequirements}\n` : ''}\nSECTION 3 – NEXT OF KIN / EMERGENCY CONTACT:\n• Full Name: ${appData.nextOfKinName || appData.sponsorName || 'N/A'}\n${appData.nextOfKinRelationship ? `• Relationship to Resident: ${appData.nextOfKinRelationship}\n` : ''}• Phone Number: ${appData.nextOfKinPhone || appData.phone}\n${appData.nextOfKinAltPhone ? `• Alternative Phone: ${appData.nextOfKinAltPhone}\n` : ''}• Applicant WhatsApp: ${resolvedApplicantWhatsApp || 'N/A'}\n• Email Address: ${appData.nextOfKinEmail || appData.email}\n\nSECTION 4 – ADMISSION CONSENT:\n• Confirmed Accurate: ${appData.consentInfoAccurate ? 'Yes' : 'No'}\n• Contact Consent: ${appData.consentContactPermitted ? 'Yes' : 'No'}\n• WhatsApp Notifications Consent: ${resolvedWhatsAppConsent ? 'Yes' : 'No'}\n${appData.applicantGuardianName ? `• Applicant / Guardian: ${appData.applicantGuardianName}\n` : ''}${appData.applicantSignature ? `• Signature: ${appData.applicantSignature}\n` : ''}${appData.consentDate ? `• Consent Date: ${appData.consentDate}\n` : ''}${photoUrl ? '• Resident Photo: Attached\n' : ''}${receiptUrl ? `• Payment Receipt: Attached (${appData.receiptName || 'Bank Transfer Proof'})\n` : ''}`;
 
     const adminAppNotification: Message = {
       id: adminAppNotifId,

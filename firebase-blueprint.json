@@ -121,7 +121,11 @@
       "properties": {
         "id": { "type": "string" },
         "type": { "type": "string" },
+        "formType": { "type": "string" },
         "fullName": { "type": "string" },
+        "applicantName": { "type": "string" },
+        "applicantWhatsApp": { "type": "string" },
+        "whatsappConsent": { "type": "boolean" },
         "email": { "type": "string" },
         "phone": { "type": "string" },
         "positionOrCategory": { "type": "string" },

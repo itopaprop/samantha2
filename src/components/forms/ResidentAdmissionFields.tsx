@@ -9,6 +9,43 @@ export const CARE_TYPES_REQUIRED = [
 
 export type CareTypeRequiredOption = (typeof CARE_TYPES_REQUIRED)[number];
 
+export const normalizeInternationalWhatsAppNumber = (raw: string): string | null => {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  // Strip spaces, dashes, parentheses, dots
+  const compact = trimmed.replace(/[\s\-().]/g, '');
+
+  // Reject anything containing non-digit characters (apart from leading +)
+  if (!/^\+?\d+$/.test(compact)) return null;
+
+  // Convert leading 00 international prefix to +
+  if (compact.startsWith('00')) {
+    const intl = `+${compact.slice(2)}`;
+    return /^\+[1-9]\d{6,14}$/.test(intl) ? intl : null;
+  }
+
+  // Already has + international prefix (E.164: +countryCode + subscriber, 7 to 15 digits)
+  if (compact.startsWith('+')) {
+    return /^\+[1-9]\d{6,14}$/.test(compact) ? compact : null;
+  }
+
+  // Nigerian local mobile format (e.g. 0803..., 0812..., 0706..., 0901..., 0915...) -> +234...
+  if (/^0[789][01]\d{8}$/.test(compact)) {
+    return `+234${compact.slice(1)}`;
+  }
+
+  // International number typed without leading + (e.g. 2348012345678, 447700900123)
+  if (/^[1-9]\d{7,14}$/.test(compact)) {
+    return `+${compact}`;
+  }
+
+  return null;
+};
+
+export const isValidInternationalWhatsAppNumber = (raw: string): boolean => {
+  return normalizeInternationalWhatsAppNumber(raw) !== null;
+};
+
 export interface ResidentAdmissionFormState {
   // Section 1. Resident's Personal Information
   fullName: string;
@@ -28,10 +65,12 @@ export interface ResidentAdmissionFormState {
   nextOfKinRelationship: string;
   nextOfKinPhone: string;
   nextOfKinAltPhone: string;
+  applicantWhatsApp: string;
   nextOfKinEmail: string;
   // 4. Admission Consent
   consentInfoAccurate: boolean;
   consentContactPermitted: boolean;
+  whatsappConsent: boolean;
   applicantGuardianName: string;
   applicantSignature: string;
   consentDate: string;
@@ -53,9 +92,11 @@ export const createInitialResidentFormState = (): ResidentAdmissionFormState => 
   nextOfKinRelationship: '',
   nextOfKinPhone: '',
   nextOfKinAltPhone: '',
+  applicantWhatsApp: '',
   nextOfKinEmail: '',
   consentInfoAccurate: false,
   consentContactPermitted: false,
+  whatsappConsent: false,
   applicantGuardianName: '',
   applicantSignature: '',
   consentDate: new Date().toISOString().split('T')[0],
@@ -337,7 +378,32 @@ export const ResidentAdmissionFields: React.FC<ResidentAdmissionFieldsProps> = (
             />
           </div>
 
-          <div className="sm:col-span-2">
+          <div>
+            <label className={labelCls}>Applicant WhatsApp Number *</label>
+            <input
+              type="tel"
+              inputMode="tel"
+              required
+              placeholder="+234 800 000 0000"
+              value={form.applicantWhatsApp}
+              onChange={(e) => setForm((prev) => ({ ...prev, applicantWhatsApp: e.target.value }))}
+              className={`${inputCls} ${
+                form.applicantWhatsApp.trim() && !isValidInternationalWhatsAppNumber(form.applicantWhatsApp)
+                  ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500'
+                  : ''
+              }`}
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              International numbers supported, including Nigeria (+234) e.g. +234 801 234 5678.
+            </p>
+            {form.applicantWhatsApp.trim() && !isValidInternationalWhatsAppNumber(form.applicantWhatsApp) && (
+              <p className="text-[11px] font-semibold text-rose-600 mt-0.5">
+                Please enter a valid international WhatsApp number (e.g. +234 801 234 5678 or +44 7700 900123).
+              </p>
+            )}
+          </div>
+
+          <div>
             <label className={labelCls}>Email Address *</label>
             <input
               type="email"
@@ -385,6 +451,21 @@ export const ResidentAdmissionFields: React.FC<ResidentAdmissionFieldsProps> = (
             />
             <span className="text-xs font-medium text-slate-800">
               I consent to the care home contacting me concerning this admission. <span className="text-rose-600">*</span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              required
+              checked={form.whatsappConsent}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, whatsappConsent: e.target.checked }))
+              }
+              className="mt-0.5 rounded border-slate-300 text-teal-700 focus:ring-teal-600 cursor-pointer"
+            />
+            <span className="text-xs font-medium text-slate-800">
+              I agree to receive WhatsApp notifications from Samanthasappy Care Home concerning this admission application. <span className="text-rose-600">*</span>
             </span>
           </label>
         </div>

@@ -1415,7 +1415,12 @@ export const AdminDashboard: React.FC = () => {
                           <div className="font-bold text-slate-800">✉️ {app.nextOfKinEmail || app.email}</div>
                           <div className="text-slate-600 font-medium">📞 {app.nextOfKinPhone || app.phone}</div>
                           {app.nextOfKinAltPhone && <div className="text-slate-600">Alt: {app.nextOfKinAltPhone}</div>}
-                          {app.whatsappNumber && <div className="text-emerald-700 font-medium">💬 WhatsApp: {app.whatsappNumber}</div>}
+                          {(app.applicantWhatsApp || app.whatsappNumber) && (
+                            <div className="text-emerald-700 font-medium">
+                              💬 WhatsApp: {app.applicantWhatsApp || app.whatsappNumber}
+                              {app.whatsappConsent === true ? ' (Consented)' : ''}
+                            </div>
+                          )}
                           {app.dateOfBirth && (
                             <div className="text-slate-600">
                               DOB: {app.dateOfBirth}{app.gender ? ` • ${app.gender}` : ''}{app.maritalStatus ? ` • ${app.maritalStatus}` : ''}

@@ -233,6 +233,11 @@ export interface ApplicationSubmission {
   yearsOfExperience?: string;
   previousResponsibilities?: string;
   reasonForLeaving?: string;
+  // Resident & WhatsApp Notification Metadata
+  applicantName?: string;
+  applicantWhatsApp?: string;
+  whatsappConsent?: boolean;
+  formType?: string;
   // Caregiver Section 4 – Document Uploads
   photoUrl?: string;
   cvUrl?: string;
@@ -252,7 +257,7 @@ export interface ApplicationSubmission {
   sponsorName?: string;
   references: Reference[];
   createdAt: string;
-  status: 'Received' | 'Under Review' | 'Approved' | 'Declined';
+  status: 'pending' | 'Received' | 'Under Review' | 'Approved' | 'Declined';
 }
 
 export interface ConsultationBooking {

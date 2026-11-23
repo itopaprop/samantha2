@@ -31,6 +31,7 @@ import {
   ResidentAdmissionFields,
   ResidentAdmissionFormState,
   createInitialResidentFormState,
+  normalizeInternationalWhatsAppNumber,
 } from '../forms/ResidentAdmissionFields';
 
 export const ApplyNowModal: React.FC = () => {
@@ -38,6 +39,8 @@ export const ApplyNowModal: React.FC = () => {
   const [appType, setAppType] = useState<'caregiver' | 'resident'>('caregiver');
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const submitLockRef = useRef(false);
   const [payLaterWhatsApp, setPayLaterWhatsApp] = useState(false);
   const [copiedAcc, setCopiedAcc] = useState<number | null>(null);
 
@@ -159,7 +162,9 @@ export const ApplyNowModal: React.FC = () => {
     setReceiptFileType(null);
     setPayLaterWhatsApp(false);
     setCareerForm(createInitialCareerFormState('Senior Care Assistant'));
+    submitLockRef.current = false;
     setIsSubmitting(false);
+    setSubmitError(null);
     setSubmitted(false);
   };
 
@@ -176,14 +181,76 @@ export const ApplyNowModal: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitLockRef.current || isSubmitting || submitted) {
+      return;
+    }
+    setSubmitError(null);
+
+    let normalizedResidentWhatsApp = '';
 
     if (appType === 'resident') {
-      if (!residentForm.consentInfoAccurate || !residentForm.consentContactPermitted) {
-        showToast('Please confirm both Admission Consent checkboxes in Section 4.');
+      if (!residentForm.fullName.trim()) {
+        const msg = "Please enter the resident's Full Name in Section 1.";
+        setSubmitError(msg);
+        showToast(msg);
+        return;
+      }
+      if (!residentForm.dateOfBirth || !residentForm.gender || !residentForm.maritalStatus || !residentForm.residentialAddress.trim()) {
+        const msg = 'Please complete all required fields in Section 1 (Personal Information).';
+        setSubmitError(msg);
+        showToast(msg);
+        return;
+      }
+      if (!residentForm.careTypeRequired || !residentForm.mobilityStatus || !residentForm.reasonForAdmission.trim()) {
+        const msg = 'Please complete all required fields in Section 2 (Care Information).';
+        setSubmitError(msg);
+        showToast(msg);
+        return;
+      }
+      if (!residentForm.nextOfKinName.trim() || !residentForm.nextOfKinRelationship || !residentForm.nextOfKinPhone.trim()) {
+        const msg = 'Please complete Next of Kin Name, Relationship, and Phone Number in Section 3.';
+        setSubmitError(msg);
+        showToast(msg);
+        return;
+      }
+      const parsedWhatsApp = normalizeInternationalWhatsAppNumber(residentForm.applicantWhatsApp);
+      if (!parsedWhatsApp) {
+        const msg = 'Please enter a valid required Applicant WhatsApp Number (international format supported, e.g. +234 801 234 5678).';
+        setSubmitError(msg);
+        showToast(msg);
+        return;
+      }
+      normalizedResidentWhatsApp = parsedWhatsApp;
+
+      const emailTrimmed = residentForm.nextOfKinEmail.trim();
+      if (!emailTrimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
+        const msg = 'Please enter a valid Email Address in Section 3.';
+        setSubmitError(msg);
+        showToast(msg);
+        return;
+      }
+      if (residentForm.consentInfoAccurate !== true || residentForm.consentContactPermitted !== true) {
+        const msg = 'Please confirm both Admission Consent checkboxes in Section 4.';
+        setSubmitError(msg);
+        showToast(msg);
+        return;
+      }
+      if (residentForm.whatsappConsent !== true) {
+        const msg = 'Please agree to receive WhatsApp notifications concerning this admission application in Section 4.';
+        setSubmitError(msg);
+        showToast(msg);
+        return;
+      }
+      if (!residentForm.applicantGuardianName.trim() || !residentForm.applicantSignature.trim() || !residentForm.consentDate) {
+        const msg = 'Please enter Name of Applicant / Guardian, Signature, and Date in Section 4.';
+        setSubmitError(msg);
+        showToast(msg);
         return;
       }
       if (!receiptPreview && !payLaterWhatsApp) {
-        showToast('Please attach your payment receipt or select the WhatsApp payment verification option.');
+        const msg = 'Please attach your payment receipt or select the WhatsApp payment verification option.';
+        setSubmitError(msg);
+        showToast(msg);
         return;
       }
     }
@@ -199,6 +266,7 @@ export const ApplyNowModal: React.FC = () => {
       }
     }
 
+    submitLockRef.current = true;
     try {
       setIsSubmitting(true);
       if (appType === 'caregiver') {
@@ -215,6 +283,8 @@ export const ApplyNowModal: React.FC = () => {
 
         await submitApplication({
           type: 'caregiver',
+          formType: 'caregiver_job_application',
+          applicantName: careerForm.fullName.trim() || 'Caregiver Applicant',
           fullName: careerForm.fullName.trim() || 'Caregiver Applicant',
           email: careerForm.email.trim(),
           phone: careerForm.phone.trim(),
@@ -253,11 +323,17 @@ export const ApplyNowModal: React.FC = () => {
         });
       } else {
         const baseReason = residentForm.reasonForAdmission.trim() || 'Resident Care Admission Request';
+        const applicantFullName = residentForm.applicantGuardianName.trim() || residentForm.fullName.trim();
         await submitApplication({
           type: 'resident',
-          fullName: residentForm.fullName.trim() || 'Resident Applicant',
-          email: residentForm.nextOfKinEmail.trim() || 'applicant@samanthasappy.com',
-          phone: residentForm.nextOfKinPhone.trim() || '+234 706 933 2193',
+          formType: 'resident_care_admission',
+          applicantName: applicantFullName,
+          applicantWhatsApp: normalizedResidentWhatsApp,
+          whatsappNumber: normalizedResidentWhatsApp,
+          whatsappConsent: Boolean(residentForm.whatsappConsent),
+          fullName: residentForm.fullName.trim(),
+          email: residentForm.nextOfKinEmail.trim(),
+          phone: residentForm.nextOfKinPhone.trim(),
           dateOfBirth: residentForm.dateOfBirth,
           gender: residentForm.gender,
           maritalStatus: residentForm.maritalStatus,
@@ -273,8 +349,8 @@ export const ApplyNowModal: React.FC = () => {
           nextOfKinPhone: residentForm.nextOfKinPhone.trim(),
           nextOfKinAltPhone: residentForm.nextOfKinAltPhone.trim() || undefined,
           nextOfKinEmail: residentForm.nextOfKinEmail.trim(),
-          consentInfoAccurate: residentForm.consentInfoAccurate,
-          consentContactPermitted: residentForm.consentContactPermitted,
+          consentInfoAccurate: Boolean(residentForm.consentInfoAccurate),
+          consentContactPermitted: Boolean(residentForm.consentContactPermitted),
           applicantGuardianName: residentForm.applicantGuardianName.trim(),
           applicantSignature: residentForm.applicantSignature.trim(),
           consentDate: residentForm.consentDate,
@@ -292,7 +368,9 @@ export const ApplyNowModal: React.FC = () => {
         });
       }
 
+      // Only show success after Firestore confirms save in submitApplication
       setSubmitted(true);
+      showToast('Application saved and confirmed in Firestore!');
       if (appType === 'caregiver') {
         setTimeout(() => {
           setIsApplyModalOpen(false);
@@ -301,8 +379,11 @@ export const ApplyNowModal: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Submission error:', err);
-      showToast(err?.message || 'Failed to complete submission. Please try again.');
+      const errMessage = err?.message || 'Failed to save your application to Firestore. Please try again.';
+      setSubmitError(errMessage);
+      showToast(errMessage);
     } finally {
+      submitLockRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -351,6 +432,16 @@ export const ApplyNowModal: React.FC = () => {
 
                 {/* Dispatch Status Badges */}
                 <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-teal-50 border border-teal-200 text-teal-800 rounded-full text-xs font-semibold">
+                    <Check className="w-3.5 h-3.5 text-teal-600" />
+                    <span>Confirmed Saved in Cloud Firestore</span>
+                  </div>
+                  {appType === 'resident' && residentForm.whatsappConsent && (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-full text-xs font-semibold">
+                      <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>WhatsApp Notifications Enabled</span>
+                    </div>
+                  )}
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-sky-50 border border-sky-200 text-sky-800 rounded-full text-xs font-semibold">
                     <Check className="w-3.5 h-3.5 text-sky-600" />
                     <span>Admin Dashboard Inbox Notified</span>
@@ -806,6 +897,14 @@ export const ApplyNowModal: React.FC = () => {
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* Inline Validation / Firestore Error Banner */}
+              {submitError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span>{submitError}</span>
                 </div>
               )}
 

@@ -215,9 +215,33 @@ export async function testConnection(): Promise<void> {
 // Initial test connection check
 testConnection().catch(() => {});
 
+export const formatFirestoreDate = (val: any): string => {
+  if (!val) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val?.toDate === 'function') {
+    return val.toDate().toISOString().replace('T', ' ').slice(0, 16);
+  }
+  if (typeof val?.seconds === 'number') {
+    return new Date(val.seconds * 1000).toISOString().replace('T', ' ').slice(0, 16);
+  }
+  if (val instanceof Date) {
+    return val.toISOString().replace('T', ' ').slice(0, 16);
+  }
+  return String(val);
+};
+
 export const sanitizeForFirestore = (data: any): any => {
   if (data === undefined) return null;
   if (data === null || typeof data !== 'object') return data;
+  // Preserve Date, Firestore Timestamp, and FieldValue sentinels such as serverTimestamp()
+  if (
+    data instanceof Date ||
+    typeof data?.toDate === 'function' ||
+    typeof data?._methodName === 'string' ||
+    (data?.constructor && data.constructor.name !== 'Object' && !Array.isArray(data))
+  ) {
+    return data;
+  }
   if (Array.isArray(data)) return data.map(sanitizeForFirestore);
   const sanitized: Record<string, any> = {};
   for (const [key, value] of Object.entries(data)) {
