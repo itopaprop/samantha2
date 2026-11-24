@@ -69,6 +69,8 @@ import {
   invokeRegisterStaff, 
   invokeRegisterRelative, 
   invokeSubmitApplication,
+  invokeSubmitConsultation,
+  invokeSubmitInquiry,
   invokeDeleteStaff,
   invokeDeleteResident,
   invokeDeleteUser,
@@ -118,6 +120,19 @@ export type PageView =
   | 'roofing-gallery'
   | 'roofing-contact';
 
+export interface PublicInquiryInput {
+  formType: 'contact_inquiry' | 'roofing_quote';
+  fullName: string;
+  email?: string;
+  phone?: string;
+  stateLocation?: string;
+  roofType?: string;
+  projectScope?: string;
+  estimatedSize?: string;
+  subject: string;
+  message: string;
+}
+
 interface AppContextType {
   currentPage: PageView;
   setCurrentPage: (page: PageView) => void;
@@ -159,8 +174,10 @@ interface AppContextType {
   
   activityLogs: ActivityLog[];
   consultationBookings: ConsultationBooking[];
-  bookConsultation: (booking: Omit<ConsultationBooking, 'id' | 'status' | 'createdAt'>) => Promise<void>;
+  bookConsultation: (booking: Omit<ConsultationBooking, 'id' | 'status' | 'createdAt'>) => Promise<ConsultationBooking>;
+  updateConsultationStatus: (id: string, status: ConsultationBooking['status']) => Promise<void>;
   deleteConsultation: (id: string) => Promise<void>;
+  submitPublicInquiry: (inquiry: PublicInquiryInput) => Promise<Message>;
   
   events: CommunityEvent[];
   addEvent: (event: Omit<CommunityEvent, 'id'>) => Promise<void>;
@@ -533,10 +550,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setActivityLogs(prev => (prev.length === 0 ? data.activity_logs : prev));
           }
           if (Array.isArray(data.consultations) && data.consultations.length > 0) {
-            setConsultationBookings(prev => (prev.length === 0 ? data.consultations : prev));
+            setConsultationBookings(prev => {
+              const map = new Map<string, ConsultationBooking>();
+              data.consultations.forEach((c: ConsultationBooking) => { if (c?.id) map.set(c.id, c); });
+              (prev || []).forEach(c => { if (c?.id && !map.has(c.id)) map.set(c.id, c); });
+              return Array.from(map.values());
+            });
           }
           if (Array.isArray(data.applications) && data.applications.length > 0) {
-            setApplications(prev => (prev.length === 0 ? data.applications : prev));
+            setApplications(prev => {
+              const map = new Map<string, ApplicationSubmission>();
+              data.applications.forEach((a: ApplicationSubmission) => { if (a?.id) map.set(a.id, a); });
+              (prev || []).forEach(a => { if (a?.id && !map.has(a.id)) map.set(a.id, a); });
+              return Array.from(map.values());
+            });
           }
 
           // Cross-browser Events Synchronization
@@ -646,6 +673,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const data = docSnap.data() || {};
           if (data.createdAt && typeof data.createdAt !== 'string') {
             data.createdAt = formatFirestoreDate(data.createdAt);
+          }
+          if (data.updatedAt && typeof data.updatedAt !== 'string') {
+            data.updatedAt = formatFirestoreDate(data.updatedAt);
+          }
+          if (data.timestamp && typeof data.timestamp !== 'string') {
+            data.timestamp = formatFirestoreDate(data.timestamp);
           }
           return { ...data, id: docSnap.id } as D;
         };
@@ -2390,37 +2423,94 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateApplication = async (id: string, updates: Partial<ApplicationSubmission>) => {
     setApplications(prev => prev.map(app => (app.id === id ? { ...app, ...updates } : app)));
 
-    await Promise.allSettled([
-      setDoc(doc(db, 'applications', id), sanitizeForFirestore(updates), { merge: true }),
-      fetch(`/api/applications/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      }),
-    ]);
+    try {
+      await directFirestoreSetDoc(
+        doc(db, 'applications', id),
+        sanitizeForFirestore({ ...updates, updatedAt: serverTimestamp() }),
+        { merge: true }
+      );
+    } catch (fsErr: any) {
+      const errCode = String(fsErr?.code || '').toLowerCase();
+      const errMsg = String(fsErr?.message || fsErr || '').toLowerCase();
+      if (errCode === 'resource-exhausted' || errMsg.includes('quota')) {
+        markFirestoreQuotaExhausted();
+      } else {
+        console.warn('Firestore updateApplication notice:', fsErr);
+      }
+    }
+
+    await fetch(`/api/applications/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    }).catch(() => {});
 
     showToast('Application administrative record updated.');
   };
 
-  const bookConsultation = async (bookingData: Omit<ConsultationBooking, 'id' | 'status' | 'createdAt'>) => {
+  const bookConsultation = async (
+    bookingData: Omit<ConsultationBooking, 'id' | 'status' | 'createdAt'>
+  ): Promise<ConsultationBooking> => {
     const cbUUID = generateUUID();
+    const createdAtStr = new Date().toISOString().split('T')[0];
+    const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 16);
     const newBooking: ConsultationBooking = {
       ...bookingData,
       id: cbUUID,
+      formType: bookingData.formType || 'consultation_booking',
       status: 'Pending',
-      createdAt: new Date().toISOString().split('T')[0],
+      createdAt: createdAtStr,
     };
-    setConsultationBookings(prev => [newBooking, ...prev]);
 
-    // Save to Firestore & backend server
-    await Promise.allSettled([
-      setDoc(doc(db, 'consultations', newBooking.id), sanitizeForFirestore(newBooking), { merge: true }),
+    let savedToFirestore = false;
+    let quotaHit = false;
+    try {
+      await directFirestoreSetDoc(
+        doc(db, 'consultations', newBooking.id),
+        sanitizeForFirestore({
+          ...newBooking,
+          createdAt: serverTimestamp(),
+        }),
+        { merge: true }
+      );
+      savedToFirestore = true;
+    } catch (fsErr: any) {
+      const errCode = String(fsErr?.code || '').toLowerCase();
+      const errMsg = String(fsErr?.message || fsErr || '').toLowerCase();
+      if (
+        errCode === 'resource-exhausted' ||
+        errMsg.includes('quota limit exceeded') ||
+        errMsg.includes('quota exceeded') ||
+        errMsg.includes('free daily write units')
+      ) {
+        quotaHit = true;
+        markFirestoreQuotaExhausted();
+      } else {
+        handleFirestoreError(fsErr, OperationType.CREATE, `consultations/${newBooking.id}`);
+        throw new Error(
+          'Unable to confirm consultation save with Firestore right now. Please check your connection and try again.'
+        );
+      }
+    }
+
+    if (!savedToFirestore && quotaHit) {
+      const serverRes = await fetch('/api/consultations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newBooking),
+      });
+      if (!serverRes.ok) {
+        throw new Error('Unable to save consultation booking right now. Please try again.');
+      }
+    } else {
       fetch('/api/consultations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newBooking),
-      }),
-    ]);
+      }).catch(() => {});
+    }
+
+    setConsultationBookings(prev => [newBooking, ...prev]);
 
     try {
       const { data: inserted } = await supabase
@@ -2433,7 +2523,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Supabase consultation insert notice:', err);
     }
 
+    // Create Admin Dashboard inbox notification with consultation details
+    const adminConsultMsg: Message = {
+      id: `notif_consult_${newBooking.id}`,
+      senderId: 'public_consultation_booking',
+      senderName: newBooking.fullName,
+      senderRole: 'Resident Relative',
+      receiverId: 'usr-admin-1',
+      receiverName: 'Folasade Sanyaolu (Administrator)',
+      receiverRole: 'Admin',
+      formType: 'consultation_booking',
+      fullName: newBooking.fullName,
+      email: newBooking.email,
+      phone: newBooking.phone,
+      subject: `📅 NEW FAMILY CONSULTATION: ${newBooking.fullName} (${newBooking.serviceInterest})`,
+      content: `Consultation Booking Request:\n• Client Name: ${newBooking.fullName}\n• Email: ${newBooking.email}\n• Phone: ${newBooking.phone}\n• Service Interest: ${newBooking.serviceInterest}\n• Preferred Date: ${newBooking.preferredDate || 'Flexible'}\n• Preferred Time: ${newBooking.preferredTime || 'Flexible'}\n• Consultation ID: ${newBooking.id}\n${newBooking.notes ? `\nNotes:\n${newBooking.notes}` : ''}`,
+      isRead: false,
+      timestamp,
+    };
+
+    setMessages(prev => deduplicateMessages([adminConsultMsg, ...prev]));
+    setDoc(
+      doc(db, 'messages', adminConsultMsg.id),
+      sanitizeForFirestore({ ...adminConsultMsg, createdAt: serverTimestamp() }),
+      { merge: true }
+    ).catch(() => {});
+    fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(adminConsultMsg),
+    }).catch(() => {});
+
+    // Trigger Admin notification email + Editable PDF attachment
+    invokeSubmitConsultation({
+      ...newBooking,
+      formType: 'consultation_booking',
+    }).catch(e => console.warn('Consultation email notification notice:', e));
+
+    // Activity Log
+    const newLog: ActivityLog = {
+      id: generateUUID(),
+      title: 'Consultation Request Scheduled',
+      description: `${newBooking.fullName} requested a consultation for ${newBooking.serviceInterest} on ${newBooking.preferredDate || 'TBD'}.`,
+      category: 'Admission',
+      timestamp,
+      performer: newBooking.fullName,
+    };
+    setActivityLogs(prev => [newLog, ...prev]);
+    setDoc(doc(db, 'activity_logs', newLog.id), sanitizeForFirestore(newLog), { merge: true }).catch(() => {});
+
     showToast('Consultation request submitted successfully! Our care team will contact you shortly.');
+    return newBooking;
+  };
+
+  const updateConsultationStatus = async (id: string, status: ConsultationBooking['status']) => {
+    setConsultationBookings(prev => prev.map(c => (c.id === id ? { ...c, status } : c)));
+    const target = consultationBookings.find(c => c.id === id);
+    const updatedBooking = { ...(target || {}), id, status };
+
+    await Promise.allSettled([
+      setDoc(doc(db, 'consultations', id), sanitizeForFirestore({ status, updatedAt: serverTimestamp() }), { merge: true }),
+      fetch('/api/consultations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedBooking),
+      }),
+    ]);
+
+    showToast(`Consultation status updated to ${status}.`);
   };
 
   const deleteConsultation = async (id: string) => {
@@ -2443,6 +2600,132 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fetch(`/api/consultations/${id}`, { method: 'DELETE' }),
     ]);
     showToast('Consultation removed.');
+  };
+
+  const submitPublicInquiry = async (inquiry: PublicInquiryInput): Promise<Message> => {
+    const inqUUID = generateUUID();
+    const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 16);
+    const isRoofing = inquiry.formType === 'roofing_quote';
+
+    const formattedContent = isRoofing
+      ? `Roofing Quote Inquiry:\n• Client Name: ${inquiry.fullName}\n• Phone: ${inquiry.phone || 'N/A'}\n• Email: ${inquiry.email || 'N/A'}\n• State / Site Location: ${inquiry.stateLocation || 'N/A'}\n• Roof Material Preference: ${inquiry.roofType || 'N/A'}\n• Project Scope: ${inquiry.projectScope || 'N/A'}\n• Estimated Size / Square Metres: ${inquiry.estimatedSize || 'N/A'}\n\nNotes / Specifications:\n${inquiry.message || 'No additional notes provided.'}`
+      : `Contact Form Submission:\n• Sender: ${inquiry.fullName}\n• Email: ${inquiry.email || 'N/A'}\n• Phone: ${inquiry.phone || 'N/A'}\n\nMessage:\n${inquiry.message}`;
+
+    const newMsg: Message = {
+      id: inqUUID,
+      senderId: isRoofing ? 'public_roofing_inquiry' : 'public_contact_visitor',
+      senderName: inquiry.fullName.trim() || 'Website Visitor',
+      senderRole: 'Resident Relative',
+      receiverId: 'usr-admin-1',
+      receiverName: 'Folasade Sanyaolu (Administrator)',
+      receiverRole: 'Admin',
+      subject: inquiry.subject,
+      content: formattedContent,
+      formType: inquiry.formType,
+      fullName: inquiry.fullName.trim(),
+      email: inquiry.email?.trim() || undefined,
+      phone: inquiry.phone?.trim() || undefined,
+      stateLocation: inquiry.stateLocation,
+      roofType: inquiry.roofType,
+      projectScope: inquiry.projectScope,
+      estimatedSize: inquiry.estimatedSize,
+      message: inquiry.message,
+      createdAt: timestamp,
+      isRead: false,
+      timestamp,
+    };
+
+    const inquiryDocPayload = sanitizeForFirestore({
+      id: inqUUID,
+      formType: inquiry.formType,
+      fullName: inquiry.fullName.trim(),
+      email: inquiry.email?.trim() || undefined,
+      phone: inquiry.phone?.trim() || undefined,
+      stateLocation: inquiry.stateLocation,
+      roofType: inquiry.roofType,
+      projectScope: inquiry.projectScope,
+      estimatedSize: inquiry.estimatedSize,
+      subject: inquiry.subject,
+      message: inquiry.message,
+      createdAt: serverTimestamp(),
+      timestamp,
+    });
+
+    const msgDocPayload = sanitizeForFirestore({
+      ...newMsg,
+      createdAt: serverTimestamp(),
+    });
+
+    let savedToFirestore = false;
+    let quotaHit = false;
+    try {
+      await Promise.all([
+        directFirestoreSetDoc(doc(db, 'messages', inqUUID), msgDocPayload, { merge: true }),
+        directFirestoreSetDoc(doc(db, 'inquiries', inqUUID), inquiryDocPayload, { merge: true }),
+      ]);
+      savedToFirestore = true;
+    } catch (fsErr: any) {
+      const errCode = String(fsErr?.code || '').toLowerCase();
+      const errMsg = String(fsErr?.message || fsErr || '').toLowerCase();
+      if (
+        errCode === 'resource-exhausted' ||
+        errMsg.includes('quota limit exceeded') ||
+        errMsg.includes('quota exceeded') ||
+        errMsg.includes('free daily write units')
+      ) {
+        quotaHit = true;
+        markFirestoreQuotaExhausted();
+      } else {
+        handleFirestoreError(fsErr, OperationType.CREATE, `inquiries/${inqUUID}`);
+        throw new Error(
+          'Unable to confirm inquiry save with Firestore right now. Please check your connection and try again.'
+        );
+      }
+    }
+
+    if (!savedToFirestore && quotaHit) {
+      const srvRes = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMsg),
+      });
+      if (!srvRes.ok) {
+        throw new Error('Unable to save your inquiry right now. Please try again.');
+      }
+    } else {
+      fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMsg),
+      }).catch(() => {});
+    }
+
+    setMessages(prev => deduplicateMessages([newMsg, ...prev]));
+
+    try {
+      await supabase.from('messages').insert([messageToRow(newMsg)]);
+    } catch (err) {
+      console.warn('Supabase inquiry message insert notice:', err);
+    }
+
+    // Dispatch Admin email notification with Editable PDF attachment
+    invokeSubmitInquiry({
+      ...newMsg,
+      message: inquiry.message,
+    }).catch(e => console.warn('Inquiry email notification notice:', e));
+
+    const newLog: ActivityLog = {
+      id: generateUUID(),
+      title: isRoofing ? 'Roofing Quote Inquiry Submitted' : 'Website Contact Inquiry Submitted',
+      description: `${inquiry.fullName} submitted "${inquiry.subject}".`,
+      category: 'General',
+      timestamp,
+      performer: inquiry.fullName,
+    };
+    setActivityLogs(prev => [newLog, ...prev]);
+    setDoc(doc(db, 'activity_logs', newLog.id), sanitizeForFirestore(newLog), { merge: true }).catch(() => {});
+
+    return newMsg;
   };
 
   // ============================================================================
@@ -3189,7 +3472,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       invokeSubmitApplication({
         id: newSubmission.id,
-        applicantName: appData.fullName,
+        fullName: appData.fullName,
+        applicantName: resolvedApplicantName,
+        applicantWhatsApp: resolvedApplicantWhatsApp,
+        whatsappConsent: resolvedWhatsAppConsent,
+        formType: resolvedFormType,
         email: appData.email,
         phone: appData.phone,
         whatsappNumber: appData.whatsappNumber,
@@ -3210,6 +3497,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         nextOfKinPhone: appData.nextOfKinPhone,
         nextOfKinAltPhone: appData.nextOfKinAltPhone,
         nextOfKinEmail: appData.nextOfKinEmail,
+        consentInfoAccurate: appData.consentInfoAccurate,
+        consentContactPermitted: appData.consentContactPermitted,
         applicantGuardianName: appData.applicantGuardianName,
         applicantSignature: appData.applicantSignature,
         consentDate: appData.consentDate,
@@ -3302,7 +3591,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       activityLogs,
       consultationBookings,
       bookConsultation,
+      updateConsultationStatus,
       deleteConsultation,
+      submitPublicInquiry,
       events,
       addEvent,
       updateEvent,

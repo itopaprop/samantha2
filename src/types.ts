@@ -114,6 +114,16 @@ export interface Message {
   attachmentUrl?: string;
   applicantPhotoUrl?: string;
   references?: Reference[];
+  formType?: 'contact_inquiry' | 'roofing_quote' | string;
+  fullName?: string;
+  email?: string;
+  phone?: string;
+  stateLocation?: string;
+  roofType?: string;
+  projectScope?: string;
+  estimatedSize?: string;
+  message?: string;
+  createdAt?: string;
   isRead: boolean;
   timestamp: string;
 }
@@ -269,6 +279,7 @@ export interface ConsultationBooking {
   preferredTime: string;
   serviceInterest: string;
   notes?: string;
+  formType?: string;
   status: 'Pending' | 'Confirmed' | 'Completed';
   createdAt: string;
 }

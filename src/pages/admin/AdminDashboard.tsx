@@ -18,6 +18,14 @@ import { ShareEventModal } from '../../components/modals/ShareEventModal';
 import { EditProfilePhotoModal } from '../../components/modals/EditProfilePhotoModal';
 import { ClientCategoryDetailsModal, CategoryDetailType } from '../../components/modals/ClientCategoryDetailsModal';
 import { ResidentAdmissionReviewModal } from '../../components/modals/ResidentAdmissionReviewModal';
+import { FormDocumentModal, FormDocumentTarget } from '../../components/modals/FormDocumentModal';
+import {
+  generateResidentAdmissionPdfClient,
+  generateCaregiverApplicationPdfClient,
+  generateConsultationPdfClient,
+  generateInquiryPdfClient,
+  triggerBlobDownload,
+} from '../../lib/clientPdfGenerator';
 import { CareCategory, UserRole, StaffMember, Resident, Shift, CommunityEvent, ApplicationSubmission } from '../../types';
 import { 
   Users, 
@@ -76,6 +84,9 @@ export const AdminDashboard: React.FC = () => {
     applications,
     updateApplication,
     deleteApplication,
+    consultationBookings,
+    updateConsultationStatus,
+    deleteConsultation,
     activityLogs, 
     events,
     updateEvent,
@@ -98,8 +109,8 @@ export const AdminDashboard: React.FC = () => {
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'residents' | 'staff' | 'shifts' | 'messages' | 'events' | 'jobs' | 'gallery' | 'settings'>('overview');
-  const [messagingTab, setMessagingTab] = useState<'inbox' | 'sent' | 'applications'>('inbox');
-  const [deletingItem, setDeletingItem] = useState<{ type: 'message' | 'application'; id: string; title: string } | null>(null);
+  const [messagingTab, setMessagingTab] = useState<'inbox' | 'sent' | 'applications' | 'consultations'>('inbox');
+  const [deletingItem, setDeletingItem] = useState<{ type: 'message' | 'application' | 'consultation'; id: string; title: string } | null>(null);
 
   // Auto-sync live database on mount and tab change
   useEffect(() => {
@@ -128,8 +139,29 @@ export const AdminDashboard: React.FC = () => {
   const [sharingAdminEvent, setSharingAdminEvent] = useState<CommunityEvent | null>(null);
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
   const [reviewingResidentAppId, setReviewingResidentAppId] = useState<string | null>(null);
+  const [formDocTarget, setFormDocTarget] = useState<FormDocumentTarget | null>(null);
   const reviewingResidentApp: ApplicationSubmission | null =
     applications.find((a) => a.id === reviewingResidentAppId) || null;
+
+  const handleDownloadFormPdf = async (target: FormDocumentTarget) => {
+    try {
+      let res;
+      if (target.kind === 'application') {
+        const isRes = target.data?.type === 'resident' || target.data?.formType === 'resident_care_admission';
+        res = isRes
+          ? await generateResidentAdmissionPdfClient(target.data)
+          : await generateCaregiverApplicationPdfClient(target.data);
+      } else if (target.kind === 'consultation') {
+        res = await generateConsultationPdfClient(target.data);
+      } else {
+        res = await generateInquiryPdfClient(target.data);
+      }
+      triggerBlobDownload(res.blob, res.filename);
+    } catch (err) {
+      console.warn('Download PDF error:', err);
+      showToast('Unable to generate PDF right now.');
+    }
+  };
 
   // Edit modal states
   const [editingResident, setEditingResident] = useState<Resident | null>(null);
@@ -1151,6 +1183,16 @@ export const AdminDashboard: React.FC = () => {
               >
                 <FileText className="w-3.5 h-3.5" /> Care Applications ({applications.length})
               </button>
+              <button
+                onClick={() => setMessagingTab('consultations')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                  messagingTab === 'consultations'
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" /> Consultations ({consultationBookings.length})
+              </button>
             </div>
 
             {/* MESSAGES VIEW (INBOX / SENT) */}
@@ -1201,7 +1243,8 @@ export const AdminDashboard: React.FC = () => {
                               const matched = applications.find(
                                 (a) =>
                                   a.type === 'resident' &&
-                                  (msg.subject.toLowerCase().includes(a.fullName.toLowerCase()) ||
+                                  (msg.id === `notif_app_${a.id}` ||
+                                    msg.subject.toLowerCase().includes(a.fullName.toLowerCase()) ||
                                     (a.admissionId && msg.content.includes(a.admissionId)))
                               );
                               if (matched) {
@@ -1217,6 +1260,67 @@ export const AdminDashboard: React.FC = () => {
                           </button>
                         </div>
                       )}
+
+                      {/* Direct View, Edit, Print & Editable PDF Download for Submitted Forms in Inbox */}
+                      {(() => {
+                        const isPublicInquiry =
+                          msg.senderId === 'public_contact_visitor' ||
+                          msg.senderId === 'public_roofing_inquiry' ||
+                          msg.formType === 'contact_inquiry' ||
+                          msg.formType === 'roofing_quote';
+                        const isConsultMsg =
+                          msg.senderId === 'public_consultation_booking' ||
+                          msg.formType === 'consultation_booking';
+                        const matchedApp = msg.id?.startsWith('notif_app_')
+                          ? applications.find((a) => msg.id === `notif_app_${a.id}`)
+                          : msg.subject?.includes('NEW CARE APPLICATION')
+                          ? applications.find((a) => msg.subject.toLowerCase().includes((a.fullName || '').toLowerCase()))
+                          : undefined;
+                        const matchedConsult = isConsultMsg
+                          ? consultationBookings.find((c) => msg.id === `notif_consult_${c.id}`) || {
+                              id: msg.id.replace(/^notif_consult_/, ''),
+                              fullName: msg.fullName || msg.senderName,
+                              email: msg.email || '',
+                              phone: msg.phone || '',
+                              serviceInterest: 'Consultation',
+                              preferredDate: '',
+                              preferredTime: '',
+                              notes: msg.content,
+                              createdAt: msg.timestamp,
+                              status: 'Pending',
+                            }
+                          : undefined;
+
+                        const target: FormDocumentTarget | null = matchedApp
+                          ? { kind: 'application', data: matchedApp }
+                          : matchedConsult
+                          ? { kind: 'consultation', data: matchedConsult }
+                          : isPublicInquiry
+                          ? { kind: 'inquiry', data: msg }
+                          : null;
+
+                        if (!target) return null;
+                        return (
+                          <div className="mt-2.5 flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => setFormDocTarget(target)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>View / Print Form &amp; PDF</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadFormPdf(target)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-700 hover:bg-sky-800 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Download Editable PDF</span>
+                            </button>
+                          </div>
+                        );
+                      })()}
 
                       {(msg.attachmentName || msg.attachmentUrl) && (
                         <div 
@@ -1381,8 +1485,26 @@ export const AdminDashboard: React.FC = () => {
                           <h3 className="text-base font-extrabold text-slate-900 mt-1">{app.fullName}</h3>
                         </div>
 
-                        {/* Action Buttons: Open Form, Retain or Delete Application */}
+                        {/* Action Buttons: View/Preview PDF, Download Editable PDF, Open Review Form */}
                         <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setFormDocTarget({ kind: 'application', data: app })}
+                            className="px-3.5 py-1.5 bg-sky-700 hover:bg-sky-800 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                            title="View Form Sheet & Editable AcroForm PDF"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View / Open PDF</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadFormPdf({ kind: 'application', data: app })}
+                            className="px-3.5 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                            title="Download Editable AcroForm PDF File"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Download PDF</span>
+                          </button>
                           {app.type === 'resident' && (
                             <button
                               type="button"
@@ -1630,6 +1752,88 @@ export const AdminDashboard: React.FC = () => {
                           </div>
                         </div>
                       )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* FAMILY CONSULTATIONS VIEW */}
+            {messagingTab === 'consultations' && (
+              <div className="space-y-4">
+                {consultationBookings.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 text-xs bg-slate-50 rounded-2xl border border-dashed border-slate-200 space-y-1">
+                    <Calendar className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    <div className="font-bold text-slate-600">No consultation bookings logged in database.</div>
+                    <div>When families book a consultation online, it will appear here with editable PDF export.</div>
+                  </div>
+                ) : (
+                  consultationBookings.map((booking, idx) => (
+                    <div key={booking.id || `con-${idx}`} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-200">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-md uppercase tracking-wider bg-indigo-100 text-indigo-800">
+                              Family Consultation
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-500">Submitted: {booking.createdAt}</span>
+                          </div>
+                          <h3 className="text-base font-extrabold text-slate-900 mt-1">{booking.fullName}</h3>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          <select
+                            value={booking.status}
+                            onChange={(e) => updateConsultationStatus(booking.id, e.target.value as any)}
+                            className="px-3 py-1.5 text-xs font-bold bg-white border border-slate-300 rounded-xl text-slate-800 cursor-pointer"
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="Confirmed">Confirmed</option>
+                            <option value="Completed">Completed</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => setFormDocTarget({ kind: 'consultation', data: booking })}
+                            className="px-3.5 py-1.5 bg-sky-700 hover:bg-sky-800 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View / Open PDF</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadFormPdf({ kind: 'consultation', data: booking })}
+                            className="px-3.5 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Download PDF</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingItem({ type: 'consultation', id: booking.id, title: `Consultation for ${booking.fullName}` })}
+                            className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Client Contact</span>
+                          <div className="font-bold text-slate-800">✉️ {booking.email}</div>
+                          <div className="text-slate-600 font-medium">📞 {booking.phone}</div>
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Appointment Schedule</span>
+                          <div className="font-bold text-slate-800">{booking.serviceInterest}</div>
+                          <div className="text-slate-600">Date: {booking.preferredDate || 'Flexible'} • {booking.preferredTime || 'Flexible'}</div>
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Care Notes</span>
+                          <div className="text-slate-700">{booking.notes || 'No additional notes provided.'}</div>
+                        </div>
+                      </div>
                     </div>
                   ))
                 )}
@@ -2587,6 +2791,8 @@ export const AdminDashboard: React.FC = () => {
                     deleteMessage(deletingItem.id);
                   } else if (deletingItem.type === 'application') {
                     deleteApplication(deletingItem.id);
+                  } else if (deletingItem.type === 'consultation') {
+                    deleteConsultation(deletingItem.id);
                   }
                   setDeletingItem(null);
                 }}
@@ -2615,6 +2821,13 @@ export const AdminDashboard: React.FC = () => {
         isOpen={isEditProfileOpen}
         onClose={() => setIsEditProfileOpen(false)}
         targetUser={currentUser}
+      />
+
+      {/* In-App Form Sheet & Editable PDF Viewer Modal */}
+      <FormDocumentModal
+        isOpen={!!formDocTarget}
+        onClose={() => setFormDocTarget(null)}
+        target={formDocTarget}
       />
 
     </div>

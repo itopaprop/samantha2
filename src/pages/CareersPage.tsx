@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { INITIAL_JOB_VACANCIES, INITIAL_TRAINING_PROGRAMS } from '../data/initialData';
 import { 
@@ -27,6 +27,7 @@ export const CareersPage: React.FC = () => {
   }, [syncDatabase]);
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitLockRef = useRef(false);
   const [form, setForm] = useState<CareerFormState>(() =>
     createInitialCareerFormState('Senior Care Assistant')
   );
@@ -47,6 +48,7 @@ export const CareersPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitLockRef.current || isSubmitting) return;
 
     if (!form.passportPhoto?.url) {
       showToast('Please upload your Recent Passport Photograph in Section 4.');
@@ -69,15 +71,19 @@ export const CareersPage: React.FC = () => {
       }));
 
     try {
+      submitLockRef.current = true;
       setIsSubmitting(true);
       await submitApplication({
         type: 'caregiver',
+        formType: 'caregiver_job_application',
         fullName: form.fullName.trim() || 'Job Applicant',
+        applicantName: form.fullName.trim() || 'Job Applicant',
         email: form.email.trim(),
         phone: form.phone.trim(),
         dateOfBirth: form.dateOfBirth,
         gender: form.gender || undefined,
         whatsappNumber: form.whatsappNumber.trim() || undefined,
+        applicantWhatsApp: form.whatsappNumber.trim() || undefined,
         residentialAddress: form.residentialAddress.trim(),
         cityState: form.cityState.trim(),
         nationality: form.nationality.trim() || undefined,
@@ -119,6 +125,7 @@ export const CareersPage: React.FC = () => {
       showToast(err?.message || 'Error submitting application. Please try again.');
     } finally {
       setIsSubmitting(false);
+      submitLockRef.current = false;
     }
   };
 

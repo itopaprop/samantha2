@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Home, 
@@ -19,11 +19,13 @@ import {
   Ruler, 
   FileText, 
   Send,
-  MessageCircle
+  MessageCircle,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 
 export const RoofingPage: React.FC = () => {
-  const { showToast, setIsApplyModalOpen, setCurrentPage } = useApp();
+  const { showToast, setCurrentPage, submitPublicInquiry } = useApp();
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -36,15 +38,43 @@ export const RoofingPage: React.FC = () => {
   });
 
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const submitLockRef = useRef(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.fullName || !formData.phone) {
+    if (submitLockRef.current || isSubmitting) return;
+    if (!formData.fullName.trim() || !formData.phone.trim()) {
+      setErrorMsg('Please provide your name and phone number for a free quote.');
       showToast('Please provide your name and phone number for a free quote.');
       return;
     }
-    setSubmitted(true);
-    showToast('Quote request submitted! A Samanthasappy Roofing specialist will contact you shortly.');
+
+    setErrorMsg(null);
+    submitLockRef.current = true;
+    setIsSubmitting(true);
+
+    try {
+      await submitPublicInquiry({
+        formType: 'roofing_quote',
+        fullName: formData.fullName.trim(),
+        phone: formData.phone.trim(),
+        email: formData.email.trim() || undefined,
+        stateLocation: formData.stateLocation,
+        roofType: formData.roofType,
+        projectScope: formData.projectScope,
+        subject: `Roofing Quote Request - ${formData.roofType} (${formData.stateLocation})`,
+        message: formData.message.trim() || 'Free roofing quote requested from Roofing landing page.',
+      });
+      setSubmitted(true);
+      showToast('Quote request saved and submitted! A Samanthasappy Roofing specialist will contact you shortly.');
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Unable to save quote request right now. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+      submitLockRef.current = false;
+    }
   };
 
   const services = [
@@ -461,6 +491,12 @@ export const RoofingPage: React.FC = () => {
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
+                {errorMsg && (
+                  <div className="p-3 rounded-xl bg-rose-950/90 border border-rose-500/40 text-rose-200 text-xs font-medium flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   
                   <div>
@@ -574,10 +610,20 @@ export const RoofingPage: React.FC = () => {
 
                 <button
                   type="submit"
-                  className="w-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-slate-950 font-black py-4 rounded-xl text-base shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+                  disabled={isSubmitting}
+                  className="w-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 disabled:opacity-60 disabled:cursor-not-allowed text-slate-950 font-black py-4 rounded-xl text-base shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <Send className="w-5 h-5" />
-                  Submit Free Quote Request
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Saving Quote Request...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-5 h-5" />
+                      <span>Submit Free Quote Request</span>
+                    </>
+                  )}
                 </button>
               </form>
             )}

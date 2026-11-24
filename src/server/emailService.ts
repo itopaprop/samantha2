@@ -723,6 +723,13 @@ export function generateAdminNewApplicationNotificationEmail(data: {
   email: string;
   phone: string;
   whatsappNumber?: string;
+  applicantWhatsApp?: string;
+  whatsappConsent?: boolean;
+  pdfOpenUrl?: string;
+  pdfDownloadUrl?: string;
+  formViewUrl?: string;
+  isPrivateDevProxy?: boolean;
+  hasPdfAttachment?: boolean;
   dateOfBirth?: string;
   gender?: string;
   maritalStatus?: string;
@@ -771,7 +778,8 @@ export function generateAdminNewApplicationNotificationEmail(data: {
   const facility = data.facilityName || 'Samantha Sappy Care Home';
   const isCaregiver = data.appType === 'caregiver';
   const dateStr = data.date || new Date().toISOString().replace('T', ' ').slice(0, 16);
-  const subject = `📥 [Admin Alert] New ${isCaregiver ? 'Caregiver Job Application' : 'Resident Care Admission'}: ${data.applicantName}`;
+  const whatsappDisplay = data.applicantWhatsApp || data.whatsappNumber;
+  const subject = `[Admin Alert] New ${isCaregiver ? 'Caregiver Job Application' : 'Resident Care Admission'}: ${data.applicantName}`;
 
   const referencesHtml = Array.isArray(data.references) && data.references.length > 0
     ? data.references.map((r, i) => `
@@ -787,6 +795,40 @@ export function generateAdminNewApplicationNotificationEmail(data: {
   const referencesText = Array.isArray(data.references) && data.references.length > 0
     ? data.references.map((r, i) => `  ${i + 1}. ${r.name} (${r.relationship}${r.organisation ? `, ${r.organisation}` : ''}) | ${r.phone}${r.email ? ` | ${r.email}` : ''}`).join('\n')
     : '';
+
+  const allowExternalLinks = !data.isPrivateDevProxy;
+  const openPdfUrl = allowExternalLinks ? (data.pdfOpenUrl || data.pdfDownloadUrl) : undefined;
+  const downloadPdfUrl = allowExternalLinks && data.pdfDownloadUrl
+    ? (data.pdfDownloadUrl.includes('?') ? `${data.pdfDownloadUrl}&download=1` : `${data.pdfDownloadUrl}?download=1`)
+    : undefined;
+  const viewWebUrl = allowExternalLinks
+    ? (data.formViewUrl || (openPdfUrl ? openPdfUrl.replace(/\/pdf(\?.*)?$/, '/view') : undefined))
+    : undefined;
+
+  const pdfCtaHtml = (openPdfUrl || viewWebUrl) ? `
+              <div style="background-color: #f0fdfa; border: 1px solid #99f6e4; border-radius: 12px; padding: 18px 20px; margin-bottom: 20px; text-align: center;">
+                <p style="margin: 0 0 8px 0; color: #115e59; font-size: 13px; font-weight: 700;">
+                  Open, Edit, Print or Download Submitted Form
+                </p>
+                <p style="margin: 0 0 14px 0; color: #0f766e; font-size: 12px;">
+                  This submitted form is saved in Cloud Firestore. Open the interactive form &amp; editable PDF directly in your browser or download a copy below:
+                </p>
+                <div style="margin-bottom: 10px;">
+                  ${viewWebUrl ? `<a href="${viewWebUrl}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #0369a1; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 10px 18px; border-radius: 8px; margin: 4px;">Open Editable Form &amp; PDF</a>` : ''}
+                  ${openPdfUrl ? `<a href="${openPdfUrl}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #0f766e; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 10px 18px; border-radius: 8px; margin: 4px;">Open Direct PDF</a>` : ''}
+                </div>
+                ${downloadPdfUrl ? `<div style="margin-top: 6px;"><a href="${downloadPdfUrl}" target="_blank" rel="noopener noreferrer" style="color: #0f766e; font-size: 12px; font-weight: 700; text-decoration: underline;">Download Fillable PDF File (.pdf)</a></div>` : ''}
+              </div>` : `
+              <div style="background-color: #f0fdfa; border: 1px solid #99f6e4; border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;">
+                <p style="margin: 0 0 6px 0; color: #115e59; font-size: 13px; font-weight: 700;">
+                  ${data.hasPdfAttachment ? 'Editable PDF Attached to This Email' : 'How to View, Edit, Print or Download Editable PDF'}
+                </p>
+                <p style="margin: 0; color: #0f766e; font-size: 12px; line-height: 1.5;">
+                  ${data.hasPdfAttachment
+                    ? 'Open the attached .pdf file on this email, or open Admin Dashboard &rarr; Inbox / Applications inside the web portal to edit, print, or download anytime.'
+                    : 'All submitted details are printed in full below. To open, edit, print, or download the official fillable PDF right now, sign in to your Admin Dashboard and open Inbox (Notifications) or Applications.'}
+                </p>
+              </div>`;
 
   const html = `
 <!DOCTYPE html>
@@ -810,15 +852,17 @@ export function generateAdminNewApplicationNotificationEmail(data: {
                 New ${isCaregiver ? 'Job Application' : 'Resident Care Admission'}
               </h1>
               <p style="margin: 4px 0 0 0; color: #cbd5e1; font-size: 13px;">
-                Submitted via ${facility} Portal
+                Submitted via ${facility} Portal &bull; Saved to Firestore
               </p>
             </td>
           </tr>
           <tr>
             <td style="padding: 28px 24px;">
               <p style="margin: 0 0 16px 0; color: #334155; font-size: 14px;">
-                A new web application has been submitted through the ${facility} portal. An email receipt confirmation has been automatically sent to the applicant.
+                A new web application has been submitted and stored in Firestore. An email receipt confirmation has been automatically sent to the applicant.
               </p>
+
+              ${pdfCtaHtml}
 
               <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px;">
                 <tr>
@@ -848,7 +892,7 @@ export function generateAdminNewApplicationNotificationEmail(data: {
                         <td style="color: #64748b; font-weight: 600;">Phone:</td>
                         <td style="color: #0f172a;">${data.phone}</td>
                       </tr>
-                      ${data.whatsappNumber ? `<tr><td style="color: #64748b; font-weight: 600;">WhatsApp:</td><td style="color: #0f172a;">${data.whatsappNumber}</td></tr>` : ''}
+                      ${whatsappDisplay ? `<tr><td style="color: #64748b; font-weight: 600;">WhatsApp:</td><td style="color: #0f172a;">${whatsappDisplay}${data.whatsappConsent !== undefined ? ` (Notifications Consent: ${data.whatsappConsent ? 'Yes' : 'No'})` : ''}</td></tr>` : ''}
                       ${data.residentialAddress ? `<tr><td style="color: #64748b; font-weight: 600;">Residential Address:</td><td style="color: #0f172a;">${data.residentialAddress}${data.cityState ? `, ${data.cityState}` : ''}</td></tr>` : ''}
                       ${data.nationality ? `<tr><td style="color: #64748b; font-weight: 600;">Nationality:</td><td style="color: #0f172a;">${data.nationality}</td></tr>` : ''}
                       ${data.mobilityStatus ? `<tr><td style="color: #64748b; font-weight: 600;">Mobility Status:</td><td style="color: #0f172a;">${data.mobilityStatus}</td></tr>` : ''}
@@ -899,7 +943,7 @@ export function generateAdminNewApplicationNotificationEmail(data: {
               </table>
 
               <p style="margin: 0; color: #64748b; font-size: 12px;">
-                You can open the full ${isCaregiver ? 'application' : 'Resident Care Admission Form (including the Staff-Only Administrative Section)'} in your Admin Dashboard Inbox and Applications tab.
+                You can open the full ${isCaregiver ? 'application' : 'Resident Care Admission Form (including the Staff-Only Administrative Section)'} in your Admin Dashboard Inbox and Applications tab, or edit/print the attached PDF directly.
               </p>
             </td>
           </tr>
@@ -911,19 +955,298 @@ export function generateAdminNewApplicationNotificationEmail(data: {
 </html>
   `;
 
+  const textLinkBlock = (openPdfUrl || viewWebUrl)
+    ? `OPEN / PRINT / DOWNLOAD SUBMITTED FORM:\n${viewWebUrl ? `- Open Editable Form & PDF: ${viewWebUrl}\n` : ''}${openPdfUrl ? `- Open Direct PDF: ${openPdfUrl}\n` : ''}${downloadPdfUrl ? `- Download Editable PDF File: ${downloadPdfUrl}\n` : ''}\n`
+    : data.hasPdfAttachment
+    ? `EDITABLE PDF ATTACHED: Open the .pdf attachment included with this email, or view/print it inside your Admin Dashboard (Inbox / Applications).\n\n`
+    : `VIEW / EDIT / DOWNLOAD EDITABLE PDF: Sign in to your Admin Dashboard and open Inbox (Notifications) or Applications to view, edit, print, or download the fillable PDF.\n\n`;
+
   const text = `
 [Admin Alert] New ${isCaregiver ? 'Job Application' : 'Resident Admission'}: ${data.applicantName}
 
-Applicant Details:
+${textLinkBlock}Applicant Details:
 ${data.admissionId ? `- Admission ID: ${data.admissionId}\n` : ''}- Name: ${data.applicantName}
 - Type: ${isCaregiver ? 'Caregiver / Staff Job Application' : 'Resident Care Admission'}
 - Position / Care Type: ${data.careTypeRequired || data.positionOrCategory}
 ${data.dateOfBirth ? `- Date of Birth: ${data.dateOfBirth}\n` : ''}${data.gender ? `- Gender: ${data.gender}\n` : ''}${data.maritalStatus ? `- Marital Status: ${data.maritalStatus}\n` : ''}- Email: ${data.email}
 - Phone: ${data.phone}
-${data.whatsappNumber ? `- WhatsApp: ${data.whatsappNumber}\n` : ''}${data.residentialAddress ? `- Address: ${data.residentialAddress}${data.cityState ? `, ${data.cityState}` : ''}\n` : ''}${data.nationality ? `- Nationality: ${data.nationality}\n` : ''}${data.mobilityStatus ? `- Mobility Status: ${data.mobilityStatus}\n` : ''}${data.reasonForAdmission ? `- Reason for Admission: ${data.reasonForAdmission}\n` : ''}${data.existingMedicalConditions ? `- Existing Medical Conditions: ${data.existingMedicalConditions}\n` : ''}${data.currentMedications ? `- Current Medications: ${data.currentMedications}\n` : ''}${data.specialCareRequirements ? `- Special Care Requirements: ${data.specialCareRequirements}\n` : ''}${data.nextOfKinName ? `- Next of Kin: ${data.nextOfKinName} (${data.nextOfKinRelationship || 'Relative'}) | ${data.nextOfKinPhone || data.phone}${data.nextOfKinAltPhone ? ` | Alt: ${data.nextOfKinAltPhone}` : ''}\n` : ''}${data.applicantGuardianName ? `- Consent Signed By: ${data.applicantGuardianName} (${data.applicantSignature || ''}) on ${data.consentDate || dateStr}\n` : ''}${data.highestQualification ? `- Education: ${data.highestQualification} (${data.courseOfStudy || ''} - ${data.institutionName || ''} ${data.graduationYear || ''})\n` : ''}${data.professionalQualifications ? `- Professional Quals: ${data.professionalQualifications}\n` : ''}${data.relevantCertifications ? `- Certifications: ${data.relevantCertifications}\n` : ''}${data.hasPreviousCareExperience ? `- Previous Care Experience: ${data.hasPreviousCareExperience} (${data.previousEmployer || ''} - ${data.previousJobTitle || ''} - ${data.yearsOfExperience || ''})\n` : ''}${!data.nextOfKinName && data.sponsorName ? `- Sponsor / Next of Kin: ${data.sponsorName}\n` : ''}${data.notes ? `- Notes / Statement: ${data.notes}\n` : ''}${data.uploadedDocNames && data.uploadedDocNames.length > 0 ? `- Documents Uploaded: ${data.uploadedDocNames.join(', ')}\n` : ''}${referencesText ? `- References:\n${referencesText}\n` : ''}${data.hasReceipt ? `- Payment Receipt: Attached (${data.receiptName || 'Bank Slip'})\n` : ''}- Date: ${dateStr}
+${whatsappDisplay ? `- WhatsApp: ${whatsappDisplay}${data.whatsappConsent !== undefined ? ` (Consent: ${data.whatsappConsent ? 'Yes' : 'No'})` : ''}\n` : ''}${data.residentialAddress ? `- Address: ${data.residentialAddress}${data.cityState ? `, ${data.cityState}` : ''}\n` : ''}${data.nationality ? `- Nationality: ${data.nationality}\n` : ''}${data.mobilityStatus ? `- Mobility Status: ${data.mobilityStatus}\n` : ''}${data.reasonForAdmission ? `- Reason for Admission: ${data.reasonForAdmission}\n` : ''}${data.existingMedicalConditions ? `- Existing Medical Conditions: ${data.existingMedicalConditions}\n` : ''}${data.currentMedications ? `- Current Medications: ${data.currentMedications}\n` : ''}${data.specialCareRequirements ? `- Special Care Requirements: ${data.specialCareRequirements}\n` : ''}${data.nextOfKinName ? `- Next of Kin: ${data.nextOfKinName} (${data.nextOfKinRelationship || 'Relative'}) | ${data.nextOfKinPhone || data.phone}${data.nextOfKinAltPhone ? ` | Alt: ${data.nextOfKinAltPhone}` : ''}\n` : ''}${data.applicantGuardianName ? `- Consent Signed By: ${data.applicantGuardianName} (${data.applicantSignature || ''}) on ${data.consentDate || dateStr}\n` : ''}${data.highestQualification ? `- Education: ${data.highestQualification} (${data.courseOfStudy || ''} - ${data.institutionName || ''} ${data.graduationYear || ''})\n` : ''}${data.professionalQualifications ? `- Professional Quals: ${data.professionalQualifications}\n` : ''}${data.relevantCertifications ? `- Certifications: ${data.relevantCertifications}\n` : ''}${data.hasPreviousCareExperience ? `- Previous Care Experience: ${data.hasPreviousCareExperience} (${data.previousEmployer || ''} - ${data.previousJobTitle || ''} - ${data.yearsOfExperience || ''})\n` : ''}${!data.nextOfKinName && data.sponsorName ? `- Sponsor / Next of Kin: ${data.sponsorName}\n` : ''}${data.notes ? `- Notes / Statement: ${data.notes}\n` : ''}${data.uploadedDocNames && data.uploadedDocNames.length > 0 ? `- Documents Uploaded: ${data.uploadedDocNames.join(', ')}\n` : ''}${referencesText ? `- References:\n${referencesText}\n` : ''}${data.hasReceipt ? `- Payment Receipt: Attached (${data.receiptName || 'Bank Slip'})\n` : ''}- Date: ${dateStr}
 
 An automatic confirmation receipt has been emailed to ${data.email}.
 `;
 
   return { subject, html, text };
 }
+
+export function generateAdminConsultationNotificationEmail(data: {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  serviceInterest: string;
+  preferredDate: string;
+  preferredTime: string;
+  notes?: string;
+  createdAt?: string;
+  pdfOpenUrl?: string;
+  pdfDownloadUrl?: string;
+  formViewUrl?: string;
+  isPrivateDevProxy?: boolean;
+  hasPdfAttachment?: boolean;
+  facilityName?: string;
+}): { subject: string; html: string; text: string } {
+  const facility = data.facilityName || 'Samantha Sappy Care Home';
+  const dateStr = data.createdAt || new Date().toISOString().replace('T', ' ').slice(0, 16);
+  const subject = `[Admin Alert] New Family Consultation Request: ${data.fullName} (${data.preferredDate})`;
+
+  const allowExternalLinks = !data.isPrivateDevProxy;
+  const openPdfUrl = allowExternalLinks ? (data.pdfOpenUrl || data.pdfDownloadUrl) : undefined;
+  const downloadPdfUrl = allowExternalLinks && data.pdfDownloadUrl
+    ? (data.pdfDownloadUrl.includes('?') ? `${data.pdfDownloadUrl}&download=1` : `${data.pdfDownloadUrl}?download=1`)
+    : undefined;
+  const viewWebUrl = allowExternalLinks
+    ? (data.formViewUrl || (openPdfUrl ? openPdfUrl.replace(/\/pdf(\?.*)?$/, '/view') : undefined))
+    : undefined;
+
+  const pdfCtaHtml = (openPdfUrl || viewWebUrl) ? `
+              <div style="background-color: #f0fdfa; border: 1px solid #99f6e4; border-radius: 12px; padding: 18px 20px; margin-bottom: 20px; text-align: center;">
+                <p style="margin: 0 0 8px 0; color: #115e59; font-size: 13px; font-weight: 700;">
+                  Open, Edit, Print or Download Consultation Form
+                </p>
+                <p style="margin: 0 0 12px 0; color: #0f766e; font-size: 12px;">
+                  This consultation request is saved in Cloud Firestore. Open it comfortably in your browser or download the editable PDF copy below:
+                </p>
+                <div style="margin-bottom: 10px;">
+                  ${viewWebUrl ? `<a href="${viewWebUrl}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #0369a1; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 10px 18px; border-radius: 8px; margin: 4px;">Open Editable Form &amp; PDF</a>` : ''}
+                  ${openPdfUrl ? `<a href="${openPdfUrl}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #0f766e; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 10px 18px; border-radius: 8px; margin: 4px;">Open Direct PDF</a>` : ''}
+                </div>
+                ${downloadPdfUrl ? `<div style="margin-top: 6px;"><a href="${downloadPdfUrl}" target="_blank" rel="noopener noreferrer" style="color: #0f766e; font-size: 12px; font-weight: 700; text-decoration: underline;">Download Fillable PDF File (.pdf)</a></div>` : ''}
+              </div>` : `
+              <div style="background-color: #f0fdfa; border: 1px solid #99f6e4; border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;">
+                <p style="margin: 0 0 6px 0; color: #115e59; font-size: 13px; font-weight: 700;">
+                  ${data.hasPdfAttachment ? 'Editable PDF Attached to This Email' : 'How to View, Edit, Print or Download Editable PDF'}
+                </p>
+                <p style="margin: 0; color: #0f766e; font-size: 12px; line-height: 1.5;">
+                  ${data.hasPdfAttachment
+                    ? 'Open the attached .pdf file on this email, or open Admin Dashboard &rarr; Consultations / Inbox inside the web portal.'
+                    : 'All submitted consultation details are printed below. Sign in to Admin Dashboard &rarr; Consultations or Inbox (Notifications) inside the web portal to view, edit, print, or download the fillable PDF.'}
+                </p>
+              </div>`;
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; line-height: 1.6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; padding: 32px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" max-width="620" cellpadding="0" cellspacing="0" style="max-width: 620px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
+          <tr>
+            <td style="background-color: #0369a1; padding: 26px 24px; text-align: center;">
+              <div style="display: inline-block; padding: 5px 14px; background-color: #0f172a; color: #ffffff; font-size: 11px; font-weight: 700; border-radius: 9999px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">
+                Consultation Booking
+              </div>
+              <h1 style="margin: 0; color: #ffffff; font-size: 21px; font-weight: 800;">
+                New Family Consultation Request
+              </h1>
+              <p style="margin: 4px 0 0 0; color: #e0f2fe; font-size: 13px;">
+                ${facility} &bull; Saved to Firestore
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 28px 24px;">
+              ${pdfCtaHtml}
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 18px;">
+                <tr>
+                  <td style="padding: 16px 20px;">
+                    <table width="100%" cellpadding="6" cellspacing="0" style="font-size: 13px;">
+                      <tr><td width="38%" style="color: #64748b; font-weight: 600;">Reference ID:</td><td style="color: #0369a1; font-family: monospace; font-weight: 700;">${data.id}</td></tr>
+                      <tr><td style="color: #64748b; font-weight: 600;">Full Name:</td><td style="color: #0f172a; font-weight: 700;">${data.fullName}</td></tr>
+                      <tr><td style="color: #64748b; font-weight: 600;">Email Address:</td><td style="color: #0f172a; font-family: monospace;">${data.email}</td></tr>
+                      <tr><td style="color: #64748b; font-weight: 600;">Phone Number:</td><td style="color: #0f172a;">${data.phone}</td></tr>
+                      <tr><td style="color: #64748b; font-weight: 600;">Service of Interest:</td><td style="color: #0f766e; font-weight: 700;">${data.serviceInterest}</td></tr>
+                      <tr><td style="color: #64748b; font-weight: 600;">Preferred Date:</td><td style="color: #0f172a; font-weight: 700;">${data.preferredDate}</td></tr>
+                      <tr><td style="color: #64748b; font-weight: 600;">Preferred Time Slot:</td><td style="color: #0f172a; font-weight: 700;">${data.preferredTime}</td></tr>
+                      ${data.notes ? `<tr><td style="color: #64748b; font-weight: 600;">Additional Care Notes:</td><td style="color: #334155;">${data.notes}</td></tr>` : ''}
+                      <tr><td style="color: #64748b; font-weight: 600;">Submitted Time:</td><td style="color: #64748b;">${dateStr}</td></tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+
+  const textLinkBlock = (openPdfUrl || viewWebUrl)
+    ? `OPEN / PRINT / DOWNLOAD CONSULTATION FORM:\n${viewWebUrl ? `- Open Editable Form & PDF: ${viewWebUrl}\n` : ''}${openPdfUrl ? `- Open Direct PDF: ${openPdfUrl}\n` : ''}${downloadPdfUrl ? `- Download Editable PDF File: ${downloadPdfUrl}\n` : ''}\n`
+    : data.hasPdfAttachment
+    ? `EDITABLE PDF ATTACHED: Open the .pdf attachment included with this email, or view/print it inside your Admin Dashboard (Consultations / Inbox).\n\n`
+    : `VIEW / EDIT / DOWNLOAD EDITABLE PDF: Sign in to your Admin Dashboard and open Consultations or Inbox (Notifications) to view, edit, print, or download the fillable PDF.\n\n`;
+
+  const text = `
+[Admin Alert] New Family Consultation Request: ${data.fullName}
+
+${textLinkBlock}Consultation Details:
+- Reference ID: ${data.id}
+- Name: ${data.fullName}
+- Email: ${data.email}
+- Phone: ${data.phone}
+- Service of Interest: ${data.serviceInterest}
+- Preferred Date: ${data.preferredDate}
+- Preferred Time: ${data.preferredTime}
+- Notes: ${data.notes || 'None'}
+- Submitted Time: ${dateStr}
+`;
+
+  return { subject, html, text };
+}
+
+export function generateAdminInquiryNotificationEmail(data: {
+  id: string;
+  formType?: string;
+  fullName: string;
+  email?: string;
+  phone?: string;
+  subject: string;
+  message: string;
+  stateLocation?: string;
+  roofType?: string;
+  projectScope?: string;
+  estimatedSize?: string;
+  timestamp?: string;
+  pdfOpenUrl?: string;
+  pdfDownloadUrl?: string;
+  formViewUrl?: string;
+  isPrivateDevProxy?: boolean;
+  hasPdfAttachment?: boolean;
+  facilityName?: string;
+}): { subject: string; html: string; text: string } {
+  const facility = data.facilityName || 'Samantha Sappy Home & Roofing';
+  const isRoofing = data.formType === 'roofing_quote';
+  const dateStr = data.timestamp || new Date().toISOString().replace('T', ' ').slice(0, 16);
+  const subject = `[Admin Alert] ${isRoofing ? 'New Roofing Quote Request' : 'New Contact Form Inquiry'}: ${data.fullName}`;
+
+  const allowExternalLinks = !data.isPrivateDevProxy;
+  const openPdfUrl = allowExternalLinks ? (data.pdfOpenUrl || data.pdfDownloadUrl) : undefined;
+  const downloadPdfUrl = allowExternalLinks && data.pdfDownloadUrl
+    ? (data.pdfDownloadUrl.includes('?') ? `${data.pdfDownloadUrl}&download=1` : `${data.pdfDownloadUrl}?download=1`)
+    : undefined;
+  const viewWebUrl = allowExternalLinks
+    ? (data.formViewUrl || (openPdfUrl ? openPdfUrl.replace(/\/pdf(\?.*)?$/, '/view') : undefined))
+    : undefined;
+
+  const pdfCtaHtml = (openPdfUrl || viewWebUrl) ? `
+              <div style="background-color: #f0fdfa; border: 1px solid #99f6e4; border-radius: 12px; padding: 18px 20px; margin-bottom: 20px; text-align: center;">
+                <p style="margin: 0 0 8px 0; color: #115e59; font-size: 13px; font-weight: 700;">
+                  Open, Edit, Print or Download Submitted Inquiry Form
+                </p>
+                <p style="margin: 0 0 12px 0; color: #0f766e; font-size: 12px;">
+                  This inquiry is saved in Cloud Firestore. Open it directly in your browser or download the fillable PDF below:
+                </p>
+                <div style="margin-bottom: 10px;">
+                  ${viewWebUrl ? `<a href="${viewWebUrl}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #0369a1; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 10px 18px; border-radius: 8px; margin: 4px;">Open Editable Form &amp; PDF</a>` : ''}
+                  ${openPdfUrl ? `<a href="${openPdfUrl}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #0f766e; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 10px 18px; border-radius: 8px; margin: 4px;">Open Direct PDF</a>` : ''}
+                </div>
+                ${downloadPdfUrl ? `<div style="margin-top: 6px;"><a href="${downloadPdfUrl}" target="_blank" rel="noopener noreferrer" style="color: #0f766e; font-size: 12px; font-weight: 700; text-decoration: underline;">Download Fillable PDF File (.pdf)</a></div>` : ''}
+              </div>` : `
+              <div style="background-color: #f0fdfa; border: 1px solid #99f6e4; border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;">
+                <p style="margin: 0 0 6px 0; color: #115e59; font-size: 13px; font-weight: 700;">
+                  ${data.hasPdfAttachment ? 'Editable PDF Attached to This Email' : 'How to View, Edit, Print or Download Editable PDF'}
+                </p>
+                <p style="margin: 0; color: #0f766e; font-size: 12px; line-height: 1.5;">
+                  ${data.hasPdfAttachment
+                    ? 'Open the attached .pdf file on this email, or open Admin Dashboard &rarr; Inbox (Notifications) inside the web portal.'
+                    : 'All submitted details are printed below. Sign in to Admin Dashboard &rarr; Inbox (Notifications) inside the web portal to view, edit, print, or download the fillable PDF.'}
+                </p>
+              </div>`;
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; line-height: 1.6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; padding: 32px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" max-width="620" cellpadding="0" cellspacing="0" style="max-width: 620px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
+          <tr>
+            <td style="background-color: ${isRoofing ? '#78350f' : '#0f172a'}; padding: 26px 24px; text-align: center;">
+              <div style="display: inline-block; padding: 5px 14px; background-color: ${isRoofing ? '#f59e0b' : '#0284c7'}; color: ${isRoofing ? '#0f172a' : '#ffffff'}; font-size: 11px; font-weight: 700; border-radius: 9999px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">
+                ${isRoofing ? 'Roofing Quote Inquiry' : 'Website Contact Message'}
+              </div>
+              <h1 style="margin: 0; color: #ffffff; font-size: 21px; font-weight: 800;">
+                ${data.subject}
+              </h1>
+              <p style="margin: 4px 0 0 0; color: #cbd5e1; font-size: 13px;">
+                ${facility} &bull; Saved to Firestore
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 28px 24px;">
+              ${pdfCtaHtml}
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 18px;">
+                <tr>
+                  <td style="padding: 16px 20px;">
+                    <table width="100%" cellpadding="6" cellspacing="0" style="font-size: 13px;">
+                      <tr><td width="38%" style="color: #64748b; font-weight: 600;">Inquiry ID:</td><td style="color: #0369a1; font-family: monospace; font-weight: 700;">${data.id}</td></tr>
+                      <tr><td style="color: #64748b; font-weight: 600;">Sender Full Name:</td><td style="color: #0f172a; font-weight: 700;">${data.fullName}</td></tr>
+                      <tr><td style="color: #64748b; font-weight: 600;">Phone / WhatsApp:</td><td style="color: #0f172a;">${data.phone || 'N/A'}</td></tr>
+                      <tr><td style="color: #64748b; font-weight: 600;">Email Address:</td><td style="color: #0f172a; font-family: monospace;">${data.email || 'N/A'}</td></tr>
+                      ${data.stateLocation ? `<tr><td style="color: #64748b; font-weight: 600;">Project Location:</td><td style="color: #0f172a;">${data.stateLocation}</td></tr>` : ''}
+                      ${data.roofType ? `<tr><td style="color: #64748b; font-weight: 600;">Roof Material:</td><td style="color: #b45309; font-weight: 700;">${data.roofType}</td></tr>` : ''}
+                      ${data.projectScope ? `<tr><td style="color: #64748b; font-weight: 600;">Project Scope:</td><td style="color: #0f172a;">${data.projectScope}</td></tr>` : ''}
+                      ${data.estimatedSize ? `<tr><td style="color: #64748b; font-weight: 600;">Estimated Size:</td><td style="color: #0f172a;">${data.estimatedSize}</td></tr>` : ''}
+                      <tr><td style="color: #64748b; font-weight: 600;">Message / Notes:</td><td style="color: #334155; white-space: pre-line;">${data.message}</td></tr>
+                      <tr><td style="color: #64748b; font-weight: 600;">Submitted Time:</td><td style="color: #64748b;">${dateStr}</td></tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+
+  const textLinkBlock = (openPdfUrl || viewWebUrl)
+    ? `OPEN / PRINT / DOWNLOAD SUBMITTED FORM:\n${viewWebUrl ? `- Open Editable Form & PDF: ${viewWebUrl}\n` : ''}${openPdfUrl ? `- Open Direct PDF: ${openPdfUrl}\n` : ''}${downloadPdfUrl ? `- Download Editable PDF File: ${downloadPdfUrl}\n` : ''}\n`
+    : data.hasPdfAttachment
+    ? `EDITABLE PDF ATTACHED: Open the .pdf attachment included with this email, or view/print it inside your Admin Dashboard (Inbox / Notifications).\n\n`
+    : `VIEW / EDIT / DOWNLOAD EDITABLE PDF: Sign in to your Admin Dashboard and open Inbox (Notifications) to view, edit, print, or download the fillable PDF.\n\n`;
+
+  const text = `
+[Admin Alert] ${isRoofing ? 'Roofing Quote Request' : 'Contact Inquiry'}: ${data.fullName}
+
+${textLinkBlock}Details:
+- Inquiry ID: ${data.id}
+- Name: ${data.fullName}
+- Phone: ${data.phone || 'N/A'}
+- Email: ${data.email || 'N/A'}
+${data.stateLocation ? `- State Location: ${data.stateLocation}\n` : ''}${data.roofType ? `- Roof Type: ${data.roofType}\n` : ''}${data.projectScope ? `- Project Scope: ${data.projectScope}\n` : ''}${data.estimatedSize ? `- Estimated Size: ${data.estimatedSize}\n` : ''}- Message: ${data.message}
+- Submitted Time: ${dateStr}
+`;
+
+  return { subject, html, text };
+}
+

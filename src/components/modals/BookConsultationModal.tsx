@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, Calendar, Clock, User, Mail, Phone, HeartHandshake, CheckCircle2 } from 'lucide-react';
+import { X, Calendar, Clock, User, Mail, Phone, HeartHandshake, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 
 export const BookConsultationModal: React.FC = () => {
   const { isConsultationModalOpen, setIsConsultationModalOpen, bookConsultation } = useApp();
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const submitLockRef = useRef(false);
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -18,23 +21,48 @@ export const BookConsultationModal: React.FC = () => {
 
   if (!isConsultationModalOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    bookConsultation(formData);
-    setSubmitted(true);
-    setTimeout(() => {
-      setSubmitted(false);
-      setIsConsultationModalOpen(false);
-      setFormData({
-        fullName: '',
-        email: '',
-        phone: '',
-        preferredDate: '',
-        preferredTime: '10:00 AM',
-        serviceInterest: 'Residential Elderly Care',
-        notes: '',
+    if (submitLockRef.current || isSubmitting) return;
+
+    if (!formData.fullName.trim() || !formData.email.trim() || !formData.phone.trim()) {
+      setErrorMsg('Please fill in your full name, email address, and phone number.');
+      return;
+    }
+
+    setErrorMsg(null);
+    submitLockRef.current = true;
+    setIsSubmitting(true);
+
+    try {
+      await bookConsultation({
+        ...formData,
+        fullName: formData.fullName.trim(),
+        email: formData.email.trim(),
+        phone: formData.phone.trim(),
+        notes: formData.notes.trim() || undefined,
+        formType: 'consultation_booking',
       });
-    }, 2000);
+      setSubmitted(true);
+      setTimeout(() => {
+        setSubmitted(false);
+        setIsConsultationModalOpen(false);
+        setFormData({
+          fullName: '',
+          email: '',
+          phone: '',
+          preferredDate: '',
+          preferredTime: '10:00 AM',
+          serviceInterest: 'Residential Elderly Care',
+          notes: '',
+        });
+      }, 2400);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Unable to save consultation request right now. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+      submitLockRef.current = false;
+    }
   };
 
   return (
@@ -67,11 +95,18 @@ export const BookConsultationModal: React.FC = () => {
               <CheckCircle2 className="w-16 h-16 text-emerald-500 mx-auto animate-bounce" />
               <h3 className="text-xl font-bold text-slate-900">Consultation Scheduled!</h3>
               <p className="text-sm text-slate-600 max-w-sm mx-auto">
-                Thank you, <span className="font-semibold text-slate-800">{formData.fullName}</span>. Our Lead Care Coordinator will confirm your appointment on <span className="font-semibold text-slate-800">{formData.preferredDate || 'your selected date'}</span>.
+                Thank you, <span className="font-semibold text-slate-800">{formData.fullName}</span>. Your booking is saved and our Lead Care Coordinator will confirm your appointment on <span className="font-semibold text-slate-800">{formData.preferredDate || 'your selected date'}</span>.
               </p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
+              {errorMsg && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name *</label>
                 <div className="relative">
@@ -109,7 +144,7 @@ export const BookConsultationModal: React.FC = () => {
                     <input
                       type="tel"
                       required
-                      placeholder="+44 7700 900421"
+                      placeholder="+234..."
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
@@ -180,16 +215,25 @@ export const BookConsultationModal: React.FC = () => {
               <div className="pt-2 flex justify-end gap-3">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setIsConsultationModalOpen(false)}
-                  className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                  className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 text-xs font-semibold bg-sky-700 hover:bg-sky-800 text-white rounded-xl shadow-md transition-all"
+                  disabled={isSubmitting}
+                  className="px-5 py-2.5 text-xs font-semibold bg-sky-700 hover:bg-sky-800 disabled:bg-slate-400 disabled:cursor-not-allowed text-white rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
                 >
-                  Confirm Consultation Request
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving Booking...</span>
+                    </>
+                  ) : (
+                    <span>Confirm Consultation Request</span>
+                  )}
                 </button>
               </div>
             </form>

@@ -1,4 +1,4 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { Component, ErrorInfo, ReactNode, useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
@@ -15,6 +15,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { RoofingPage } from './pages/RoofingPage';
 import { RoofingGalleryPage } from './pages/RoofingGalleryPage';
 import { RoofingContactPage } from './pages/RoofingContactPage';
+import { FormViewerPage } from './pages/FormViewerPage';
 import { BookConsultationModal } from './components/modals/BookConsultationModal';
 import { ApplyNowModal } from './components/modals/ApplyNowModal';
 import { WelcomePopupModal } from './components/modals/WelcomePopupModal';
@@ -89,6 +90,34 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
 const AppContent: React.FC = () => {
   const { currentPage } = useApp();
+  const [formViewerParams, setFormViewerParams] = useState<{
+    kind: 'application' | 'consultation' | 'inquiry';
+    id: string;
+  } | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const sp = new URLSearchParams(window.location.search);
+    const fv = sp.get('formView');
+    const id = sp.get('id');
+    if ((fv === 'application' || fv === 'consultation' || fv === 'inquiry') && id) {
+      return { kind: fv, id };
+    }
+    return null;
+  });
+
+  if (formViewerParams) {
+    return (
+      <FormViewerPage
+        kind={formViewerParams.kind}
+        recordId={formViewerParams.id}
+        onBackHome={() => {
+          try {
+            window.history.replaceState({}, '', window.location.pathname || '/');
+          } catch {}
+          setFormViewerParams(null);
+        }}
+      />
+    );
+  }
 
   const renderPage = () => {
     switch (currentPage) {

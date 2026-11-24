@@ -43,6 +43,20 @@ export interface RegisterRelativePayload {
   tempPassword?: string;
 }
 
+function getPublicClientOrigin(): string | undefined {
+  try {
+    const origin = window.location.origin;
+    if (!origin) return undefined;
+    const host = new URL(origin).hostname.toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1' || host.endsWith('.localhost')) {
+      return undefined;
+    }
+    return origin;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface EdgeFunctionResult<T = any> {
   success: boolean;
   message?: string;
@@ -53,6 +67,10 @@ export interface EdgeFunctionResult<T = any> {
   emailDispatched?: boolean;
   emailProvider?: string;
   setupPasswordUrl?: string;
+  pdfOpenUrl?: string;
+  pdfDownloadUrl?: string;
+  formViewUrl?: string;
+  adminEmailSent?: boolean;
 }
 
 /**
@@ -60,8 +78,8 @@ export interface EdgeFunctionResult<T = any> {
  * Securely communicates with Edge Function or backend without exposing service keys.
  */
 export async function invokeRegisterStaff(payload: RegisterStaffPayload): Promise<EdgeFunctionResult> {
-  const appUrl = window.location.origin;
-  const fullPayload = { ...payload, appUrl };
+  const appUrl = getPublicClientOrigin();
+  const fullPayload = { ...payload, ...(appUrl ? { appUrl } : {}) };
 
   // 1. Try Supabase Edge Function first
   try {
@@ -107,8 +125,8 @@ export async function invokeRegisterStaff(payload: RegisterStaffPayload): Promis
  * Securely creates family portal account and dispatches welcome email.
  */
 export async function invokeRegisterRelative(payload: RegisterRelativePayload): Promise<EdgeFunctionResult> {
-  const appUrl = window.location.origin;
-  const fullPayload = { ...payload, appUrl };
+  const appUrl = getPublicClientOrigin();
+  const fullPayload = { ...payload, ...(appUrl ? { appUrl } : {}) };
 
   // 1. Try Supabase Edge Function first
   try {
@@ -178,8 +196,8 @@ export async function invokeSendEmail(params: {
  * Invoke Application Submission Edge Function & Email Receipt Confirmation + Admin Notification
  */
 export async function invokeSubmitApplication(application: any): Promise<EdgeFunctionResult> {
-  const appUrl = window.location.origin;
-  const fullPayload = { application, appUrl };
+  const appUrl = getPublicClientOrigin();
+  const fullPayload = { application, ...(appUrl ? { appUrl } : {}) };
 
   try {
     const res = await fetch('/api/functions/submit-application', {
@@ -203,6 +221,70 @@ export async function invokeSubmitApplication(application: any): Promise<EdgeFun
     return {
       success: false,
       error: apiErr?.message || 'Failed to dispatch application notifications.',
+    };
+  }
+}
+
+/**
+ * Invoke Consultation Booking Notification + Editable PDF Attachment
+ */
+export async function invokeSubmitConsultation(booking: any): Promise<EdgeFunctionResult> {
+  const appUrl = getPublicClientOrigin();
+  const fullPayload = { booking, ...(appUrl ? { appUrl } : {}) };
+
+  try {
+    const res = await fetch('/api/functions/submit-consultation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fullPayload),
+    });
+
+    if (res.ok) {
+      return await res.json();
+    } else {
+      const errJson = await res.json().catch(() => ({}));
+      return {
+        success: false,
+        error: errJson.error || `Server responded with status ${res.status}`,
+      };
+    }
+  } catch (apiErr: any) {
+    console.warn('Submit consultation API error:', apiErr);
+    return {
+      success: false,
+      error: apiErr?.message || 'Failed to dispatch consultation notifications.',
+    };
+  }
+}
+
+/**
+ * Invoke Public Contact / Roofing Quote Inquiry Notification + Editable PDF Attachment
+ */
+export async function invokeSubmitInquiry(inquiry: any): Promise<EdgeFunctionResult> {
+  const appUrl = getPublicClientOrigin();
+  const fullPayload = { inquiry, ...(appUrl ? { appUrl } : {}) };
+
+  try {
+    const res = await fetch('/api/functions/submit-inquiry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fullPayload),
+    });
+
+    if (res.ok) {
+      return await res.json();
+    } else {
+      const errJson = await res.json().catch(() => ({}));
+      return {
+        success: false,
+        error: errJson.error || `Server responded with status ${res.status}`,
+      };
+    }
+  } catch (apiErr: any) {
+    console.warn('Submit inquiry API error:', apiErr);
+    return {
+      success: false,
+      error: apiErr?.message || 'Failed to dispatch inquiry notifications.',
     };
   }
 }

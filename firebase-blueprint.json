@@ -80,6 +80,10 @@
         "receiverRole": { "type": "string" },
         "subject": { "type": "string" },
         "content": { "type": "string" },
+        "formType": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
         "isRead": { "type": "boolean" },
         "timestamp": { "type": "string" }
       },
@@ -109,8 +113,12 @@
         "email": { "type": "string" },
         "phone": { "type": "string" },
         "preferredDate": { "type": "string" },
+        "preferredTime": { "type": "string" },
         "serviceInterest": { "type": "string" },
-        "status": { "type": "string" }
+        "notes": { "type": "string" },
+        "formType": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
       },
       "required": ["id", "fullName", "email", "phone"]
     },
@@ -162,6 +170,26 @@
         "date": { "type": "string" }
       },
       "required": ["id", "title", "imageUrl"]
+    },
+    "PublicInquiry": {
+      "title": "PublicInquiry",
+      "description": "Website contact and roofing quote inquiries stored alongside admin notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "formType": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "stateLocation": { "type": "string" },
+        "roofType": { "type": "string" },
+        "projectScope": { "type": "string" },
+        "estimatedSize": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "fullName", "formType"]
     }
   },
   "firestore": {
@@ -208,6 +236,10 @@
     "/test/{docId}": {
       "schema": "User",
       "description": "Healthcheck probe document for SDK connection testing"
+    },
+    "/inquiries/{inquiryId}": {
+      "schema": "PublicInquiry",
+      "description": "Public contact and roofing quote form submissions"
     }
   }
 }

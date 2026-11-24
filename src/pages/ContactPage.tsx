@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   MapPin, 
@@ -8,12 +8,17 @@ import {
   Send, 
   MessageCircle, 
   CheckCircle2, 
-  Navigation
+  Navigation,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 
 export const ContactPage: React.FC = () => {
-  const { showToast, sendMessage } = useApp();
+  const { showToast, submitPublicInquiry } = useApp();
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const submitLockRef = useRef(false);
 
   const [form, setForm] = useState({
     name: '',
@@ -24,26 +29,37 @@ export const ContactPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
-    try {
-      await sendMessage({
-        senderId: 'public_contact_visitor',
-        senderName: form.name.trim() || 'Website Visitor',
-        senderRole: 'Resident Relative',
-        receiverId: 'usr-admin-1',
-        receiverName: 'Folasade Sanyaolu (Administrator)',
-        receiverRole: 'Admin',
-        subject: `Contact Inquiry from ${form.name.trim() || 'Visitor'}`,
-        content: `Contact Form Submission:\n• Sender: ${form.name}\n• Email: ${form.email}\n• Phone: ${form.phone || 'N/A'}\n\nMessage:\n${form.message}`,
-      });
-      showToast('Contact message sent! Our care team will call you back.');
-    } catch {
-      showToast('Contact message received! Our team will contact you shortly.');
+    if (submitLockRef.current || isSubmitting) return;
+    if (!form.name.trim() || !form.email.trim() || !form.phone.trim() || !form.message.trim()) {
+      setErrorMsg('Please fill in all required fields before sending.');
+      return;
     }
-    setTimeout(() => {
-      setSubmitted(false);
-      setForm({ name: '', email: '', phone: '', message: '' });
-    }, 3000);
+
+    setErrorMsg(null);
+    submitLockRef.current = true;
+    setIsSubmitting(true);
+
+    try {
+      await submitPublicInquiry({
+        formType: 'contact_inquiry',
+        fullName: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        subject: `Contact Inquiry from ${form.name.trim()}`,
+        message: form.message.trim(),
+      });
+      setSubmitted(true);
+      showToast('Contact message sent and saved! Our care team will call you back.');
+      setTimeout(() => {
+        setSubmitted(false);
+        setForm({ name: '', email: '', phone: '', message: '' });
+      }, 3200);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Unable to confirm message save right now. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+      submitLockRef.current = false;
+    }
   };
 
   return (
@@ -152,6 +168,12 @@ export const ContactPage: React.FC = () => {
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
+                  {errorMsg && (
+                    <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <span>{errorMsg}</span>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">Your Name *</label>
                     <input
@@ -181,7 +203,7 @@ export const ContactPage: React.FC = () => {
                       <input
                         type="tel"
                         required
-                        placeholder="+44 7700 900421"
+                        placeholder="+234..."
                         value={form.phone}
                         onChange={e => setForm({ ...form, phone: e.target.value })}
                         className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500"
@@ -203,10 +225,20 @@ export const ContactPage: React.FC = () => {
 
                   <button
                     type="submit"
-                    className="w-full bg-sky-700 hover:bg-sky-800 text-white font-bold py-3.5 px-6 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
+                    disabled={isSubmitting}
+                    className="w-full bg-sky-700 hover:bg-sky-800 disabled:bg-slate-400 disabled:cursor-not-allowed text-white font-bold py-3.5 px-6 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
                   >
-                    <Send className="w-4 h-4" />
-                    Send Message
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Saving &amp; Sending...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        <span>Send Message</span>
+                      </>
+                    )}
                   </button>
                 </form>
               )}

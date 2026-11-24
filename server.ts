@@ -10,9 +10,11 @@ import {
   getFirestore, 
   collection as fsCollection, 
   getDocs as fsGetDocs, 
+  getDoc as fsGetDoc,
   doc as fsDoc, 
   setDoc as fsSetDoc, 
   deleteDoc as fsDeleteDoc,
+  serverTimestamp as fsServerTimestamp,
   setLogLevel as fsSetLogLevel,
   type Firestore as ServerFirestore 
 } from 'firebase/firestore';
@@ -49,8 +51,21 @@ import {
   generateRelativeWelcomeEmail,
   generateAdminNewResidentNotificationEmail,
   generateApplicantReceiptConfirmationEmail,
-  generateAdminNewApplicationNotificationEmail
+  generateAdminNewApplicationNotificationEmail,
+  generateAdminConsultationNotificationEmail,
+  generateAdminInquiryNotificationEmail
 } from './src/server/emailService';
+import {
+  generateResidentAdmissionPdf,
+  generateCaregiverApplicationPdf,
+  generateConsultationPdf,
+  generateInquiryPdf,
+} from './src/server/pdfGenerator';
+import {
+  renderApplicationFormHtml,
+  renderConsultationFormHtml,
+  renderInquiryFormHtml,
+} from './src/server/formViewHtml';
 
 // Initialize Cloud Firestore on Backend Server for Instant Multi-Browser Sync
 const serverFirebaseConfig = {
@@ -149,6 +164,7 @@ async function dispatchEmail(params: {
   html: string;
   text: string;
   from?: string;
+  attachments?: Array<{ filename: string; content: Buffer | string; contentType?: string }>;
 }): Promise<{ sent: boolean; provider: string; error?: string }> {
   const resendApiKey = process.env.RESEND_API_KEY;
   const defaultFrom = process.env.EMAIL_FROM || 'Samantha Sappy Care Home <onboarding@resend.dev>';
@@ -157,19 +173,30 @@ async function dispatchEmail(params: {
 
   if (resendApiKey) {
     try {
+      const payload: Record<string, any> = {
+        from,
+        to: recipients,
+        subject: params.subject,
+        html: params.html,
+        text: params.text,
+      };
+      if (Array.isArray(params.attachments) && params.attachments.length > 0) {
+        payload.attachments = params.attachments.map((att) => ({
+          filename: att.filename,
+          content: Buffer.isBuffer(att.content)
+            ? att.content.toString('base64')
+            : Buffer.from(String(att.content)).toString('base64'),
+          content_type: att.contentType || 'application/pdf',
+        }));
+      }
+
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${resendApiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          from,
-          to: recipients,
-          subject: params.subject,
-          html: params.html,
-          text: params.text,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
@@ -208,6 +235,136 @@ async function dispatchEmail(params: {
   }
 
   return { sent: false, provider: 'none', error: 'No active email provider configured or failed' };
+}
+
+let serverFirestoreQuotaExhausted = false;
+let serverFirestoreQuotaTimestamp = 0;
+
+function sanitizeServerFirestore(data: any): any {
+  if (data === undefined) return null;
+  if (data === null || typeof data !== 'object') return data;
+  if (
+    data instanceof Date ||
+    typeof data?.toDate === 'function' ||
+    typeof data?._methodName === 'string' ||
+    (data?.constructor && data.constructor.name !== 'Object' && !Array.isArray(data))
+  ) {
+    return data;
+  }
+  if (Array.isArray(data)) return data.map(sanitizeServerFirestore);
+  const clean: Record<string, any> = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (v !== undefined) {
+      clean[k] = sanitizeServerFirestore(v);
+    }
+  }
+  return clean;
+}
+
+function formatServerFsDate(val: any): string {
+  if (!val) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val?.toDate === 'function') {
+    return val.toDate().toISOString().replace('T', ' ').slice(0, 16);
+  }
+  if (typeof val?.seconds === 'number') {
+    return new Date(val.seconds * 1000).toISOString().replace('T', ' ').slice(0, 16);
+  }
+  if (val instanceof Date) {
+    return val.toISOString().replace('T', ' ').slice(0, 16);
+  }
+  return String(val);
+}
+
+function normalizeServerDoc(docSnap: any): any {
+  const data = docSnap.data() || {};
+  if (data.createdAt && typeof data.createdAt !== 'string') {
+    data.createdAt = formatServerFsDate(data.createdAt);
+  }
+  if (data.updatedAt && typeof data.updatedAt !== 'string') {
+    data.updatedAt = formatServerFsDate(data.updatedAt);
+  }
+  if (data.timestamp && typeof data.timestamp !== 'string') {
+    data.timestamp = formatServerFsDate(data.timestamp);
+  }
+  return { ...data, id: docSnap.id };
+}
+
+const PUBLIC_APP_FALLBACK_URL = 'https://ais-dev-xkedzizgx7ogjh4ham3bh5-275647488328.europe-west1.run.app';
+
+function isLocalOriginOrHost(val?: string | null): boolean {
+  if (!val || typeof val !== 'string') return true;
+  const trimmed = val.trim().toLowerCase();
+  if (!trimmed) return true;
+  try {
+    const parsed = /^https?:\/\//i.test(trimmed) ? new URL(trimmed) : new URL(`https://${trimmed}`);
+    const host = parsed.hostname.toLowerCase();
+    return (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '0.0.0.0' ||
+      host === '::1' ||
+      host === '[::1]' ||
+      host.endsWith('.localhost')
+    );
+  } catch {
+    return /localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]/i.test(trimmed);
+  }
+}
+
+function resolveRequestOrigin(req: express.Request, bodyAppUrl?: string): string {
+  if (bodyAppUrl && typeof bodyAppUrl === 'string' && /^https?:\/\//i.test(bodyAppUrl) && !isLocalOriginOrHost(bodyAppUrl)) {
+    return bodyAppUrl.replace(/\/$/, '');
+  }
+  const forwardedHost = (req.headers['x-forwarded-host'] as string)?.split(',')[0]?.trim();
+  if (forwardedHost && !isLocalOriginOrHost(forwardedHost)) {
+    const forwardedProto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || 'https';
+    return `${forwardedProto}://${forwardedHost}`.replace(/\/$/, '');
+  }
+  const reqHost = req.get('host');
+  if (reqHost && !isLocalOriginOrHost(reqHost)) {
+    const proto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || req.protocol || 'https';
+    return `${proto}://${reqHost}`.replace(/\/$/, '');
+  }
+  const sharedEnvUrl = process.env.SHARED_APP_URL;
+  if (sharedEnvUrl && /^https?:\/\//i.test(sharedEnvUrl) && !isLocalOriginOrHost(sharedEnvUrl)) {
+    return sharedEnvUrl.replace(/\/$/, '');
+  }
+  const envUrl = process.env.APP_URL;
+  if (envUrl && /^https?:\/\//i.test(envUrl) && !isLocalOriginOrHost(envUrl)) {
+    return envUrl.replace(/\/$/, '');
+  }
+  return PUBLIC_APP_FALLBACK_URL;
+}
+
+async function ensureServerFirestoreDoc(colName: string, id: string, docData: any, preserveCreatedAt = true) {
+  if ((serverFirestoreQuotaExhausted && Date.now() - serverFirestoreQuotaTimestamp < 5 * 60 * 1000) || !id) return;
+  try {
+    const ref = fsDoc(serverFirestore, colName, id);
+    if (preserveCreatedAt) {
+      const snap = await fsGetDoc(ref);
+      if (snap.exists()) {
+        const { createdAt: _ignored, ...rest } = docData || {};
+        await fsSetDoc(ref, sanitizeServerFirestore(rest), { merge: true });
+        return;
+      }
+    }
+    await fsSetDoc(
+      ref,
+      sanitizeServerFirestore({
+        ...docData,
+        createdAt: fsServerTimestamp(),
+      }),
+      { merge: true }
+    );
+  } catch (err: any) {
+    const msg = String(err?.message || err || '').toLowerCase();
+    if (err?.code === 'resource-exhausted' || msg.includes('quota')) {
+      serverFirestoreQuotaExhausted = true;
+      serverFirestoreQuotaTimestamp = Date.now();
+    }
+    console.warn(`[Firestore Server Write] ${colName}/${id} notice:`, err?.message || err);
+  }
 }
 
 // ============================================================================
@@ -511,25 +668,24 @@ async function startServer() {
     }
   }
 
-  let serverFirestoreQuotaExhausted = false;
-  let serverFirestoreQuotaTimestamp = 0;
-
   // Synchronize Cloud Firestore documents to Server in-memory cache and database.json
   async function syncFromFirestore() {
     if (serverFirestoreQuotaExhausted && Date.now() - serverFirestoreQuotaTimestamp < 5 * 60 * 1000) {
       return;
     }
     try {
-      const [resSnap, staffSnap, usersSnap, shiftsSnap, msgSnap] = await Promise.all([
+      const [resSnap, staffSnap, usersSnap, shiftsSnap, msgSnap, appsSnap, consultSnap] = await Promise.all([
         fsGetDocs(fsCollection(serverFirestore, 'residents')),
         fsGetDocs(fsCollection(serverFirestore, 'staff')),
         fsGetDocs(fsCollection(serverFirestore, 'users')),
         fsGetDocs(fsCollection(serverFirestore, 'shifts')),
         fsGetDocs(fsCollection(serverFirestore, 'messages')),
+        fsGetDocs(fsCollection(serverFirestore, 'applications')),
+        fsGetDocs(fsCollection(serverFirestore, 'consultations')),
       ]);
 
       if (!resSnap.empty) {
-        const fsResidents = resSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+        const fsResidents = resSnap.docs.map(normalizeServerDoc);
         fsResidents.forEach(r => {
           const idx = serverResidentsList.findIndex(e => e.id === r.id);
           if (idx >= 0) {
@@ -542,7 +698,7 @@ async function startServer() {
       }
 
       if (!staffSnap.empty) {
-        const fsStaff = staffSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+        const fsStaff = staffSnap.docs.map(normalizeServerDoc);
         fsStaff.forEach(s => {
           const idx = serverStaffList.findIndex(e => e.id === s.id);
           if (idx >= 0) {
@@ -555,7 +711,7 @@ async function startServer() {
       }
 
       if (!usersSnap.empty) {
-        const fsUsers = usersSnap.docs.map(d => ({ ...d.data(), id: d.id })) as any[];
+        const fsUsers = usersSnap.docs.map(normalizeServerDoc) as any[];
         fsUsers.forEach(u => {
           const idx = serverUsersList.findIndex(e => e.id === u.id || ((e.email || '').toLowerCase() === (u.email || '').toLowerCase() && e.email));
           if (idx >= 0) {
@@ -568,7 +724,7 @@ async function startServer() {
       }
 
       if (!shiftsSnap.empty) {
-        const fsShifts = shiftsSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+        const fsShifts = shiftsSnap.docs.map(normalizeServerDoc);
         fsShifts.forEach(sh => {
           const idx = serverShiftsList.findIndex(e => e.id === sh.id);
           if (idx >= 0) {
@@ -581,7 +737,7 @@ async function startServer() {
       }
 
       if (!msgSnap.empty) {
-        const fsMsgs = msgSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+        const fsMsgs = msgSnap.docs.map(normalizeServerDoc);
         fsMsgs.forEach(m => {
           const idx = serverMessagesList.findIndex(e => e.id === m.id);
           if (idx >= 0) {
@@ -591,6 +747,32 @@ async function startServer() {
           }
         });
         serverStore.messages = serverMessagesList;
+      }
+
+      if (!appsSnap.empty) {
+        const fsApps = appsSnap.docs.map(normalizeServerDoc);
+        fsApps.forEach(a => {
+          const idx = serverApplicationsList.findIndex(e => e.id === a.id);
+          if (idx >= 0) {
+            serverApplicationsList[idx] = { ...serverApplicationsList[idx], ...a };
+          } else {
+            serverApplicationsList.push(a);
+          }
+        });
+        serverStore.applications = serverApplicationsList;
+      }
+
+      if (!consultSnap.empty) {
+        const fsConsults = consultSnap.docs.map(normalizeServerDoc);
+        fsConsults.forEach(c => {
+          const idx = serverConsultationsList.findIndex(e => e.id === c.id);
+          if (idx >= 0) {
+            serverConsultationsList[idx] = { ...serverConsultationsList[idx], ...c };
+          } else {
+            serverConsultationsList.push(c);
+          }
+        });
+        serverStore.consultations = serverConsultationsList;
       }
 
       saveServerDb();
@@ -1182,7 +1364,7 @@ async function startServer() {
     res.json(serverMessagesList);
   });
 
-  app.post('/api/messages', (req, res) => {
+  app.post('/api/messages', async (req, res) => {
     const message = req.body;
     if (message && message.id) {
       const subjectNorm = (message.subject || '').trim().toLowerCase();
@@ -1203,6 +1385,10 @@ async function startServer() {
         serverMessagesList.unshift(message);
       }
       saveServerDb();
+      await ensureServerFirestoreDoc('messages', message.id, message, true);
+      if (message.formType === 'contact_inquiry' || message.formType === 'roofing_quote' || message.senderId === 'public_contact_visitor' || message.senderId === 'public_roofing_inquiry') {
+        await ensureServerFirestoreDoc('inquiries', message.id, message, true);
+      }
       res.json({ success: true, message });
     } else {
       res.status(400).json({ error: 'Valid message object required' });
@@ -1420,13 +1606,19 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
   app.post('/api/ai-chatbot', handleAIVoiceChatBot);
   app.post('/api/ai-voice-agent', handleAIVoiceChatBot);
 
-  app.delete('/api/messages/:id', (req, res) => {
+  app.delete('/api/messages/:id', async (req, res) => {
     const { id } = req.params;
     const idx = serverMessagesList.findIndex(m => m.id === id);
     if (idx >= 0) {
       serverMessagesList.splice(idx, 1);
       saveServerDb();
     }
+    try {
+      await Promise.allSettled([
+        fsDeleteDoc(fsDoc(serverFirestore, 'messages', id)),
+        fsDeleteDoc(fsDoc(serverFirestore, 'inquiries', id)),
+      ]);
+    } catch {}
     res.json({ success: true, id });
   });
 
@@ -1445,11 +1637,12 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
     }
   });
 
-  app.get('/api/consultations', (req, res) => {
+  app.get('/api/consultations', async (req, res) => {
+    await syncFromFirestore();
     res.json(serverConsultationsList);
   });
 
-  app.post('/api/consultations', (req, res) => {
+  app.post('/api/consultations', async (req, res) => {
     const booking = req.body;
     if (booking && booking.id) {
       const idx = serverConsultationsList.findIndex(c => c.id === booking.id);
@@ -1459,20 +1652,203 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
         serverConsultationsList.unshift(booking);
       }
       saveServerDb();
+      await ensureServerFirestoreDoc('consultations', booking.id, booking, true);
       res.json({ success: true, booking });
     } else {
       res.status(400).json({ error: 'Valid booking object required' });
     }
   });
 
-  app.delete('/api/consultations/:id', (req, res) => {
+  app.delete('/api/consultations/:id', async (req, res) => {
     const { id } = req.params;
     const idx = serverConsultationsList.findIndex(c => c.id === id);
     if (idx >= 0) {
       serverConsultationsList.splice(idx, 1);
       saveServerDb();
     }
+    try {
+      await fsDeleteDoc(fsDoc(serverFirestore, 'consultations', id));
+    } catch {}
     res.json({ success: true, id });
+  });
+
+  // =========================================================================
+  // EDITABLE / PRINTABLE / DOWNLOADABLE PDF & WEB VIEW ENDPOINTS FOR FORMS
+  // =========================================================================
+  async function findApplicationRecord(id: string): Promise<any | null> {
+    let appRecord = serverApplicationsList.find(a => a.id === id);
+    if (!appRecord) {
+      try {
+        const snap = await fsGetDoc(fsDoc(serverFirestore, 'applications', id));
+        if (snap.exists()) {
+          appRecord = normalizeServerDoc(snap);
+          serverApplicationsList.unshift(appRecord);
+        }
+      } catch {}
+    }
+    return appRecord || null;
+  }
+
+  async function findConsultationRecord(id: string): Promise<any | null> {
+    let booking = serverConsultationsList.find(c => c.id === id);
+    if (!booking) {
+      try {
+        const snap = await fsGetDoc(fsDoc(serverFirestore, 'consultations', id));
+        if (snap.exists()) {
+          booking = normalizeServerDoc(snap);
+          serverConsultationsList.unshift(booking);
+        }
+      } catch {}
+    }
+    return booking || null;
+  }
+
+  async function findMessageOrInquiryRecord(id: string): Promise<any | null> {
+    let msg = serverMessagesList.find(m => m.id === id);
+    if (!msg) {
+      try {
+        const snap = await fsGetDoc(fsDoc(serverFirestore, 'messages', id));
+        if (snap.exists()) {
+          msg = normalizeServerDoc(snap);
+          serverMessagesList.unshift(msg);
+        } else {
+          const inqSnap = await fsGetDoc(fsDoc(serverFirestore, 'inquiries', id));
+          if (inqSnap.exists()) {
+            msg = normalizeServerDoc(inqSnap);
+            serverMessagesList.unshift(msg);
+          }
+        }
+      } catch {}
+    }
+    return msg || null;
+  }
+
+  app.get('/api/applications/:id/pdf', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const appRecord = await findApplicationRecord(id);
+      if (!appRecord) {
+        return res.status(404).json({ error: 'Application not found' });
+      }
+      const isResident = appRecord.type === 'resident' || appRecord.formType === 'resident_care_admission';
+      const pdfBuffer = isResident
+        ? await generateResidentAdmissionPdf(appRecord)
+        : await generateCaregiverApplicationPdf(appRecord);
+      const safeName = String(appRecord.fullName || appRecord.applicantName || 'Application').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const fileName = isResident
+        ? `Resident_Care_Admission_${safeName}.pdf`
+        : `Caregiver_Job_Application_${safeName}.pdf`;
+      const disposition = req.query.download === '1' ? 'attachment' : 'inline';
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `${disposition}; filename="${fileName}"`);
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Length', String(pdfBuffer.length));
+      return res.send(pdfBuffer);
+    } catch (err: any) {
+      console.error('Error generating application PDF:', err);
+      return res.status(500).json({ error: err?.message || 'Failed to generate application PDF' });
+    }
+  });
+
+  app.get('/api/applications/:id/view', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const appRecord = await findApplicationRecord(id);
+      if (!appRecord) {
+        return res.status(404).send('<h2>Application record not found.</h2>');
+      }
+      const origin = resolveRequestOrigin(req);
+      const pdfOpenUrl = `${origin}/api/applications/${encodeURIComponent(id)}/pdf`;
+      const pdfDownloadUrl = `${pdfOpenUrl}?download=1`;
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      return res.send(renderApplicationFormHtml(appRecord, { pdfOpenUrl, pdfDownloadUrl }));
+    } catch (err: any) {
+      console.error('Error rendering application web view:', err);
+      return res.status(500).send('<h2>Unable to render form view.</h2>');
+    }
+  });
+
+  app.get('/api/consultations/:id/pdf', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const booking = await findConsultationRecord(id);
+      if (!booking) {
+        return res.status(404).json({ error: 'Consultation booking not found' });
+      }
+      const pdfBuffer = await generateConsultationPdf(booking);
+      const safeName = String(booking.fullName || 'Consultation').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const fileName = `Consultation_Booking_${safeName}.pdf`;
+      const disposition = req.query.download === '1' ? 'attachment' : 'inline';
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `${disposition}; filename="${fileName}"`);
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Length', String(pdfBuffer.length));
+      return res.send(pdfBuffer);
+    } catch (err: any) {
+      console.error('Error generating consultation PDF:', err);
+      return res.status(500).json({ error: err?.message || 'Failed to generate consultation PDF' });
+    }
+  });
+
+  app.get('/api/consultations/:id/view', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const booking = await findConsultationRecord(id);
+      if (!booking) {
+        return res.status(404).send('<h2>Consultation booking not found.</h2>');
+      }
+      const origin = resolveRequestOrigin(req);
+      const pdfOpenUrl = `${origin}/api/consultations/${encodeURIComponent(id)}/pdf`;
+      const pdfDownloadUrl = `${pdfOpenUrl}?download=1`;
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      return res.send(renderConsultationFormHtml(booking, { pdfOpenUrl, pdfDownloadUrl }));
+    } catch (err: any) {
+      console.error('Error rendering consultation web view:', err);
+      return res.status(500).send('<h2>Unable to render consultation form view.</h2>');
+    }
+  });
+
+  app.get('/api/messages/:id/pdf', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const msg = await findMessageOrInquiryRecord(id);
+      if (!msg) {
+        return res.status(404).json({ error: 'Inquiry record not found' });
+      }
+      const pdfBuffer = await generateInquiryPdf(msg);
+      const safeName = String(msg.fullName || msg.senderName || 'Inquiry').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const fileName = `Inquiry_Form_${safeName}.pdf`;
+      const disposition = req.query.download === '1' ? 'attachment' : 'inline';
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `${disposition}; filename="${fileName}"`);
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Length', String(pdfBuffer.length));
+      return res.send(pdfBuffer);
+    } catch (err: any) {
+      console.error('Error generating inquiry PDF:', err);
+      return res.status(500).json({ error: err?.message || 'Failed to generate inquiry PDF' });
+    }
+  });
+
+  app.get('/api/messages/:id/view', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const msg = await findMessageOrInquiryRecord(id);
+      if (!msg) {
+        return res.status(404).send('<h2>Inquiry record not found.</h2>');
+      }
+      const origin = resolveRequestOrigin(req);
+      const pdfOpenUrl = `${origin}/api/messages/${encodeURIComponent(id)}/pdf`;
+      const pdfDownloadUrl = `${pdfOpenUrl}?download=1`;
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      return res.send(renderInquiryFormHtml(msg, { pdfOpenUrl, pdfDownloadUrl }));
+    } catch (err: any) {
+      console.error('Error rendering inquiry web view:', err);
+      return res.status(500).send('<h2>Unable to render inquiry form view.</h2>');
+    }
   });
 
   // Upload & serve application documents locally in data/uploads/
@@ -1583,6 +1959,7 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
       serverApplicationsList.unshift(appData);
     }
     saveServerDb();
+    await ensureServerFirestoreDoc('applications', appData.id, appData, true);
 
     try {
       const supabaseAdmin = getSupabaseAdmin();
@@ -1619,6 +1996,7 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
     }
     serverApplicationsList[idx] = { ...serverApplicationsList[idx], ...updates };
     saveServerDb();
+    await ensureServerFirestoreDoc('applications', id, serverApplicationsList[idx], true);
     try {
       const supabaseAdmin = getSupabaseAdmin();
       const sbUpdate: any = {};
@@ -2147,10 +2525,10 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
     }
   });
 
-  // 3. Application Submission Endpoint (Receipt confirmation to applicant + Admin Alert)
+  // 3. Application Submission Endpoint (Receipt confirmation to applicant + Admin Alert with Editable PDF)
   app.post('/api/functions/submit-application', async (req, res) => {
     try {
-      const { application, appUrl } = req.body;
+      const { application, appUrl, dryRun } = req.body;
       if (!application || !application.email || !application.applicantName) {
         res.status(400).json({ error: 'Application with applicantName and email is required.' });
         return;
@@ -2161,8 +2539,13 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
       const positionOrCategory = application.position || application.careCategory || (isCaregiver ? 'Caregiver Staff' : 'Assisted Living');
       const appId = application.id || `app_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       const nowIso = new Date().toISOString();
+      const origin = resolveRequestOrigin(req, appUrl);
+      const isPrivateDevProxy = /^https?:\/\/ais-dev-/i.test(origin);
+      const pdfOpenUrl = `${origin}/api/applications/${encodeURIComponent(appId)}/pdf`;
+      const pdfDownloadUrl = `${pdfOpenUrl}?download=1`;
+      const formViewUrl = `${origin}/?formView=application&id=${encodeURIComponent(appId)}`;
 
-      // 0. Persist application to Supabase & Memory Cache
+      // 0. Persist application to Memory Cache + Firestore fallback
       const appRow = {
         id: appId,
         full_name: application.applicantName,
@@ -2176,7 +2559,7 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
         notes_or_statement: application.experience || application.notes || application.medicalHistory || '',
         sponsor_name: application.sponsorName || application.relativeName || null,
         references: typeof application.references === 'string' ? application.references : JSON.stringify(application.references || []),
-        status: 'Received',
+        status: isCaregiver ? 'Received' : 'pending',
         created_at: nowIso,
       };
 
@@ -2185,7 +2568,11 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
         ...appRow,
         ...application,
         id: appId,
-        fullName: application.applicantName,
+        fullName: application.fullName || application.applicantName,
+        applicantName: application.applicantName,
+        applicantWhatsApp: application.applicantWhatsApp || application.whatsappNumber || '',
+        whatsappConsent: Boolean(application.whatsappConsent),
+        formType: application.formType || (isCaregiver ? 'caregiver_job_application' : 'resident_care_admission'),
         email: applicantEmail,
         positionOrCategory,
       };
@@ -2195,6 +2582,7 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
         serverApplicationsList.unshift(richRecord);
       }
       saveServerDb();
+      await ensureServerFirestoreDoc('applications', appId, richRecord, true);
 
       try {
         const supabaseAdmin = getSupabaseAdmin();
@@ -2214,8 +2602,8 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
           receiver_id: adm.id,
           receiver_name: adm.name,
           receiver_role: 'Admin',
-          subject: `📥 NEW CARE APPLICATION: ${application.applicantName} (${isCaregiver ? 'Caregiver Applicant' : 'Resident Care Admission Request'})`,
-          content: `A new ${isCaregiver ? 'Caregiver Job Application' : 'Resident Care Admission Application'} has been submitted through the web portal.\n\nAPPLICANT DETAILS:\n• Full Name: ${application.applicantName}\n• Email: ${applicantEmail}\n• Phone: ${application.phone || 'N/A'}\n${application.whatsappNumber ? `• WhatsApp: ${application.whatsappNumber}\n` : ''}${application.cityState ? `• City / State: ${application.cityState}\n` : ''}• Category / Role: ${positionOrCategory}\n${application.sponsorName ? `• Sponsor / Relative: ${application.sponsorName}\n` : ''}${application.notes ? `• Notes / Medical: ${application.notes}\n` : ''}${application.receiptName || application.paymentReceipt ? `• Payment Receipt: Attached (${application.receiptName || 'Bank Transfer Receipt'})\n` : ''}\nNotification dispatched to: samanthasappy@gmail.com, itopaprop@gmail.com`,
+          subject: `NEW CARE APPLICATION: ${application.applicantName} (${isCaregiver ? 'Caregiver Applicant' : 'Resident Care Admission Request'})`,
+          content: `A new ${isCaregiver ? 'Caregiver Job Application' : 'Resident Care Admission Application'} has been submitted through the web portal.\n\nAPPLICANT DETAILS:\n• Full Name: ${application.applicantName}\n• Email: ${applicantEmail}\n• Phone: ${application.phone || 'N/A'}\n${(application.applicantWhatsApp || application.whatsappNumber) ? `• WhatsApp: ${application.applicantWhatsApp || application.whatsappNumber}\n` : ''}${application.cityState ? `• City / State: ${application.cityState}\n` : ''}• Category / Role: ${positionOrCategory}\n${application.sponsorName ? `• Sponsor / Relative: ${application.sponsorName}\n` : ''}${application.notes ? `• Notes / Medical: ${application.notes}\n` : ''}${application.receiptName || application.paymentReceipt ? `• Payment Receipt: Attached (${application.receiptName || 'Bank Transfer Receipt'})\n` : ''}\nUse the "View / Print Form & PDF" button below to open, edit, print, or download the fillable PDF.\nNotification dispatched to: samanthasappy@gmail.com, itopaprop@gmail.com`,
           attachment_url: application.receiptUrl || application.photoUrl || null,
           attachment_name: application.receiptName || null,
           is_read: false,
@@ -2225,6 +2613,21 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
         await supabaseAdmin.from('messages').insert(adminInAppMessages);
       } catch (dbErr) {
         console.warn('Supabase application/messages insert note:', dbErr);
+      }
+
+      // Generate interactive Editable / Printable / Downloadable AcroForm PDF
+      let pdfAttachment: { filename: string; content: Buffer; contentType: string } | undefined;
+      try {
+        const pdfBuffer = isCaregiver
+          ? await generateCaregiverApplicationPdf(richRecord)
+          : await generateResidentAdmissionPdf(richRecord);
+        const safeName = String(richRecord.fullName || richRecord.applicantName || 'Applicant').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const filename = isCaregiver
+          ? `Caregiver_Job_Application_${safeName}.pdf`
+          : `Resident_Care_Admission_${safeName}.pdf`;
+        pdfAttachment = { filename, content: pdfBuffer, contentType: 'application/pdf' };
+      } catch (pdfErr) {
+        console.warn('Application PDF generation warning:', pdfErr);
       }
 
       // 1. Generate & Dispatch Receipt Confirmation Email to Applicant
@@ -2241,19 +2644,28 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
         facilityName: 'Samantha Sappy Care Home',
       });
 
-      const applicantEmailResult = await dispatchEmail({
-        to: applicantEmail,
-        subject: applicantReceiptEmail.subject,
-        html: applicantReceiptEmail.html,
-        text: applicantReceiptEmail.text,
-      });
+      const applicantEmailResult = dryRun
+        ? { sent: false, provider: 'dry_run' }
+        : await dispatchEmail({
+            to: applicantEmail,
+            subject: applicantReceiptEmail.subject,
+            html: applicantReceiptEmail.html,
+            text: applicantReceiptEmail.text,
+          });
 
-      // 2. Generate & Dispatch Admin Notification Email
+      // 2. Generate & Dispatch Admin Notification Email WITH Editable PDF Attached
       const adminAppNotification = generateAdminNewApplicationNotificationEmail({
         applicantName: application.applicantName,
         email: applicantEmail,
         phone: application.phone || '',
         whatsappNumber: application.whatsappNumber,
+        applicantWhatsApp: application.applicantWhatsApp || application.whatsappNumber,
+        whatsappConsent: Boolean(application.whatsappConsent),
+        pdfOpenUrl,
+        pdfDownloadUrl,
+        formViewUrl,
+        isPrivateDevProxy,
+        hasPdfAttachment: Boolean(process.env.RESEND_API_KEY && pdfAttachment),
         dateOfBirth: application.dateOfBirth,
         gender: application.gender,
         maritalStatus: application.maritalStatus,
@@ -2299,16 +2711,22 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
         facilityName: 'Samantha Sappy Care Home',
       });
 
-      const adminEmailResult = await dispatchEmail({
-        to: ADMIN_NOTIFICATION_EMAILS,
-        subject: adminAppNotification.subject,
-        html: adminAppNotification.html,
-        text: adminAppNotification.text,
-      });
+      const adminEmailResult = dryRun
+        ? { sent: false, provider: 'dry_run' }
+        : await dispatchEmail({
+            to: ADMIN_NOTIFICATION_EMAILS,
+            subject: adminAppNotification.subject,
+            html: adminAppNotification.html,
+            text: adminAppNotification.text,
+            attachments: pdfAttachment ? [pdfAttachment] : undefined,
+          });
 
       res.status(200).json({
         success: true,
-        message: `Application submitted successfully. Receipt confirmation sent to ${applicantEmail}, and Admin notified.`,
+        message: `Application submitted successfully. Receipt confirmation sent to ${applicantEmail}, and Admin notified with editable PDF.`,
+        pdfOpenUrl,
+        pdfDownloadUrl,
+        formViewUrl,
         applicantEmailSent: applicantEmailResult.sent,
         applicantEmailProvider: applicantEmailResult.provider,
         adminEmailSent: adminEmailResult.sent,
@@ -2317,6 +2735,187 @@ You ONLY answer questions about Samanthasappy Home care services, admissions, co
     } catch (err: any) {
       console.error('Error in /api/functions/submit-application:', err);
       res.status(500).json({ error: err?.message || 'Server error while submitting application.' });
+    }
+  });
+
+  // 3b. Family Consultation Submission Endpoint (Admin Email + Editable PDF + Firestore sync)
+  app.post('/api/functions/submit-consultation', async (req, res) => {
+    try {
+      const { booking, appUrl, dryRun } = req.body;
+      if (!booking || !booking.fullName || !booking.email) {
+        return res.status(400).json({ error: 'Consultation booking with fullName and email is required.' });
+      }
+
+      const cbId = booking.id || `con_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const origin = resolveRequestOrigin(req, appUrl);
+      const isPrivateDevProxy = /^https?:\/\/ais-dev-/i.test(origin);
+      const pdfOpenUrl = `${origin}/api/consultations/${encodeURIComponent(cbId)}/pdf`;
+      const pdfDownloadUrl = `${pdfOpenUrl}?download=1`;
+      const formViewUrl = `${origin}/?formView=consultation&id=${encodeURIComponent(cbId)}`;
+      const richBooking = {
+        ...booking,
+        id: cbId,
+        status: booking.status || 'Pending',
+        formType: booking.formType || 'consultation_booking',
+        createdAt: booking.createdAt || new Date().toISOString().replace('T', ' ').slice(0, 16),
+      };
+
+      const existingIdx = serverConsultationsList.findIndex(c => c.id === cbId);
+      if (existingIdx >= 0) {
+        serverConsultationsList[existingIdx] = { ...serverConsultationsList[existingIdx], ...richBooking };
+      } else {
+        serverConsultationsList.unshift(richBooking);
+      }
+      saveServerDb();
+      await ensureServerFirestoreDoc('consultations', cbId, richBooking, true);
+
+      // Generate interactive Editable PDF
+      let pdfAttachment: { filename: string; content: Buffer; contentType: string } | undefined;
+      try {
+        const pdfBuffer = await generateConsultationPdf(richBooking);
+        const safeName = String(richBooking.fullName || 'Consultation').replace(/[^a-zA-Z0-9_-]/g, '_');
+        pdfAttachment = {
+          filename: `Consultation_Booking_${safeName}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf',
+        };
+      } catch (pdfErr) {
+        console.warn('Consultation PDF generation warning:', pdfErr);
+      }
+
+      const adminNotification = generateAdminConsultationNotificationEmail({
+        id: cbId,
+        fullName: richBooking.fullName,
+        email: richBooking.email,
+        phone: richBooking.phone || '',
+        serviceInterest: richBooking.serviceInterest || 'Residential Elderly Care',
+        preferredDate: richBooking.preferredDate || '',
+        preferredTime: richBooking.preferredTime || '',
+        notes: richBooking.notes,
+        createdAt: richBooking.createdAt,
+        pdfOpenUrl,
+        pdfDownloadUrl,
+        formViewUrl,
+        isPrivateDevProxy,
+        hasPdfAttachment: Boolean(process.env.RESEND_API_KEY && pdfAttachment),
+        facilityName: 'Samantha Sappy Care Home',
+      });
+
+      const adminEmailResult = dryRun
+        ? { sent: false, provider: 'dry_run' }
+        : await dispatchEmail({
+            to: ADMIN_NOTIFICATION_EMAILS,
+            subject: adminNotification.subject,
+            html: adminNotification.html,
+            text: adminNotification.text,
+            attachments: pdfAttachment ? [pdfAttachment] : undefined,
+          });
+
+      return res.status(200).json({
+        success: true,
+        pdfOpenUrl,
+        pdfDownloadUrl,
+        formViewUrl,
+        adminEmailSent: adminEmailResult.sent,
+        adminEmailProvider: adminEmailResult.provider,
+      });
+    } catch (err: any) {
+      console.error('Error in /api/functions/submit-consultation:', err);
+      return res.status(500).json({ error: err?.message || 'Failed to process consultation notification.' });
+    }
+  });
+
+  // 3c. Public Contact / Roofing Quote Inquiry Endpoint (Admin Email + Editable PDF + Firestore sync)
+  app.post('/api/functions/submit-inquiry', async (req, res) => {
+    try {
+      const { inquiry, appUrl, dryRun } = req.body;
+      if (!inquiry || !inquiry.fullName) {
+        return res.status(400).json({ error: 'Inquiry with fullName is required.' });
+      }
+
+      const inqId = inquiry.id || `inq_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const origin = resolveRequestOrigin(req, appUrl);
+      const isPrivateDevProxy = /^https?:\/\/ais-dev-/i.test(origin);
+      const pdfOpenUrl = `${origin}/api/messages/${encodeURIComponent(inqId)}/pdf`;
+      const pdfDownloadUrl = `${pdfOpenUrl}?download=1`;
+      const formViewUrl = `${origin}/?formView=inquiry&id=${encodeURIComponent(inqId)}`;
+      const timestamp = inquiry.timestamp || new Date().toISOString().replace('T', ' ').slice(0, 16);
+
+      const richInquiry = {
+        ...inquiry,
+        id: inqId,
+        senderName: inquiry.senderName || inquiry.fullName,
+        fullName: inquiry.fullName,
+        timestamp,
+        isRead: false,
+      };
+
+      const existingIdx = serverMessagesList.findIndex(m => m.id === inqId);
+      if (existingIdx >= 0) {
+        serverMessagesList[existingIdx] = { ...serverMessagesList[existingIdx], ...richInquiry };
+      } else {
+        serverMessagesList.unshift(richInquiry);
+      }
+      saveServerDb();
+      await ensureServerFirestoreDoc('messages', inqId, richInquiry, true);
+      await ensureServerFirestoreDoc('inquiries', inqId, richInquiry, true);
+
+      // Generate interactive Editable PDF
+      let pdfAttachment: { filename: string; content: Buffer; contentType: string } | undefined;
+      try {
+        const pdfBuffer = await generateInquiryPdf(richInquiry);
+        const safeName = String(richInquiry.fullName || 'Inquiry').replace(/[^a-zA-Z0-9_-]/g, '_');
+        pdfAttachment = {
+          filename: `${richInquiry.formType === 'roofing_quote' ? 'Roofing_Quote' : 'Contact_Inquiry'}_${safeName}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf',
+        };
+      } catch (pdfErr) {
+        console.warn('Inquiry PDF generation warning:', pdfErr);
+      }
+
+      const adminNotification = generateAdminInquiryNotificationEmail({
+        id: inqId,
+        formType: richInquiry.formType,
+        fullName: richInquiry.fullName,
+        email: richInquiry.email,
+        phone: richInquiry.phone,
+        subject: richInquiry.subject || 'New Website Inquiry',
+        message: richInquiry.message || richInquiry.content || '',
+        stateLocation: richInquiry.stateLocation,
+        roofType: richInquiry.roofType,
+        projectScope: richInquiry.projectScope,
+        estimatedSize: richInquiry.estimatedSize,
+        timestamp,
+        pdfOpenUrl,
+        pdfDownloadUrl,
+        formViewUrl,
+        isPrivateDevProxy,
+        hasPdfAttachment: Boolean(process.env.RESEND_API_KEY && pdfAttachment),
+        facilityName: richInquiry.formType === 'roofing_quote' ? 'Samanthasappy Roofing' : 'Samantha Sappy Care Home',
+      });
+
+      const adminEmailResult = dryRun
+        ? { sent: false, provider: 'dry_run' }
+        : await dispatchEmail({
+            to: ADMIN_NOTIFICATION_EMAILS,
+            subject: adminNotification.subject,
+            html: adminNotification.html,
+            text: adminNotification.text,
+            attachments: pdfAttachment ? [pdfAttachment] : undefined,
+          });
+
+      return res.status(200).json({
+        success: true,
+        pdfOpenUrl,
+        pdfDownloadUrl,
+        formViewUrl,
+        adminEmailSent: adminEmailResult.sent,
+        adminEmailProvider: adminEmailResult.provider,
+      });
+    } catch (err: any) {
+      console.error('Error in /api/functions/submit-inquiry:', err);
+      return res.status(500).json({ error: err?.message || 'Failed to process inquiry notification.' });
     }
   });
 
